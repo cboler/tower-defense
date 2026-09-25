@@ -1,7 +1,7 @@
 {
-  "name": "Angular PWA Starter",
-  "short_name": "Angular PWA",
-  "description": "A clean, production-ready Angular PWA starter for GitHub Pages.",
+  "name": "Crystal Wardens: Tower Defense",
+  "short_name": "CrystalTD",
+  "description": "Tactical fantasy job-based tower defense inspired by Crystal Defenders, featuring light mazing and full controller support.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

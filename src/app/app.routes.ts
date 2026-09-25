@@ -1,17 +1,17 @@
 import { Routes } from '@angular/router';
-import { HomeComponent } from './home/home.component';
+import { GameComponent } from './game/game.component';
 import { StatusComponent } from './status/status.component';
 
 export const routes: Routes = [
   {
     path: '',
-    component: HomeComponent,
-    title: 'Home • Angular PWA Starter',
+    component: GameComponent,
+    title: 'Crystal Wardens — Tactical Fantasy Tower Defense',
   },
   {
     path: 'status',
     component: StatusComponent,
-    title: 'Status & Diagnostics • Angular PWA Starter',
+    title: 'Diagnostics • Crystal Wardens PWA',
   },
   {
     path: '**',

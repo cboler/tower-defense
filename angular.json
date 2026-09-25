@@ -7,7 +7,7 @@
   },
   "newProjectRoot": "projects",
   "projects": {
-    "angular-pwa-starter": {
+    "tower-defense": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
@@ -46,8 +46,8 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "4kB",
-                  "maximumError": "8kB"
+                  "maximumWarning": "12kB",
+                  "maximumError": "20kB"
                 }
               ],
               "outputHashing": "all",
@@ -65,10 +65,10 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "angular-pwa-starter:build:production"
+              "buildTarget": "tower-defense:build:production"
             },
             "development": {
-              "buildTarget": "angular-pwa-starter:build:development"
+              "buildTarget": "tower-defense:build:development"
             }
           },
           "defaultConfiguration": "development"

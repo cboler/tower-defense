@@ -208,3 +208,22 @@ button,
   white-space: nowrap;
   border-width: 0;
 }
+
+/* 8. Controller / Gamepad spatial focus styles */
+.gamepad-focused {
+  outline: 2px solid var(--color-primary) !important;
+  outline-offset: 3px !important;
+  box-shadow:
+    0 0 16px rgba(56, 189, 248, 0.75),
+    inset 0 0 8px rgba(56, 189, 248, 0.3) !important;
+  z-index: 20;
+  position: relative;
+  transition:
+    transform 0.1s ease,
+    box-shadow 0.15s ease;
+}
+
+button.gamepad-focused,
+a.gamepad-focused {
+  transform: scale(1.04);
+}

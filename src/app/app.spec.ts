@@ -1,14 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { App } from './app';
-import { HomeComponent } from './home/home.component';
+import { GameComponent } from './game/game.component';
 import { StatusComponent } from './status/status.component';
 import { routes } from './app.routes';
 
 describe('Starter Application Tests', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [App, HomeComponent, StatusComponent],
+      imports: [App, GameComponent, StatusComponent],
       providers: [provideRouter(routes)],
     }).compileComponents();
   });
@@ -24,15 +24,17 @@ describe('Starter Application Tests', () => {
       const fixture = TestBed.createComponent(App);
       await fixture.whenStable();
       const compiled = fixture.nativeElement as HTMLElement;
-      expect(compiled.querySelector('.brand-title')?.textContent).toContain('Angular PWA Starter');
+      expect(compiled.querySelector('.brand-title')?.textContent).toContain(
+        'Crystal Wardens: Tower Defense',
+      );
     });
 
-    it('should render accessible navigation links for Home and Status', async () => {
+    it('should render accessible navigation links for Arena and Diagnostics', async () => {
       const fixture = TestBed.createComponent(App);
       await fixture.whenStable();
       const compiled = fixture.nativeElement as HTMLElement;
-      expect(compiled.querySelector('#nav-link-home')?.textContent?.trim()).toBe('Home');
-      expect(compiled.querySelector('#nav-link-status')?.textContent?.trim()).toBe('Status');
+      expect(compiled.querySelector('#nav-link-home')?.textContent?.trim()).toBe('Arena');
+      expect(compiled.querySelector('#nav-link-status')?.textContent?.trim()).toBe('Diagnostics');
     });
 
     it('should render skip link for accessibility', async () => {
@@ -45,21 +47,14 @@ describe('Starter Application Tests', () => {
     });
   });
 
-  describe('HomeComponent', () => {
-    it('should render hero title and action buttons', async () => {
-      const fixture = TestBed.createComponent(HomeComponent);
+  describe('GameComponent', () => {
+    it('should create the game component and render HUD and battlefield', async () => {
+      const fixture = TestBed.createComponent(GameComponent);
       await fixture.whenStable();
       const compiled = fixture.nativeElement as HTMLElement;
-      expect(compiled.querySelector('#starter-title')?.textContent).toBe('Angular PWA Starter');
-      expect(compiled.querySelector('#view-status-btn')).toBeTruthy();
-    });
-
-    it('should display starter capabilities cards', async () => {
-      const fixture = TestBed.createComponent(HomeComponent);
-      await fixture.whenStable();
-      const compiled = fixture.nativeElement as HTMLElement;
-      const cards = compiled.querySelectorAll('.feature-card');
-      expect(cards.length).toBe(4);
+      expect(compiled.querySelector('app-hud')).toBeTruthy();
+      expect(compiled.querySelector('app-battle-map')).toBeTruthy();
+      expect(compiled.querySelector('app-tower-panel')).toBeTruthy();
     });
   });
 

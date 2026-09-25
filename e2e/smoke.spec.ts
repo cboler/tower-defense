@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Responsive Shell Smoke Tests', () => {
-  test('should load application cleanly without runtime errors or horizontal overflow', async ({
+test.describe('Crystal Wardens Tower Defense Smoke Tests', () => {
+  test('should load game arena cleanly without runtime errors or horizontal overflow', async ({
     page,
   }) => {
     const consoleErrors: string[] = [];
@@ -18,21 +18,25 @@ test.describe('Responsive Shell Smoke Tests', () => {
 
     // 1. Root shell and brand verification
     await expect(page.locator('.brand-title')).toBeVisible();
-    await expect(page.locator('#starter-title')).toHaveText('Angular PWA Starter');
+    await expect(page.locator('.brand-title')).toContainText('Crystal Wardens: Tower Defense');
 
     // 2. Primary layout elements are visible
     await expect(page.locator('header[role="banner"]')).toBeVisible();
     await expect(page.locator('main[role="main"]')).toBeVisible();
     await expect(page.locator('footer[role="contentinfo"]')).toBeVisible();
 
-    // 3. Prevent accidental horizontal overflow
+    // 3. Game Arena components are visible
+    await expect(page.locator('#battlefield-map')).toBeVisible();
+    await expect(page.locator('#call-wave-btn')).toBeVisible();
+
+    // 4. Prevent accidental horizontal overflow
     const hasHorizontalOverflow = await page.evaluate(() => {
       return document.documentElement.scrollWidth > window.innerWidth;
     });
     expect(hasHorizontalOverflow).toBeFalsy();
 
-    // 4. Client-side navigation to status screen
-    const statusLink = page.locator('#view-status-btn');
+    // 5. Client-side navigation to diagnostics screen
+    const statusLink = page.locator('#nav-link-status');
     await expect(statusLink).toBeVisible();
     await statusLink.click();
 
@@ -46,12 +50,12 @@ test.describe('Responsive Shell Smoke Tests', () => {
     });
     expect(statusOverflow).toBeFalsy();
 
-    // 5. Navigate back to Home
+    // 6. Navigate back to Arena
     await page.locator('#back-home-link').click();
     await expect(page).toHaveURL(/\/?$/);
-    await expect(page.locator('#starter-title')).toBeVisible();
+    await expect(page.locator('#battlefield-map')).toBeVisible();
 
-    // 6. Zero unhandled console errors or exceptions
+    // 7. Zero unhandled console errors or exceptions
     expect(consoleErrors).toEqual([]);
   });
 });

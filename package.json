@@ -1,6 +1,7 @@
 {
-  "name": "angular-pwa-starter",
-  "version": "0.0.0",
+  "name": "tower-defense",
+  "version": "0.1.0",
+  "description": "Tactical fantasy job-based tower defense inspired by Crystal Defenders, featuring light mazing and full controller support.",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
