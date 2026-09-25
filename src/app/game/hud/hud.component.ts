@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { GameService } from '../../core/services/game.service';
 import { GamepadService } from '../../core/services/gamepad.service';
 import { AudioService } from '../../core/services/audio.service';
@@ -44,13 +44,25 @@ import { ALL_MAPS } from '../../core/models/map.model';
       <!-- Center: Wave Status & Call Wave -->
       <div class="hud-group wave-center">
         <div class="wave-info">
-          <div class="wave-title-row">
-            <span class="wave-badge"
-              >WAVE {{ game.currentWaveIndex() + 1 }} / {{ game.totalWaves() }}</span
-            >
-            <span class="wave-name">{{ game.currentWaveDef()?.name }}</span>
+          @if (primaryMobType(); as mobType) {
+            <div class="wave-mob-preview" [title]="'Next incoming enemy type: ' + mobType">
+              <img
+                [src]="'assets/monsters/' + mobType + '-portrait.png'"
+                [alt]="mobType"
+                class="wave-mob-portrait"
+                loading="lazy"
+              />
+            </div>
+          }
+          <div class="wave-text-content">
+            <div class="wave-title-row">
+              <span class="wave-badge"
+                >WAVE {{ game.currentWaveIndex() + 1 }} / {{ game.totalWaves() }}</span
+              >
+              <span class="wave-name">{{ game.currentWaveDef()?.name }}</span>
+            </div>
+            <p class="wave-intel">{{ game.currentWaveDef()?.intel }}</p>
           </div>
-          <p class="wave-intel">{{ game.currentWaveDef()?.intel }}</p>
         </div>
 
         @if (!game.waveActive() && !game.isGameOver() && !game.isVictory()) {
@@ -421,24 +433,160 @@ import { ALL_MAPS } from '../../core/models/map.model';
         }
       }
 
-      @media (max-width: 768px) {
+      @media (max-width: 767px) {
         .game-hud {
-          flex-direction: column;
-          align-items: stretch;
-          padding: var(--space-2);
-          gap: var(--space-2);
+          display: grid;
+          grid-template-columns: 1fr auto;
+          grid-template-rows: auto auto;
+          gap: 4px 8px;
+          padding: 6px 10px;
+          border-radius: 0 0 12px 12px;
+          border-top: none;
         }
-        .hud-group {
-          justify-content: center;
-          gap: var(--space-2);
+
+        .hud-group.resources {
+          grid-column: 1 / 2;
+          grid-row: 1;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-wrap: nowrap;
         }
-        .wave-center {
+
+        .stat-chip {
+          padding: 2px 6px;
+          gap: 4px;
+          .chip-icon {
+            font-size: 0.95rem;
+          }
+          .chip-label {
+            display: none;
+          }
+          .chip-value {
+            font-size: 0.75rem;
+          }
+        }
+
+        .hud-group.controls {
+          grid-column: 2 / 3;
+          grid-row: 1;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          justify-content: flex-end;
+          flex-wrap: nowrap;
+
+          .map-selector {
+            display: none;
+          }
+
+          .controller-pill {
+            display: none;
+          }
+
+          .hud-icon-btn {
+            min-width: 32px;
+            height: 32px;
+            font-size: 0.8rem;
+            padding: 0 4px;
+
+            &.speed-btn {
+              min-width: 44px;
+              font-size: 0.72rem;
+              .gamepad-hint {
+                display: none;
+              }
+            }
+          }
+        }
+
+        .hud-group.wave-center {
+          grid-column: 1 / -1;
+          grid-row: 2;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
           min-width: 0;
+          gap: 8px;
           width: 100%;
+
+          .wave-info {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            text-align: left;
+          }
+
+          .wave-mob-preview {
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+          }
+
+          .wave-title-row {
+            justify-content: flex-start;
+            gap: 6px;
+          }
+
+          .wave-badge {
+            font-size: 0.65rem;
+            padding: 1px 4px;
+          }
+
+          .wave-name {
+            font-size: 0.75rem;
+          }
+
+          .wave-intel {
+            display: none;
+          }
+
+          .call-wave-btn {
+            padding: 4px 10px;
+            font-size: 0.75rem;
+            gap: 4px;
+            min-height: 32px;
+            white-space: nowrap;
+            flex-shrink: 0;
+
+            .gamepad-hint {
+              font-size: 0.6rem;
+            }
+          }
+
+          .wave-in-progress {
+            padding: 4px 8px;
+            font-size: 0.7rem;
+            white-space: nowrap;
+            flex-shrink: 0;
+          }
         }
-        .controls-group {
-          justify-content: center;
+      }
+      .wave-mob-preview {
+        width: 38px;
+        height: 38px;
+        border-radius: 8px;
+        background: rgba(15, 23, 42, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        flex-shrink: 0;
+
+        .wave-mob-portrait {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
         }
+      }
+
+      .wave-text-content {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
       }
     `,
   ],
@@ -448,6 +596,11 @@ export class HudComponent {
   protected readonly gamepad = inject(GamepadService);
   protected readonly audio = inject(AudioService);
   protected readonly allMaps = ALL_MAPS;
+
+  protected readonly primaryMobType = computed(() => {
+    const wave = this.game.currentWaveDef();
+    return wave?.groups[0]?.mobType || 'skulker';
+  });
 
   protected onSelectMap(event: Event): void {
     const select = event.target as HTMLSelectElement;

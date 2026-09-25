@@ -5,7 +5,7 @@ import { GameComponent } from './game/game.component';
 import { StatusComponent } from './status/status.component';
 import { routes } from './app.routes';
 
-describe('Starter Application Tests', () => {
+describe('Crystal Wardens Application Tests', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App, GameComponent, StatusComponent],
@@ -20,23 +20,6 @@ describe('Starter Application Tests', () => {
       expect(app).toBeTruthy();
     });
 
-    it('should render the starter brand title', async () => {
-      const fixture = TestBed.createComponent(App);
-      await fixture.whenStable();
-      const compiled = fixture.nativeElement as HTMLElement;
-      expect(compiled.querySelector('.brand-title')?.textContent).toContain(
-        'Crystal Wardens: Tower Defense',
-      );
-    });
-
-    it('should render accessible navigation links for Arena and Diagnostics', async () => {
-      const fixture = TestBed.createComponent(App);
-      await fixture.whenStable();
-      const compiled = fixture.nativeElement as HTMLElement;
-      expect(compiled.querySelector('#nav-link-home')?.textContent?.trim()).toBe('Arena');
-      expect(compiled.querySelector('#nav-link-status')?.textContent?.trim()).toBe('Diagnostics');
-    });
-
     it('should render skip link for accessibility', async () => {
       const fixture = TestBed.createComponent(App);
       await fixture.whenStable();
@@ -45,10 +28,17 @@ describe('Starter Application Tests', () => {
       expect(skipLink).toBeTruthy();
       expect(skipLink?.getAttribute('href')).toBe('#main-content');
     });
+
+    it('should render console arena viewport', async () => {
+      const fixture = TestBed.createComponent(App);
+      await fixture.whenStable();
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.app-console-arena')).toBeTruthy();
+    });
   });
 
   describe('GameComponent', () => {
-    it('should create the game component and render HUD and battlefield', async () => {
+    it('should create the game component and render HUD, battlefield, and command dock', async () => {
       const fixture = TestBed.createComponent(GameComponent);
       await fixture.whenStable();
       const compiled = fixture.nativeElement as HTMLElement;

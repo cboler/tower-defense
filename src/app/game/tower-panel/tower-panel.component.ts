@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, output } from '@angular/core';
 import { GameService } from '../../core/services/game.service';
 import {
   TOWER_CLASSES,
@@ -14,6 +14,59 @@ import {
   imports: [],
   template: `
     <aside class="tower-command-panel" role="region" aria-label="Defenders & Upgrades Command Dock">
+      <!-- Drawer Handle Bar for Mobile Touch Affordance -->
+      <div class="drawer-handle-bar" aria-hidden="true">
+        <span class="drawer-handle"></span>
+      </div>
+
+      <!-- Panel Header Bar with Contextual Info & Close Action -->
+      <div class="panel-header-bar">
+        <div class="header-title-wrap">
+          <span class="panel-badge">
+            @if (game.selectedTower()) {
+              DEFENDER DOSSIER
+            } @else if (game.selectedTile(); as tile) {
+              @if (isBuildTile(tile)) {
+                VANTAGE PLATFORM ({{ tile.x }}, {{ tile.y }})
+              } @else if (isMazeTile(tile)) {
+                AETHER MAZE SLOT ({{ tile.x }}, {{ tile.y }})
+              } @else {
+                TACTICAL TILE
+              }
+            } @else {
+              DEFENDER COMMAND
+            }
+          </span>
+          <h3 class="panel-heading">
+            @if (game.selectedTower(); as tower) {
+              {{ getDef(tower.classId).name }} (Lv.{{ tower.level }})
+            } @else if (game.selectedTile(); as tile) {
+              @if (isBuildTile(tile)) {
+                Deploy {{ activeClassDef().name }}
+              } @else if (isMazeTile(tile)) {
+                Erect Aether Barricade
+              } @else {
+                Field Vantage Point
+              }
+            } @else {
+              Recruit Defender
+            }
+          </h3>
+        </div>
+
+        <button
+          type="button"
+          class="panel-close-btn"
+          id="panel-close-btn"
+          (click)="onClose()"
+          title="Deselect / Close Command Panel [B]"
+          aria-label="Close command panel"
+        >
+          <span class="close-icon" aria-hidden="true">✕</span>
+          <span class="gamepad-hint" aria-hidden="true">[B]</span>
+        </button>
+      </div>
+
       <!-- 1. Class Deck / Dock for Recruitment -->
       <section class="class-deck-section" aria-label="Recruit Fantasy Class">
         <div class="deck-header">
@@ -30,11 +83,23 @@ import {
               [class.is-affordable]="game.gold() >= c.cost"
               (click)="game.setSelectedClass(c.id)"
               [title]="c.name + ' - ' + c.description"
+              [attr.aria-label]="'Recruit ' + c.name"
             >
               <div class="card-badge" [style.background-color]="c.color">
                 <span class="badge-role">{{ c.badge }}</span>
               </div>
-              <span class="card-icon" aria-hidden="true">{{ c.icon }}</span>
+              <div class="card-portrait-wrap">
+                @if (c.id === 'barricade') {
+                  <span class="card-icon" aria-hidden="true">🛡️</span>
+                } @else {
+                  <img
+                    [src]="'assets/portraits/' + c.id + '.png'"
+                    [alt]="c.name"
+                    class="card-portrait-img"
+                    loading="lazy"
+                  />
+                }
+              </div>
               <span class="card-name">{{ c.name }}</span>
               <div class="card-cost" [class.unaffordable]="game.gold() < c.cost">
                 <span class="gold-icon" aria-hidden="true">🪙</span>
@@ -52,7 +117,15 @@ import {
           <div class="tower-dossier">
             <div class="dossier-main">
               <div class="dossier-avatar" [style.border-color]="getDef(tower.classId).color">
-                <span class="avatar-icon">{{ getDef(tower.classId).icon }}</span>
+                @if (tower.classId === 'barricade') {
+                  <span class="avatar-icon">🛡️</span>
+                } @else {
+                  <img
+                    [src]="'assets/portraits/' + tower.classId + '.png'"
+                    [alt]="getDef(tower.classId).name"
+                    class="dossier-portrait-img"
+                  />
+                }
                 <span class="avatar-level">Lv.{{ tower.level }}</span>
               </div>
 
@@ -188,15 +261,84 @@ import {
   `,
   styles: [
     `
+      :host {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
       .tower-command-panel {
         display: flex;
         flex-direction: column;
-        gap: var(--space-4);
+        gap: var(--space-3);
         padding: var(--space-4);
         background: linear-gradient(180deg, #111827 0%, #0c1322 100%);
         border: 1px solid var(--border-subtle);
         border-radius: var(--radius-lg);
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      }
+
+      .drawer-handle-bar {
+        display: none;
+        justify-content: center;
+        padding: 2px 0 6px;
+      }
+
+      .drawer-handle {
+        width: 36px;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.25);
+        border-radius: 9999px;
+      }
+
+      .panel-header-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-bottom: var(--space-2);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .header-title-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+
+      .panel-badge {
+        font-family: var(--font-tactical);
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: var(--color-primary);
+      }
+
+      .panel-heading {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .panel-close-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        background: rgba(30, 41, 59, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: var(--radius-sm);
+        color: #cbd5e1;
+        cursor: pointer;
+        font-size: 0.75rem;
+        transition: all 0.15s ease;
+
+        &:hover {
+          background: rgba(239, 68, 68, 0.2);
+          border-color: #f87171;
+          color: #f87171;
+        }
       }
 
       /* Class Deck */
@@ -268,11 +410,30 @@ import {
         font-weight: 700;
         color: #0f172a;
         line-height: 1;
+        z-index: 2;
       }
 
-      .card-icon {
-        font-size: 1.4rem;
+      .card-portrait-wrap {
+        width: 44px;
+        height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         margin: 4px 0 2px 0;
+        border-radius: 8px;
+        background: radial-gradient(circle, rgba(255, 255, 255, 0.08) 0%, transparent 70%);
+
+        .card-portrait-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          border-radius: 6px;
+          filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+        }
+
+        .card-icon {
+          font-size: 1.6rem;
+        }
       }
 
       .card-name {
@@ -323,23 +484,37 @@ import {
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        width: 68px;
-        height: 68px;
-        background: #1e293b;
+        width: 72px;
+        height: 72px;
+        background: #111827;
         border: 2px solid;
         border-radius: var(--radius-md);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        overflow: hidden;
+
+        .dossier-portrait-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
 
         .avatar-icon {
-          font-size: 1.8rem;
+          font-size: 2rem;
         }
+
         .avatar-level {
           position: absolute;
           bottom: 2px;
+          right: 2px;
+          background: rgba(2, 132, 199, 0.9);
+          border: 1px solid #38bdf8;
+          border-radius: 4px;
+          padding: 1px 4px;
           font-family: var(--font-mono);
-          font-size: 0.65rem;
+          font-size: 0.62rem;
           font-weight: 800;
-          color: #38bdf8;
+          color: #ffffff;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
         }
       }
 
@@ -569,12 +744,143 @@ import {
           font-size: var(--font-size-xs);
         }
       }
+
+      /* Mobile First (<= 767px, Pixel 9 Pro) */
+      @media (max-width: 767px) {
+        .drawer-handle-bar {
+          display: flex;
+        }
+
+        .tower-command-panel {
+          padding: 6px 12px 14px;
+          gap: 8px;
+          max-height: 48dvh;
+          overflow-y: auto;
+          background: rgba(11, 18, 33, 0.96);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border-top: 2px solid var(--color-primary);
+          border-radius: 18px 18px 0 0;
+          box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.85);
+        }
+
+        .class-cards-scroll {
+          display: flex;
+          overflow-x: auto;
+          gap: 6px;
+          padding-bottom: 4px;
+          scroll-snap-type: x mandatory;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        .class-card {
+          flex: 0 0 70px;
+          scroll-snap-align: start;
+          padding: 4px 2px;
+        }
+
+        .card-portrait-wrap {
+          width: 36px;
+          height: 36px;
+        }
+
+        .card-name {
+          font-size: 0.65rem;
+          max-width: 66px;
+        }
+
+        .card-cost {
+          font-size: 0.65rem;
+        }
+
+        .stats-matrix {
+          grid-template-columns: repeat(4, 1fr) !important;
+          gap: 4px !important;
+        }
+
+        .stat-cell {
+          padding: 4px 2px !important;
+        }
+
+        .stat-val {
+          font-size: 0.78rem !important;
+        }
+
+        .dossier-actions {
+          flex-direction: row !important;
+          gap: 6px !important;
+        }
+
+        .action-btn {
+          min-height: 42px !important;
+          padding: 8px 10px !important;
+          font-size: 0.78rem !important;
+        }
+      }
+
+      /* Tablet (768px - 1024px) */
+      @media (min-width: 768px) and (max-width: 1024px) {
+        .tower-command-panel {
+          display: grid;
+          grid-template-columns: 1.1fr 0.9fr;
+          gap: 12px;
+          padding: 10px 14px;
+          max-height: 250px;
+          overflow-y: auto;
+        }
+
+        .drawer-handle-bar {
+          display: none;
+        }
+
+        .panel-header-bar {
+          grid-column: 1 / -1;
+        }
+
+        .class-cards-scroll {
+          grid-template-columns: repeat(4, 1fr);
+          gap: 6px;
+        }
+
+        .inspector-section {
+          border-top: none;
+          border-left: 1px solid var(--border-subtle);
+          padding-top: 0;
+          padding-left: 12px;
+        }
+      }
+
+      /* Desktop (> 1024px) */
+      @media (min-width: 1025px) {
+        .tower-command-panel {
+          height: 100%;
+          max-height: 100%;
+          overflow-y: auto;
+          padding: 14px;
+          gap: 12px;
+        }
+
+        .drawer-handle-bar {
+          display: none;
+        }
+
+        .class-cards-scroll {
+          grid-template-columns: repeat(2, 1fr);
+          gap: 6px;
+        }
+      }
     `,
   ],
 })
 export class TowerPanelComponent {
+  public readonly closePanel = output<void>();
   protected readonly game = inject(GameService);
   protected readonly classRoster: TowerClassDefinition[] = Object.values(TOWER_CLASSES);
+
+  public onClose(): void {
+    this.closePanel.emit();
+    this.game.selectTile(-1, -1);
+  }
   protected readonly priorities: TargetPriority[] = [
     'first',
     'last',

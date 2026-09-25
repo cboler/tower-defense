@@ -41,7 +41,7 @@ export class GameService implements OnDestroy {
 
   // Selection & Interactivity
   public readonly selectedClassId = signal<TowerClassId>('blade-warden');
-  public readonly selectedTile = signal<Point | null>(null);
+  public readonly selectedTile = signal<Point | null>({ x: 0, y: 0 });
 
   // Entities
   public readonly towers = signal<TowerInstance[]>([]);
@@ -104,7 +104,7 @@ export class GameService implements OnDestroy {
     this.isPaused.set(false);
     this.isGameOver.set(false);
     this.isVictory.set(false);
-    this.selectedTile.set(null);
+    this.selectedTile.set({ x: 0, y: 0 });
     this.towers.set([]);
     this.mobs.set([]);
     this.projectiles.set([]);
@@ -180,9 +180,30 @@ export class GameService implements OnDestroy {
   }
 
   public selectTile(x: number, y: number): void {
+    if (x < 0 || y < 0) {
+      this.selectedTile.set(null);
+      return;
+    }
     const map = this.activeMap();
-    if (x < 0 || x >= map.width || y < 0 || y >= map.height) return;
+    if (x >= map.width || y >= map.height) return;
     this.selectedTile.set({ x, y });
+    this.audio.playSelect();
+  }
+
+  public cycleTargetPriorityForTower(towerId: string): void {
+    const t = this.towers().find((tower) => tower.id === towerId);
+    if (!t || t.classId === 'barricade' || t.classId === 'oracle') return;
+    const priorities: TargetPriority[] = [
+      'first',
+      'strongest',
+      'weakest',
+      'flying',
+      'closest',
+      'last',
+    ];
+    const curIdx = priorities.indexOf(t.targetPriority);
+    const nextPriority = priorities[(curIdx + 1) % priorities.length];
+    this.setTargetPriority(towerId, nextPriority);
     this.audio.playSelect();
   }
 

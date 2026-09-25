@@ -11,7 +11,9 @@ export type GamepadAction =
   | 'cursor-up'
   | 'cursor-down'
   | 'cursor-left'
-  | 'cursor-right';
+  | 'cursor-right'
+  | 'cycle-camera'
+  | 'toggle-menu';
 
 export type Direction = 'up' | 'down' | 'left' | 'right';
 
@@ -138,7 +140,8 @@ export class GamepadService implements OnDestroy {
     // 3: Y (Cycle Speed 1x -> 2x -> 4x)
     // 4: LB (Previous Class)
     // 5: RB (Next Class)
-    const hasAnyButtonEdge = edge(0) || edge(1) || edge(2) || edge(3) || edge(4) || edge(5);
+    const hasAnyButtonEdge =
+      edge(0) || edge(1) || edge(2) || edge(3) || edge(4) || edge(5) || edge(8) || edge(9);
 
     if (hasAnyButtonEdge) {
       this.zone.run(() => {
@@ -151,10 +154,10 @@ export class GamepadService implements OnDestroy {
           // Cancel button
           this.cancel();
         } else if (edge(2)) {
-          // X: Start Wave
+          // X: Start Wave / Action
           this.actionSource.next('start-wave');
         } else if (edge(3)) {
-          // Y: Toggle Speed
+          // Y: Toggle Speed / Action
           this.actionSource.next('toggle-speed');
         } else if (edge(4)) {
           // LB: Prev Class
@@ -162,6 +165,12 @@ export class GamepadService implements OnDestroy {
         } else if (edge(5)) {
           // RB: Next Class
           this.actionSource.next('next-class');
+        } else if (edge(8)) {
+          // Select / Back / View: Cycle Camera View
+          this.actionSource.next('cycle-camera');
+        } else if (edge(9)) {
+          // Start / Menu: Toggle Pause Options Menu
+          this.actionSource.next('toggle-menu');
         }
       });
     }
@@ -200,11 +209,26 @@ export class GamepadService implements OnDestroy {
   }
 
   private navigate(direction: Direction): void {
+    const modal = this.modal();
+    const isBattlefieldActive = !!this.document.getElementById('battlefield-map');
+
+    if (isBattlefieldActive && !modal) {
+      // In main battlefield gameplay, directional inputs ALWAYS move the tactical grid cursor!
+      this.clearFocusHighlight();
+      if (
+        this.document.activeElement instanceof HTMLElement &&
+        this.document.activeElement !== this.document.body
+      ) {
+        this.document.activeElement.blur();
+      }
+      this.actionSource.next(`cursor-${direction}` as GamepadAction);
+      return;
+    }
+
     const controls = this.controls();
     const active = this.document.activeElement as HTMLElement;
 
     if (controls.length === 0) {
-      // If no DOM control is focused, emit cursor movement directly for game map
       this.actionSource.next(`cursor-${direction}` as GamepadAction);
       return;
     }
@@ -248,11 +272,24 @@ export class GamepadService implements OnDestroy {
   }
 
   private activateOrEmit(): void {
+    const modal = this.modal();
+    const isBattlefieldActive = !!this.document.getElementById('battlefield-map');
     const active = this.document.activeElement as HTMLElement;
+
+    if (isBattlefieldActive && !modal) {
+      this.actionSource.next('confirm');
+      return;
+    }
+
     if (active && this.controls().includes(active)) {
       active.click();
     } else {
-      this.actionSource.next('confirm');
+      const controls = this.controls();
+      if (controls.length > 0) {
+        controls[0].click();
+      } else {
+        this.actionSource.next('confirm');
+      }
     }
   }
 
@@ -260,6 +297,7 @@ export class GamepadService implements OnDestroy {
     const modal = this.modal();
     if (modal) {
       modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      this.actionSource.next('cancel');
     } else {
       this.actionSource.next('cancel');
     }
