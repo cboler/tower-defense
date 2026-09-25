@@ -165,7 +165,8 @@ import { ALL_MAPS } from '../../core/models/map.model';
       .hud-group {
         display: flex;
         align-items: center;
-        gap: var(--space-3);
+        flex-wrap: wrap;
+        gap: var(--space-2);
       }
 
       /* Stat Chips */
@@ -424,9 +425,19 @@ import { ALL_MAPS } from '../../core/models/map.model';
         .game-hud {
           flex-direction: column;
           align-items: stretch;
+          padding: var(--space-2);
+          gap: var(--space-2);
         }
         .hud-group {
-          justify-content: space-between;
+          justify-content: center;
+          gap: var(--space-2);
+        }
+        .wave-center {
+          min-width: 0;
+          width: 100%;
+        }
+        .controls-group {
+          justify-content: center;
         }
       }
     `,

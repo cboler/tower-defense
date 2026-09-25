@@ -741,6 +741,18 @@ import { TileCode } from '../../core/models/map.model';
       .guide-desc {
         color: var(--text-secondary);
       }
+
+      @media (max-width: 600px) {
+        .controller-guide-bar {
+          gap: var(--space-1) var(--space-2);
+          padding: var(--space-1) var(--space-2);
+          font-size: 0.65rem;
+        }
+        .key-badge {
+          font-size: 0.55rem;
+          padding: 1px 4px;
+        }
+      }
     `,
   ],
 })
