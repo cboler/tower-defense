@@ -8,10 +8,14 @@ import {
   TowerInstance,
   TowerLevelConfig,
 } from '../models/tower.model';
-import { MOB_TYPES, MobInstance, MobTypeId, StatusEffect } from '../models/mob.model';
+import { MOB_TYPES, MobInstance, MobTypeId } from '../models/mob.model';
 import { FloatingText, GameSpeed, ParticleFx, Projectile } from '../models/game-state.model';
 import { PathfindingService } from './pathfinding.service';
 import { AudioService } from './audio.service';
+import { CampaignService } from './campaign.service';
+import { CampaignMission } from '../models/campaign.model';
+import { GameRulesService } from './game-rules.service';
+import { StoryService } from './story.service';
 
 interface SpawnQueueItem {
   mobType: MobTypeId;
@@ -24,20 +28,41 @@ export class GameService implements OnDestroy {
   private readonly zone = inject(NgZone);
   private readonly pathfinding = inject(PathfindingService);
   private readonly audio = inject(AudioService);
+  public readonly campaign = inject(CampaignService);
+  public readonly rules = inject(GameRulesService);
+  public readonly story = inject(StoryService);
 
   // Core Game Signals
+  public readonly activeMission = computed(() => this.campaign.activeMission());
   public readonly activeMap = signal<MapDefinition>(MAP_VERDANT_CROSSROADS);
   public readonly gold = signal<number>(420);
   public readonly crystals = signal<number>(20);
   public readonly maxCrystals = signal<number>(20);
   public readonly score = signal<number>(0);
   public readonly currentWaveIndex = signal<number>(0); // 0-based
-  public readonly totalWaves = signal<number>(15);
+  public readonly totalWaves = signal<number>(31);
   public readonly waveActive = signal<boolean>(false);
   public readonly gameSpeed = signal<GameSpeed>(1);
   public readonly isPaused = signal<boolean>(false);
   public readonly isGameOver = signal<boolean>(false);
   public readonly isVictory = signal<boolean>(false);
+  public readonly isCampaignModalOpen = signal<boolean>(false);
+  public readonly isBestiaryModalOpen = signal<boolean>(false);
+
+  public toggleCampaignModal(): void {
+    this.isCampaignModalOpen.update((v) => !v);
+    this.audio.playSelect();
+  }
+
+  public toggleBestiaryModal(): void {
+    this.isBestiaryModalOpen.update((v) => !v);
+    this.audio.playSelect();
+  }
+
+  // Wave Flow & Pacing Signals (Crystal Defenders Inter-wave Countdown & Rush)
+  public readonly countdownDurationMs = 20000; // 20s preparation window
+  public readonly countdownRemainingMs = signal<number>(20000);
+  public readonly isCountdownActive = signal<boolean>(true);
 
   // Selection & Interactivity
   public readonly selectedClassId = signal<TowerClassId>('blade-warden');
@@ -68,13 +93,82 @@ export class GameService implements OnDestroy {
     return map.waves[idx] ?? null;
   });
 
+  public readonly secondsRemaining = computed(() =>
+    Math.max(0, Math.ceil(this.countdownRemainingMs() / 1000)),
+  );
+
+  public readonly earlyCallBonusGold = computed(() => {
+    return this.rules.calculateEarlyCallBonus(
+      this.secondsRemaining(),
+      this.isCountdownActive(),
+      this.waveActive(),
+      this.currentWaveIndex(),
+      this.totalWaves(),
+    );
+  });
+
+  public readonly upcomingWaveDef = computed(() => {
+    const map = this.activeMap();
+    const idx = this.waveActive() ? this.currentWaveIndex() + 1 : this.currentWaveIndex();
+    return map.waves[idx] ?? null;
+  });
+
+  public readonly waveCompositionSummary = computed(() => {
+    const wave = this.upcomingWaveDef();
+    if (!wave) return [];
+
+    const summaryMap = new Map<
+      MobTypeId,
+      {
+        count: number;
+        mobType: MobTypeId;
+        name: string;
+        isFlying: boolean;
+        armor: number;
+        magicResist: number;
+        icon: string;
+        color: string;
+      }
+    >();
+
+    for (const g of wave.groups) {
+      const def = MOB_TYPES[g.mobType];
+      const cur = summaryMap.get(g.mobType);
+      if (cur) {
+        cur.count += g.count;
+      } else {
+        summaryMap.set(g.mobType, {
+          count: g.count,
+          mobType: g.mobType,
+          name: def.name,
+          isFlying: def.isFlying,
+          armor: def.armor,
+          magicResist: def.magicResist,
+          icon: def.icon,
+          color: def.color,
+        });
+      }
+    }
+    return Array.from(summaryMap.values());
+  });
+
   private frameId: number | null = null;
   private lastTime = 0;
   private gameTimeMs = 0;
   private spawnQueue: SpawnQueueItem[] = [];
 
   constructor() {
-    this.loadMap(MAP_VERDANT_CROSSROADS);
+    this.loadMission(this.campaign.activeMission());
+  }
+
+  public loadMission(mission: CampaignMission): void {
+    this.campaign.selectMission(mission.id);
+    this.loadMap(mission.mapDefinition);
+    let startGold = mission.mapDefinition.startingGold;
+    for (const mod of mission.modifiers) {
+      if (mod.startingGoldBonus) startGold += mod.startingGoldBonus;
+    }
+    this.gold.set(startGold);
   }
 
   public startLoop(): void {
@@ -112,6 +206,8 @@ export class GameService implements OnDestroy {
     this.particles.set([]);
     this.barricades.set(new Set());
     this.spawnQueue = [];
+    this.countdownRemainingMs.set(this.countdownDurationMs);
+    this.isCountdownActive.set(true);
 
     this.recalculatePaths();
     this.startLoop();
@@ -127,16 +223,77 @@ export class GameService implements OnDestroy {
   }
 
   public startNextWave(): void {
-    if (this.waveActive() || this.isGameOver() || this.isVictory()) return;
+    if (this.isGameOver() || this.isVictory()) return;
 
-    const wave = this.currentWaveDef();
+    if (this.isCountdownActive()) {
+      // Early dispatch before countdown finishes -> Gil bonus!
+      const bonus = this.earlyCallBonusGold();
+      this.isCountdownActive.set(false);
+      this.countdownRemainingMs.set(0);
+
+      if (bonus > 0) {
+        this.gold.update((g) => g + bonus);
+        this.score.update((s) => s + bonus * 15);
+        this.audio.playEarlyCallHorn();
+        this.addFloatingText(
+          `Early Dispatch! +${bonus}G`,
+          this.activeMap().width / 2,
+          this.activeMap().height / 2,
+          '#fbbf24',
+          'gold',
+        );
+      } else {
+        this.audio.playWaveStart();
+      }
+
+      this.launchWave(this.currentWaveIndex());
+      return;
+    }
+
+    if (this.waveActive()) {
+      // Rush next wave while current wave is still active!
+      const nextIdx = this.currentWaveIndex() + 1;
+      if (nextIdx >= this.totalWaves()) return;
+
+      const rushBonus = this.earlyCallBonusGold();
+      this.gold.update((g) => g + rushBonus);
+      this.score.update((s) => s + rushBonus * 20);
+      this.audio.playEarlyCallHorn();
+      this.addFloatingText(
+        `WAVE RUSH! +${rushBonus}G`,
+        this.activeMap().width / 2,
+        this.activeMap().height / 2,
+        '#f97316',
+        'alert',
+      );
+
+      this.currentWaveIndex.set(nextIdx);
+      this.enqueueWaveMobs(nextIdx);
+      return;
+    }
+
+    // Default call
+    this.audio.playWaveStart();
+    this.launchWave(this.currentWaveIndex());
+  }
+
+  private launchWave(waveIdx: number): void {
+    const wave = this.activeMap().waves[waveIdx];
     if (!wave) return;
 
     this.waveActive.set(true);
-    this.audio.playWaveStart();
-
-    // Prepare spawn queue
     this.spawnQueue = [];
+    this.enqueueWaveMobs(waveIdx);
+
+    const alertEvent = this.story.getWaveAlertEvent(waveIdx + 1);
+    if (alertEvent) {
+      this.story.startSequence(alertEvent);
+    }
+  }
+
+  private enqueueWaveMobs(waveIdx: number): void {
+    const wave = this.activeMap().waves[waveIdx];
+    if (!wave) return;
 
     for (const group of wave.groups) {
       const delay = group.spawnDelayMs;
@@ -148,8 +305,6 @@ export class GameService implements OnDestroy {
         });
       }
     }
-
-    // Sort queue by spawn time
     this.spawnQueue.sort((a, b) => a.spawnTimeMs - b.spawnTimeMs);
   }
 
@@ -192,7 +347,7 @@ export class GameService implements OnDestroy {
 
   public cycleTargetPriorityForTower(towerId: string): void {
     const t = this.towers().find((tower) => tower.id === towerId);
-    if (!t || t.classId === 'barricade' || t.classId === 'oracle') return;
+    if (!t || t.classId === 'barricade' || t.classId === 'oracle' || t.classId === 'rogue') return;
     const priorities: TargetPriority[] = [
       'first',
       'strongest',
@@ -356,6 +511,25 @@ export class GameService implements OnDestroy {
   private update(deltaMs: number): void {
     const deltaSeconds = deltaMs / 1000;
 
+    // 0. Inter-wave Countdown Management
+    if (this.isCountdownActive()) {
+      const prevSec = Math.ceil(this.countdownRemainingMs() / 1000);
+      const nextMs = Math.max(0, this.countdownRemainingMs() - deltaMs);
+      this.countdownRemainingMs.set(nextMs);
+      const newSec = Math.ceil(nextMs / 1000);
+
+      // Play tick sound on last 5 seconds transitions
+      if (newSec !== prevSec && newSec <= 5 && newSec > 0) {
+        this.audio.playCountdownTick();
+      }
+
+      if (nextMs <= 0) {
+        this.isCountdownActive.set(false);
+        this.audio.playWaveStart();
+        this.launchWave(this.currentWaveIndex());
+      }
+    }
+
     // 1. Spawn monsters from queue
     while (this.spawnQueue.length > 0 && this.spawnQueue[0].spawnTimeMs <= this.gameTimeMs) {
       const item = this.spawnQueue.shift()!;
@@ -382,27 +556,7 @@ export class GameService implements OnDestroy {
   }
 
   private calculateOracleBuffs(): Map<string, { speedMult: number; damageMult: number }> {
-    const buffs = new Map<string, { speedMult: number; damageMult: number }>();
-    const towers = this.towers();
-
-    for (const oracle of towers) {
-      if (oracle.classId !== 'oracle') continue;
-      const def = TOWER_CLASSES.oracle;
-      const lvl = def.levels[oracle.level - 1];
-      const range = lvl.range;
-
-      for (const target of towers) {
-        if (target.id === oracle.id) continue;
-        const dist = Math.hypot(target.x - oracle.x, target.y - oracle.y);
-        if (dist <= range) {
-          const current = buffs.get(target.id) ?? { speedMult: 1.0, damageMult: 1.0 };
-          current.speedMult += lvl.buffSpeedPercent ?? 0.25;
-          current.damageMult += lvl.buffDamagePercent ?? 0.15;
-          buffs.set(target.id, current);
-        }
-      }
-    }
-    return buffs;
+    return this.rules.calculateOracleBuffs(this.towers());
   }
 
   private spawnMob(typeId: MobTypeId, hpMultiplier: number): void {
@@ -449,32 +603,18 @@ export class GameService implements OnDestroy {
       if (mob.isDead) continue;
 
       // Update status effects
-      let speedFactor = 1.0;
-      let isStunned = false;
-      const nextEffects: StatusEffect[] = [];
+      mob.statusEffects = mob.statusEffects
+        .map((e) => ({ ...e, remainingMs: e.remainingMs - deltaSeconds * 1000 }))
+        .filter((e) => e.remainingMs > 0);
 
-      for (const effect of mob.statusEffects) {
-        effect.remainingMs -= deltaSeconds * 1000;
-        if (effect.remainingMs > 0) {
-          nextEffects.push(effect);
-          if (effect.type === 'slow') {
-            // Swiftbeak cuts slow in half!
-            const reduction =
-              mob.typeId === 'swiftbeak' ? effect.intensity * 0.5 : effect.intensity;
-            speedFactor *= 1 - reduction;
-          } else if (effect.type === 'stun') {
-            isStunned = true;
-          }
-        }
-      }
-      mob.statusEffects = nextEffects;
+      const moveResult = this.rules.resolveMobSpeed(
+        mob,
+        deltaSeconds,
+        this.activeMission().modifiers,
+      );
+      mob.effectiveSpeed = moveResult.effectiveSpeed;
 
-      // Pyre Core enrage when low on HP (<40%)
-      if (mob.typeId === 'pyre-core' && mob.hp < mob.maxHp * 0.4) {
-        speedFactor *= 1.5;
-      }
-
-      if (isStunned) {
+      if (moveResult.isStunned) {
         survivingMobs.push(mob);
         continue;
       }
@@ -482,9 +622,7 @@ export class GameService implements OnDestroy {
       const path = mob.isFlying ? this.airPath() : this.groundPath();
       if (path.length === 0) continue;
 
-      const effectiveSpeed = mob.baseSpeed * Math.max(0.2, speedFactor);
-      mob.effectiveSpeed = effectiveSpeed;
-      const stepDistance = effectiveSpeed * deltaSeconds;
+      const stepDistance = moveResult.stepDistance;
 
       // Move toward next waypoint
       let remainingDistance = stepDistance;
@@ -519,6 +657,13 @@ export class GameService implements OnDestroy {
         if (this.crystals() <= 0) {
           this.isGameOver.set(true);
           this.audio.playDefeat();
+          this.campaign.recordMissionResult(
+            this.activeMission().id,
+            this.currentWaveIndex(),
+            this.score(),
+            0,
+            this.totalWaves(),
+          );
         }
       } else {
         survivingMobs.push(mob);
@@ -535,6 +680,35 @@ export class GameService implements OnDestroy {
 
     for (const tower of towers) {
       if (tower.classId === 'barricade' || tower.classId === 'oracle') continue;
+
+      if (tower.classId === 'rogue') {
+        // Rogue / Thief: Passive economy catalyst and periodic pickpocketing
+        const def = TOWER_CLASSES.rogue;
+        const lvl = def.levels[tower.level - 1];
+        const buff = oracleBuffs.get(tower.id) ?? { speedMult: 1.0, damageMult: 1.0 };
+        const effectiveCadence = lvl.cadence / buff.speedMult;
+
+        if (this.gameTimeMs - tower.lastActionTime >= effectiveCadence * 1000) {
+          // Find any passing ground creep in range to pickpocket
+          const target = this.mobs().find(
+            (m) =>
+              !m.isDead &&
+              !m.hasEscaped &&
+              !m.isFlying &&
+              Math.hypot(m.x - tower.x, m.y - tower.y) <= lvl.range,
+          );
+          if (target) {
+            tower.lastActionTime = this.gameTimeMs;
+            const stolen = lvl.pickpocketGold ?? 2;
+            this.gold.update((g) => g + stolen);
+            tower.goldGenerated += stolen;
+            this.audio.playCoin();
+            this.addFloatingText(`+${stolen}G`, target.x, target.y - 0.2, '#facc15', 'gold');
+            this.addParticle(target.x, target.y, '#facc15', 0.6, 'aura');
+          }
+        }
+        continue;
+      }
 
       const def = TOWER_CLASSES[tower.classId];
       const lvl = def.levels[tower.level - 1];
@@ -682,18 +856,6 @@ export class GameService implements OnDestroy {
         break;
       }
 
-      case 'rogue': {
-        // Fast dagger strike with plunder
-        this.audio.playSlash();
-        this.addParticle(target.x, target.y, '#facc15', 0.9, 'slash');
-        this.dealDamage(target, damage, 'physical', tower);
-        const goldGain = lvl.goldPerHit ?? 2;
-        this.gold.update((g) => g + goldGain);
-        tower.goldGenerated += goldGain;
-        this.addFloatingText(`+${goldGain}G`, tower.x, tower.y, '#facc15', 'gold');
-        break;
-      }
-
       case 'lancer': {
         // Spear plunge / jump
         this.spawnProjectile({
@@ -821,28 +983,25 @@ export class GameService implements OnDestroy {
     damageType: DamageType,
     tower: TowerInstance | null,
   ): void {
-    let effectiveDamage = rawDamage;
-
-    if (damageType === 'physical') {
-      // Physical damage reduced by armor
-      effectiveDamage = Math.max(1, Math.round(rawDamage * (1 - mob.armor)));
-    } else if (damageType === 'magic') {
-      // Magic damage ignores physical armor; reduced only by magic resistance
-      effectiveDamage = Math.max(1, Math.round(rawDamage * (1 - mob.magicResist)));
-    }
+    const dmg = this.rules.calculateEffectiveDamage(
+      rawDamage,
+      damageType,
+      mob,
+      this.activeMission().modifiers,
+    );
+    const effectiveDamage = dmg.effectiveDamage;
 
     mob.hp -= effectiveDamage;
     if (tower) {
       tower.damageDealt += effectiveDamage;
     }
 
-    const textColor = damageType === 'magic' ? '#c084fc' : '#f87171';
     this.addFloatingText(
       `-${effectiveDamage}`,
       mob.x + (Math.random() - 0.5) * 0.4,
       mob.y - 0.2,
-      textColor,
-      damageType === 'magic' ? 'magic' : 'damage',
+      dmg.textColor,
+      dmg.textType,
     );
 
     if (mob.hp <= 0 && !mob.isDead) {
@@ -852,15 +1011,38 @@ export class GameService implements OnDestroy {
   }
 
   private onMobDefeated(mob: MobInstance, tower: TowerInstance | null): void {
-    this.gold.update((g) => g + mob.goldReward);
-    this.score.update((s) => s + mob.goldReward * 10);
+    const bounty = this.rules.calculateKillBounty(
+      mob,
+      this.towers(),
+      this.activeMission().modifiers,
+    );
+    const earnedGold = bounty.earnedGold;
+    const bonusGold = bounty.bonusGold;
+    const plunderRogue = bounty.plunderRogue;
+    const bestMultiplier = bounty.multiplier;
+
+    this.gold.update((g) => g + earnedGold);
+    this.score.update((s) => s + earnedGold * 10);
     this.audio.playCoin();
 
     if (tower) {
       tower.kills++;
     }
 
-    this.addFloatingText(`+${mob.goldReward}G`, mob.x, mob.y, '#fbbf24', 'gold');
+    if (plunderRogue && bonusGold > 0) {
+      plunderRogue.goldGenerated += bonusGold;
+      this.addFloatingText(
+        `+${earnedGold}G (x${bestMultiplier} Plunder!)`,
+        mob.x,
+        mob.y,
+        '#facc15',
+        'gold',
+      );
+      this.addParticle(plunderRogue.x, plunderRogue.y, '#facc15', 1.2, 'aura');
+    } else {
+      this.addFloatingText(`+${mob.goldReward}G`, mob.x, mob.y, '#fbbf24', 'gold');
+    }
+
     this.addParticle(mob.x, mob.y, mob.color, 1.0, 'explosion');
   }
 
@@ -902,8 +1084,25 @@ export class GameService implements OnDestroy {
       if (nextIdx >= this.totalWaves()) {
         this.isVictory.set(true);
         this.audio.playVictory();
+        this.isCountdownActive.set(false);
+
+        // FFCD Authentic Clear Bonus Calculation
+        const crystalHonorBonus = this.crystals() * 1000;
+        const goldHonorBonus = this.gold() * 10;
+        const totalHonorScore = this.score() + crystalHonorBonus + goldHonorBonus;
+        this.score.set(totalHonorScore);
+
+        this.campaign.recordMissionResult(
+          this.activeMission().id,
+          31,
+          totalHonorScore,
+          this.crystals(),
+          31,
+        );
       } else {
         this.currentWaveIndex.set(nextIdx);
+        this.isCountdownActive.set(true);
+        this.countdownRemainingMs.set(this.countdownDurationMs);
       }
     }
   }

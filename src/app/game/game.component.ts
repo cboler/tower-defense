@@ -9,11 +9,21 @@ import { HudComponent } from './hud/hud.component';
 import { BattleMapComponent } from './battle-map/battle-map.component';
 import { TowerPanelComponent } from './tower-panel/tower-panel.component';
 import { CameraPreset, ThreeBattlefieldService } from './battle-map/three-battlefield.service';
+import { CampaignModalComponent } from './campaign-modal/campaign-modal.component';
+import { BestiaryModalComponent } from './bestiary-modal/bestiary-modal.component';
+import { StoryDialogueOverlayComponent } from './story-dialogue-overlay/story-dialogue-overlay.component';
 
 @Component({
   selector: 'app-game',
   standalone: true,
-  imports: [HudComponent, BattleMapComponent, TowerPanelComponent],
+  imports: [
+    HudComponent,
+    BattleMapComponent,
+    TowerPanelComponent,
+    CampaignModalComponent,
+    BestiaryModalComponent,
+    StoryDialogueOverlayComponent,
+  ],
   template: `
     <div class="game-view" role="main" aria-label="Crystal Wardens Arena">
       <!-- Top HUD -->
@@ -96,6 +106,34 @@ import { CameraPreset, ThreeBattlefieldService } from './battle-map/three-battle
               </div>
             </div>
 
+            <!-- Authentic FFCD Score Breakdown -->
+            <div class="score-breakdown-box">
+              <span class="breakdown-title">HONOR SCORE BREAKDOWN:</span>
+              <div class="breakdown-row">
+                <span>Crystal Preservation ({{ game.crystals() }} × 1,000)</span>
+                <span class="breakdown-pts">+{{ game.crystals() * 1000 }} pts</span>
+              </div>
+              <div class="breakdown-row">
+                <span>Treasury Surplus ({{ game.gold() }} × 10)</span>
+                <span class="breakdown-pts">+{{ game.gold() * 10 }} pts</span>
+              </div>
+            </div>
+
+            <!-- Campaign Victory Story Epilogue -->
+            @if (game.activeMission().victoryEpilogue; as epilogue) {
+              <div class="victory-story-box">
+                <div class="story-avatar-wrap">
+                  <img [src]="epilogue.avatar" [alt]="epilogue.speaker" class="epilogue-avatar" />
+                  <span class="story-speaker">{{ epilogue.speaker }}</span>
+                </div>
+                <div class="story-lines">
+                  @for (line of epilogue.lines; track line) {
+                    <p class="story-line">{{ line }}</p>
+                  }
+                </div>
+              </div>
+            }
+
             <div class="victory-actions">
               <button
                 type="button"
@@ -177,6 +215,19 @@ import { CameraPreset, ThreeBattlefieldService } from './battle-map/three-battle
           </div>
         </div>
       }
+
+      <!-- Campaign Chronicles Modal -->
+      @if (game.isCampaignModalOpen()) {
+        <app-campaign-modal (closeModal)="game.isCampaignModalOpen.set(false)" />
+      }
+
+      <!-- Monster Bestiary Modal -->
+      @if (game.isBestiaryModalOpen()) {
+        <app-bestiary-modal (closeModal)="game.isBestiaryModalOpen.set(false)" />
+      }
+
+      <!-- Story Cutscenes & Narrative Milestone Dialogue Overlay -->
+      <app-story-dialogue-overlay />
     </div>
   `,
   styles: [
@@ -554,6 +605,87 @@ import { CameraPreset, ThreeBattlefieldService } from './battle-map/three-battle
         justify-content: center;
       }
 
+      .score-breakdown-box {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: var(--radius-md);
+        padding: 8px 12px;
+        margin-bottom: var(--space-4);
+        text-align: left;
+      }
+
+      .breakdown-title {
+        font-family: var(--font-mono);
+        font-size: 0.62rem;
+        font-weight: 700;
+        color: #94a3b8;
+      }
+
+      .breakdown-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.75rem;
+        color: #cbd5e1;
+      }
+
+      .breakdown-pts {
+        font-family: var(--font-mono);
+        font-weight: 700;
+        color: #facc15;
+      }
+
+      .victory-story-box {
+        display: flex;
+        gap: 10px;
+        background: rgba(30, 41, 59, 0.6);
+        border-left: 3px solid #38bdf8;
+        border-radius: 0 8px 8px 0;
+        padding: 8px 12px;
+        margin-bottom: var(--space-4);
+        text-align: left;
+      }
+
+      .story-avatar-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 60px;
+        flex-shrink: 0;
+      }
+
+      .epilogue-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 6px;
+        border: 1px solid #38bdf8;
+        object-fit: cover;
+      }
+
+      .story-speaker {
+        font-size: 0.58rem;
+        font-weight: 700;
+        color: #38bdf8;
+        text-align: center;
+        margin-top: 2px;
+      }
+
+      .story-lines {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .story-line {
+        margin: 0;
+        font-size: 0.75rem;
+        color: #e2e8f0;
+        line-height: 1.35;
+      }
+
       .restart-btn {
         background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
         color: #ffffff;
@@ -832,14 +964,15 @@ export class GameComponent implements OnInit, OnDestroy {
   };
 
   protected restartGame(): void {
-    this.game.loadMap(this.game.activeMap());
+    this.game.loadMission(this.game.activeMission());
   }
 
   protected nextStage(): void {
-    const curId = this.game.activeMap().id;
-    const curIdx = ALL_MAPS.findIndex((m) => m.id === curId);
-    const nextMap = ALL_MAPS[(curIdx + 1) % ALL_MAPS.length];
-    this.game.loadMap(nextMap);
+    const all = this.game.campaign.missions();
+    const curId = this.game.activeMission().id;
+    const curIdx = all.findIndex((m) => m.id === curId);
+    const nextMission = all[(curIdx + 1) % all.length];
+    this.game.loadMission(nextMission);
   }
 
   protected getRank(): string {

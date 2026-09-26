@@ -268,4 +268,48 @@ export class AudioService {
       osc.stop(startTime + 0.5);
     });
   }
+
+  public playCountdownTick(): void {
+    const ctx = this.initContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, now);
+    osc.frequency.exponentialRampToValueAtTime(440, now + 0.04);
+
+    gain.gain.setValueAtTime(0.04, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.04);
+  }
+
+  public playEarlyCallHorn(): void {
+    const ctx = this.initContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const chord = [392.0, 523.25, 659.25, 783.99];
+    chord.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const startTime = now + idx * 0.06;
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, startTime);
+      osc.frequency.linearRampToValueAtTime(freq * 1.02, startTime + 0.28);
+
+      gain.gain.setValueAtTime(0.14, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.32);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(startTime);
+      osc.stop(startTime + 0.32);
+    });
+  }
 }

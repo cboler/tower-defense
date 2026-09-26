@@ -52,7 +52,7 @@ export const MAP_VERDANT_CROSSROADS: MapDefinition = {
     ['B', 'P', 'P', 'P', 'B', 'B', 'B', 'B', 'P', 'P', 'P', 'C', 'B', 'B'],
     ['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'],
   ],
-  waves: generateStandardWaves(15, 1.0),
+  waves: generateStandardWaves(31, 1.0),
 };
 
 export const MAP_SUNKEN_SANCTUM: MapDefinition = {
@@ -77,7 +77,7 @@ export const MAP_SUNKEN_SANCTUM: MapDefinition = {
     ['B', 'P', 'P', 'P', 'B', 'B', 'B', 'B', 'P', 'P', 'P', 'P', 'C', 'B'],
     ['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'],
   ],
-  waves: generateStandardWaves(15, 1.25),
+  waves: generateStandardWaves(31, 1.25),
 };
 
 export const MAP_MOLTEN_CALDERA: MapDefinition = {
@@ -102,7 +102,7 @@ export const MAP_MOLTEN_CALDERA: MapDefinition = {
     ['B', 'B', 'B', 'B', 'P', 'P', 'P', 'P', 'P', 'P', 'B', 'B', 'C', 'B'],
     ['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'],
   ],
-  waves: generateStandardWaves(15, 1.5),
+  waves: generateStandardWaves(31, 1.5),
 };
 
 export const ALL_MAPS: MapDefinition[] = [

@@ -161,4 +161,49 @@ test.describe('Crystal Wardens Tower Defense Smoke Tests', () => {
     });
     expect(arenaDirection).toBe('row');
   });
+
+  test('should open and interact with Campaign Chronicles and Monster Bestiary modals', async ({
+    page,
+  }) => {
+    await page.goto('/');
+
+    // 1. Open Campaign Chronicles Modal via HUD button
+    await page.locator('#campaign-hud-btn').click();
+    await expect(page.locator('#campaign-modal-title')).toBeVisible();
+    await expect(page.locator('.missions-rail')).toBeVisible();
+    await expect(page.locator('.briefing-box')).toBeVisible();
+    await expect(page.locator('.speaker-name')).toContainText('Warden Marshal Cedric');
+
+    // Deploy to mission to launch interactive story cutscene
+    await page.locator('#deploy-mission-btn').click();
+    await expect(page.locator('#campaign-modal-title')).not.toBeVisible();
+
+    // Verify Story Dialogue Cutscene Overlay appears
+    await expect(page.locator('.dialogue-card')).toBeVisible();
+    await expect(page.locator('#dialogue-speaker')).toContainText('Warden Marshal Cedric');
+    await expect(page.locator('#story-advance-btn')).toBeVisible();
+
+    // Advance dialogue step
+    await page.locator('#story-advance-btn').click();
+    await expect(page.locator('.step-indicator')).toContainText('2 / 4');
+
+    // Dismiss cutscene via skip button
+    await page.locator('#story-skip-btn').click();
+    await expect(page.locator('.dialogue-card')).not.toBeVisible();
+
+    // 2. Open Monster Bestiary Codex Modal via HUD button
+    await page.locator('#bestiary-hud-btn').click();
+    await expect(page.locator('#bestiary-title')).toBeVisible();
+    await expect(page.locator('.roster-rail')).toBeVisible();
+    await expect(page.locator('.strategy-advice-card')).toBeVisible();
+
+    // Click on Swiftbeak to inspect tactical counter
+    await page.locator('.roster-item-card:has-text("Swiftbeak")').click();
+    await expect(page.locator('.active-mob-name')).toContainText('Swiftbeak');
+    await expect(page.locator('.strategy-advice-card')).toContainText('Celerity runner');
+
+    // Close via close button
+    await page.locator('#close-bestiary-btn').click();
+    await expect(page.locator('#bestiary-title')).not.toBeVisible();
+  });
 });

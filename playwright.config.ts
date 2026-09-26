@@ -5,10 +5,10 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env['CI'],
   retries: process.env['CI'] ? 2 : 0,
-  workers: process.env['CI'] ? 1 : undefined,
+  workers: process.env['CI'] ? 1 : 2,
   reporter: 'list',
   use: {
-    baseURL: 'http://localhost:4200',
+    baseURL: 'http://localhost:4210',
     trace: 'on-first-retry',
   },
   projects: [
@@ -38,8 +38,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm start',
-    url: 'http://localhost:4200',
+    command: 'npm start -- --port 4210',
+    url: 'http://localhost:4210',
     reuseExistingServer: !process.env['CI'],
     timeout: 120 * 1000,
   },

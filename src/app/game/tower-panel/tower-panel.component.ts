@@ -137,29 +137,76 @@ import {
                 <p class="special-perk">{{ getCurLevel(tower).specialDescription }}</p>
 
                 <!-- Stats Grid -->
+                <!-- Stats Grid -->
                 <div class="stats-matrix">
-                  <div class="stat-cell">
-                    <span class="stat-lbl">Damage</span>
-                    <span class="stat-val">{{ getCurLevel(tower).damage }}</span>
-                  </div>
-                  <div class="stat-cell">
-                    <span class="stat-lbl">Range</span>
-                    <span class="stat-val">{{ getCurLevel(tower).range }} tiles</span>
-                  </div>
-                  <div class="stat-cell">
-                    <span class="stat-lbl">Cadence</span>
-                    <span class="stat-val">{{ getCurLevel(tower).cadence }}s</span>
-                  </div>
-                  <div class="stat-cell">
-                    <span class="stat-lbl">Kills</span>
-                    <span class="stat-val">{{ tower.kills }}</span>
-                  </div>
+                  @if (tower.classId === 'rogue') {
+                    <div class="stat-cell">
+                      <span class="stat-lbl">Plunder</span>
+                      <span class="stat-val highlight-gold"
+                        >x{{ getCurLevel(tower).killGoldMultiplier ?? 1.5 }}</span
+                      >
+                    </div>
+                    <div class="stat-cell">
+                      <span class="stat-lbl">Aura</span>
+                      <span class="stat-val">{{ getCurLevel(tower).range }} tiles</span>
+                    </div>
+                    <div class="stat-cell">
+                      <span class="stat-lbl">Pickpocket</span>
+                      <span class="stat-val">+{{ getCurLevel(tower).pickpocketGold ?? 2 }}G</span>
+                    </div>
+                    <div class="stat-cell">
+                      <span class="stat-lbl">Plundered</span>
+                      <span class="stat-val highlight-gold">{{ tower.goldGenerated }}G</span>
+                    </div>
+                  } @else if (tower.classId === 'oracle') {
+                    <div class="stat-cell">
+                      <span class="stat-lbl">Haste</span>
+                      <span class="stat-val"
+                        >+{{ round((getCurLevel(tower).buffSpeedPercent ?? 0.25) * 100) }}%</span
+                      >
+                    </div>
+                    <div class="stat-cell">
+                      <span class="stat-lbl">Power</span>
+                      <span class="stat-val"
+                        >+{{ round((getCurLevel(tower).buffDamagePercent ?? 0.15) * 100) }}%</span
+                      >
+                    </div>
+                    <div class="stat-cell">
+                      <span class="stat-lbl">Halo</span>
+                      <span class="stat-val">{{ getCurLevel(tower).range }} tiles</span>
+                    </div>
+                    <div class="stat-cell">
+                      <span class="stat-lbl">Role</span>
+                      <span class="stat-val">Buffer</span>
+                    </div>
+                  } @else {
+                    <div class="stat-cell">
+                      <span class="stat-lbl">Damage</span>
+                      <span class="stat-val">{{ getCurLevel(tower).damage }}</span>
+                    </div>
+                    <div class="stat-cell">
+                      <span class="stat-lbl">Range</span>
+                      <span class="stat-val">{{ getCurLevel(tower).range }} tiles</span>
+                    </div>
+                    <div class="stat-cell">
+                      <span class="stat-lbl">Cadence</span>
+                      <span class="stat-val">{{ getCurLevel(tower).cadence }}s</span>
+                    </div>
+                    <div class="stat-cell">
+                      <span class="stat-lbl">Kills</span>
+                      <span class="stat-val">{{ tower.kills }}</span>
+                    </div>
+                  }
                 </div>
               </div>
             </div>
 
-            <!-- Priority Target Selector (Not applicable to barricade/oracle) -->
-            @if (tower.classId !== 'barricade' && tower.classId !== 'oracle') {
+            <!-- Priority Target Selector (Not applicable to barricade/oracle/rogue) -->
+            @if (
+              tower.classId !== 'barricade' &&
+              tower.classId !== 'oracle' &&
+              tower.classId !== 'rogue'
+            ) {
               <div class="priority-selector">
                 <span class="priority-label">Priority:</span>
                 <div class="priority-buttons">
@@ -174,6 +221,128 @@ import {
                     </button>
                   }
                 </div>
+              </div>
+            } @else if (tower.classId === 'rogue') {
+              <div class="passive-role-pill">
+                <span class="role-icon">💰</span>
+                <span class="role-desc"
+                  >Passive Plunder Aura • Multiplies all Gold earned from enemies slain in
+                  radius</span
+                >
+              </div>
+            } @else if (tower.classId === 'oracle') {
+              <div class="passive-role-pill">
+                <span class="role-icon">✨</span>
+                <span class="role-desc"
+                  >Passive Haste Halo • Grants nearby towers bonus attack speed & damage</span
+                >
+              </div>
+            }
+
+            <!-- Upgrade Forecast & Stat Differential Preview (Crystal Defenders Inspector) -->
+            @if (getNextLevel(tower); as nextLvl) {
+              <div class="upgrade-forecast-box">
+                <div class="forecast-header">
+                  <span class="forecast-badge"
+                    >UPGRADE FORECAST (Lv.{{ tower.level }} ➔ Lv.{{ tower.level + 1 }})</span
+                  >
+                  <span
+                    class="forecast-cost"
+                    [class.unaffordable]="game.gold() < nextLvl.upgradeCost"
+                  >
+                    🪙 {{ nextLvl.upgradeCost }}G
+                  </span>
+                </div>
+
+                <div class="forecast-diff-grid">
+                  @if (tower.classId === 'rogue') {
+                    <div class="forecast-cell">
+                      <span class="cell-label">Plunder</span>
+                      <span class="cell-val">
+                        x{{ getCurLevel(tower).killGoldMultiplier ?? 1.5 }} ➔
+                        <strong class="stat-boost"
+                          >x{{ nextLvl.killGoldMultiplier ?? 1.75 }}</strong
+                        >
+                      </span>
+                    </div>
+                    <div class="forecast-cell">
+                      <span class="cell-label">Pickpocket</span>
+                      <span class="cell-val">
+                        +{{ getCurLevel(tower).pickpocketGold ?? 2 }}G ➔
+                        <strong class="stat-boost">+{{ nextLvl.pickpocketGold ?? 3 }}G</strong>
+                      </span>
+                    </div>
+                    <div class="forecast-cell">
+                      <span class="cell-label">Aura Radius</span>
+                      <span class="cell-val">
+                        {{ getCurLevel(tower).range }} ➔
+                        <strong class="stat-boost">{{ nextLvl.range }} tiles</strong>
+                      </span>
+                    </div>
+                  } @else if (tower.classId === 'oracle') {
+                    <div class="forecast-cell">
+                      <span class="cell-label">Haste Halo</span>
+                      <span class="cell-val">
+                        +{{ round((getCurLevel(tower).buffSpeedPercent ?? 0.25) * 100) }}% ➔
+                        <strong class="stat-boost"
+                          >+{{ round((nextLvl.buffSpeedPercent ?? 0.32) * 100) }}%</strong
+                        >
+                      </span>
+                    </div>
+                    <div class="forecast-cell">
+                      <span class="cell-label">Power Halo</span>
+                      <span class="cell-val">
+                        +{{ round((getCurLevel(tower).buffDamagePercent ?? 0.15) * 100) }}% ➔
+                        <strong class="stat-boost"
+                          >+{{ round((nextLvl.buffDamagePercent ?? 0.2) * 100) }}%</strong
+                        >
+                      </span>
+                    </div>
+                    <div class="forecast-cell">
+                      <span class="cell-label">Halo Radius</span>
+                      <span class="cell-val">
+                        {{ getCurLevel(tower).range }} ➔
+                        <strong class="stat-boost">{{ nextLvl.range }} tiles</strong>
+                      </span>
+                    </div>
+                  } @else {
+                    <div class="forecast-cell">
+                      <span class="cell-label">Damage</span>
+                      <span class="cell-val">
+                        {{ getCurLevel(tower).damage }} ➔
+                        <strong class="stat-boost"
+                          >{{ nextLvl.damage }} (+{{
+                            nextLvl.damage - getCurLevel(tower).damage
+                          }})</strong
+                        >
+                      </span>
+                    </div>
+                    <div class="forecast-cell">
+                      <span class="cell-label">Range</span>
+                      <span class="cell-val">
+                        {{ getCurLevel(tower).range }} ➔
+                        <strong class="stat-boost"
+                          >{{ nextLvl.range }} (+{{
+                            round((nextLvl.range - getCurLevel(tower).range) * 10) / 10
+                          }})</strong
+                        >
+                      </span>
+                    </div>
+                    <div class="forecast-cell">
+                      <span class="cell-label">Cadence</span>
+                      <span class="cell-val">
+                        {{ getCurLevel(tower).cadence }}s ➔
+                        <strong class="stat-boost"
+                          >{{ nextLvl.cadence }}s ({{
+                            round((nextLvl.cadence - getCurLevel(tower).cadence) * 100) / 100
+                          }}s)</strong
+                        >
+                      </span>
+                    </div>
+                  }
+                </div>
+
+                <p class="forecast-perk">{{ nextLvl.specialDescription }}</p>
               </div>
             }
 
@@ -574,6 +743,11 @@ import {
         color: var(--text-primary);
       }
 
+      .highlight-gold {
+        color: #facc15 !important;
+        text-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
+      }
+
       /* Priority Selector */
       .priority-selector {
         display: flex;
@@ -608,6 +782,101 @@ import {
           color: #ffffff;
           font-weight: 600;
         }
+      }
+
+      .passive-role-pill {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: 6px 10px;
+        background: rgba(30, 41, 59, 0.7);
+        border: 1px dashed rgba(250, 204, 21, 0.4);
+        border-radius: var(--radius-sm);
+        font-size: var(--font-size-xs);
+
+        .role-icon {
+          font-size: 1.1rem;
+        }
+
+        .role-desc {
+          color: #e2e8f0;
+          font-size: 0.72rem;
+          line-height: 1.3;
+        }
+      }
+
+      .upgrade-forecast-box {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 8px 10px;
+        background: rgba(15, 23, 42, 0.75);
+        border: 1px solid rgba(56, 189, 248, 0.25);
+        border-radius: var(--radius-sm);
+      }
+
+      .forecast-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .forecast-badge {
+        font-family: var(--font-mono);
+        font-size: 0.6rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        color: var(--color-primary);
+      }
+
+      .forecast-cost {
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: #fde047;
+
+        &.unaffordable {
+          color: #f87171;
+        }
+      }
+
+      .forecast-diff-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(95px, 1fr));
+        gap: 4px;
+        margin: 2px 0;
+      }
+
+      .forecast-cell {
+        display: flex;
+        flex-direction: column;
+        background: rgba(30, 41, 59, 0.5);
+        padding: 3px 6px;
+        border-radius: 4px;
+      }
+
+      .cell-label {
+        font-size: 0.58rem;
+        color: #94a3b8;
+        text-transform: uppercase;
+      }
+
+      .cell-val {
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        color: #e2e8f0;
+      }
+
+      .stat-boost {
+        color: #34d399;
+        font-weight: 700;
+      }
+
+      .forecast-perk {
+        margin: 2px 0 0 0;
+        font-size: 0.7rem;
+        font-style: italic;
+        color: #94a3b8;
       }
 
       /* Dossier Actions */
@@ -875,6 +1144,7 @@ import {
 export class TowerPanelComponent {
   public readonly closePanel = output<void>();
   protected readonly game = inject(GameService);
+  protected readonly round = Math.round;
   protected readonly classRoster: TowerClassDefinition[] = Object.values(TOWER_CLASSES);
 
   public onClose(): void {
