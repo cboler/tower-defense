@@ -2,6 +2,7 @@ import { Injectable, NgZone, OnDestroy, computed, inject, signal } from '@angula
 import { MAP_VERDANT_CROSSROADS, MapDefinition, Point } from '../models/map.model';
 import {
   DamageType,
+  JOB_UNLOCK_RULES,
   TOWER_CLASSES,
   TargetPriority,
   TowerClassId,
@@ -67,6 +68,53 @@ export class GameService implements OnDestroy {
   // Selection & Interactivity
   public readonly selectedClassId = signal<TowerClassId>('blade-warden');
   public readonly selectedTile = signal<Point | null>({ x: 0, y: 0 });
+  public readonly unlockedJobIds = signal<Set<TowerClassId>>(new Set());
+
+  public isClassUnlocked(classId: TowerClassId): boolean {
+    if (!JOB_UNLOCK_RULES[classId]) {
+      return true; // Base classes and barricade are always unlocked
+    }
+    return this.unlockedJobIds().has(classId);
+  }
+
+  public checkJobUnlocks(): void {
+    const currentTowers = this.towers();
+    const currentUnlocked = new Set(this.unlockedJobIds());
+    let newlyUnlockedAny = false;
+
+    for (const rule of Object.values(JOB_UNLOCK_RULES)) {
+      const targetId = rule.targetClassId;
+      if (currentUnlocked.has(targetId)) continue;
+
+      const allMet = rule.prerequisites.every((req) =>
+        currentTowers.some((t) => t.classId === req.classId && t.level >= req.minLevel),
+      );
+
+      if (allMet) {
+        currentUnlocked.add(targetId);
+        newlyUnlockedAny = true;
+        this.audio.playVictory();
+        this.addFloatingText(
+          `★ JOB UNLOCKED: ${rule.name}!`,
+          this.activeMap().width / 2,
+          this.activeMap().height / 2,
+          rule.color,
+          'buff',
+        );
+        this.addParticle(
+          this.activeMap().width / 2,
+          this.activeMap().height / 2,
+          rule.color,
+          3.0,
+          'aura',
+        );
+      }
+    }
+
+    if (newlyUnlockedAny) {
+      this.unlockedJobIds.set(currentUnlocked);
+    }
+  }
 
   // Entities
   public readonly towers = signal<TowerInstance[]>([]);
@@ -112,6 +160,11 @@ export class GameService implements OnDestroy {
     const idx = this.waveActive() ? this.currentWaveIndex() + 1 : this.currentWaveIndex();
     return map.waves[idx] ?? null;
   });
+
+  public readonly canRushWave = signal(false);
+  private lastWaveStartTimeMs = 0;
+  private lastRushTimeMs = 0;
+  private lastCallWaveRealTime = 0;
 
   public readonly waveCompositionSummary = computed(() => {
     const wave = this.upcomingWaveDef();
@@ -205,9 +258,14 @@ export class GameService implements OnDestroy {
     this.floatingTexts.set([]);
     this.particles.set([]);
     this.barricades.set(new Set());
+    this.unlockedJobIds.set(new Set());
     this.spawnQueue = [];
     this.countdownRemainingMs.set(this.countdownDurationMs);
     this.isCountdownActive.set(true);
+    this.canRushWave.set(false);
+    this.lastWaveStartTimeMs = 0;
+    this.lastRushTimeMs = 0;
+    this.lastCallWaveRealTime = 0;
 
     this.recalculatePaths();
     this.startLoop();
@@ -224,6 +282,11 @@ export class GameService implements OnDestroy {
 
   public startNextWave(): void {
     if (this.isGameOver() || this.isVictory()) return;
+    if (this.waveActive()) return; // Never rush from startNextWave!
+
+    const now = Date.now();
+    if (now - this.lastCallWaveRealTime < 600) return; // Debounce rapid double-clicks
+    this.lastCallWaveRealTime = now;
 
     if (this.isCountdownActive()) {
       // Early dispatch before countdown finishes -> Gil bonus!
@@ -250,31 +313,36 @@ export class GameService implements OnDestroy {
       return;
     }
 
-    if (this.waveActive()) {
-      // Rush next wave while current wave is still active!
-      const nextIdx = this.currentWaveIndex() + 1;
-      if (nextIdx >= this.totalWaves()) return;
-
-      const rushBonus = this.earlyCallBonusGold();
-      this.gold.update((g) => g + rushBonus);
-      this.score.update((s) => s + rushBonus * 20);
-      this.audio.playEarlyCallHorn();
-      this.addFloatingText(
-        `WAVE RUSH! +${rushBonus}G`,
-        this.activeMap().width / 2,
-        this.activeMap().height / 2,
-        '#f97316',
-        'alert',
-      );
-
-      this.currentWaveIndex.set(nextIdx);
-      this.enqueueWaveMobs(nextIdx);
-      return;
-    }
-
-    // Default call
+    // Default call when not in countdown and wave not active
     this.audio.playWaveStart();
     this.launchWave(this.currentWaveIndex());
+  }
+
+  public rushWave(): void {
+    if (this.isGameOver() || this.isVictory()) return;
+    if (!this.waveActive()) return;
+    if (!this.canRushWave()) return;
+
+    const nextIdx = this.currentWaveIndex() + 1;
+    if (nextIdx >= this.totalWaves()) return;
+
+    this.lastRushTimeMs = this.gameTimeMs;
+    this.canRushWave.set(false);
+
+    const rushBonus = this.earlyCallBonusGold();
+    this.gold.update((g) => g + rushBonus);
+    this.score.update((s) => s + rushBonus * 20);
+    this.audio.playEarlyCallHorn();
+    this.addFloatingText(
+      `WAVE RUSH! +${rushBonus}G`,
+      this.activeMap().width / 2,
+      this.activeMap().height / 2,
+      '#f97316',
+      'alert',
+    );
+
+    this.currentWaveIndex.set(nextIdx);
+    this.enqueueWaveMobs(nextIdx);
   }
 
   private launchWave(waveIdx: number): void {
@@ -282,6 +350,9 @@ export class GameService implements OnDestroy {
     if (!wave) return;
 
     this.waveActive.set(true);
+    this.lastWaveStartTimeMs = this.gameTimeMs;
+    this.lastRushTimeMs = this.gameTimeMs;
+    this.canRushWave.set(false);
     this.spawnQueue = [];
     this.enqueueWaveMobs(waveIdx);
 
@@ -380,6 +451,11 @@ export class GameService implements OnDestroy {
       return false;
     }
 
+    if (!this.isClassUnlocked(classId)) {
+      this.addFloatingText('Job Locked!', x, y, '#ef4444', 'alert');
+      return false;
+    }
+
     const def = TOWER_CLASSES[classId];
     if (this.gold() < def.cost) {
       this.addFloatingText('Need More Gold!', x, y, '#ef4444', 'alert');
@@ -464,6 +540,7 @@ export class GameService implements OnDestroy {
     this.audio.playBuff();
     this.addFloatingText(`Level ${tower.level + 1}!`, tower.x, tower.y, '#38bdf8', 'buff');
     this.addParticle(tower.x, tower.y, '#38bdf8', 1.8, 'aura');
+    this.checkJobUnlocks();
     return true;
   }
 
@@ -528,6 +605,16 @@ export class GameService implements OnDestroy {
         this.audio.playWaveStart();
         this.launchWave(this.currentWaveIndex());
       }
+    }
+
+    // Check Rush readiness (minimum 1.5s after wave start or previous rush)
+    const canRush =
+      this.waveActive() &&
+      this.currentWaveIndex() < this.totalWaves() - 1 &&
+      this.gameTimeMs - this.lastWaveStartTimeMs >= 1500 &&
+      this.gameTimeMs - this.lastRushTimeMs >= 1500;
+    if (this.canRushWave() !== canRush) {
+      this.canRushWave.set(canRush);
     }
 
     // 1. Spawn monsters from queue
@@ -888,6 +975,105 @@ export class GameService implements OnDestroy {
         }
         break;
       }
+
+      case 'red-mage': {
+        // Dual-Cast Spellblade: Arcane flame burst damaging ground & air with AoE splash
+        this.audio.playExplosion();
+        this.spawnProjectile({
+          sourceTowerId: tower.id,
+          targetMobId: target.id,
+          startX: tower.x,
+          startY: tower.y,
+          currentX: tower.x,
+          currentY: tower.y,
+          targetX: target.x,
+          targetY: target.y,
+          speed: 9.5,
+          damage,
+          damageType: 'magic',
+          splashRadius: lvl.splashRadius ?? 1.2,
+          visualType: 'fireball',
+        });
+        break;
+      }
+
+      case 'ninja': {
+        // Dual-Throw Shinobi: Swift shurikens with lethal critical hit chance
+        this.audio.playSlash();
+        const isCrit = Math.random() < 0.25;
+        const finalDamage = isCrit ? Math.round(damage * 1.75) : damage;
+        if (isCrit) {
+          this.addFloatingText('CRIT!', target.x, target.y - 0.2, '#06b6d4', 'crit');
+        }
+        this.spawnProjectile({
+          sourceTowerId: tower.id,
+          targetMobId: target.id,
+          startX: tower.x,
+          startY: tower.y,
+          currentX: tower.x,
+          currentY: tower.y,
+          targetX: target.x,
+          targetY: target.y,
+          speed: 15.0,
+          damage: finalDamage,
+          damageType: 'physical',
+          visualType: 'dagger',
+        });
+        break;
+      }
+
+      case 'samurai': {
+        // Iaido Blade Master: 360-degree spirit katana slash sundering armor
+        this.audio.playSlash();
+        this.addParticle(tower.x, tower.y, '#f43f5e', lvl.range, 'slash');
+        const inRange = this.mobs().filter(
+          (m) => !m.isFlying && !m.isDead && Math.hypot(m.x - tower.x, m.y - tower.y) <= lvl.range,
+        );
+        for (const mob of inRange) {
+          this.dealDamage(mob, damage, 'physical', tower);
+        }
+        break;
+      }
+
+      case 'paladin': {
+        // Holy Stasis Sword: Celestial strike with high chance to lock in stasis
+        this.audio.playSlash();
+        this.addParticle(target.x, target.y, '#f59e0b', 1.4, 'slash');
+        if (lvl.stunChance && Math.random() < lvl.stunChance) {
+          target.statusEffects.push({
+            type: 'stun',
+            intensity: 1.0,
+            durationMs: 1400,
+            remainingMs: 1400,
+          });
+          this.addFloatingText('STASIS!', target.x, target.y, '#f59e0b', 'alert');
+        }
+        this.dealDamage(target, damage, 'physical', tower);
+        break;
+      }
+
+      case 'astrologian': {
+        // Cosmic Star Meteor: Gravitational comet crash causing massive AoE and gravitational slow
+        this.audio.playSlowPulse();
+        this.spawnProjectile({
+          sourceTowerId: tower.id,
+          targetMobId: target.id,
+          startX: tower.x,
+          startY: tower.y,
+          currentX: tower.x,
+          currentY: tower.y,
+          targetX: target.x,
+          targetY: target.y,
+          speed: 8.0,
+          damage,
+          damageType: 'magic',
+          splashRadius: lvl.splashRadius ?? 2.0,
+          slowPercent: lvl.slowPercent ?? 0.35,
+          slowDuration: lvl.slowDuration ?? 3.0,
+          visualType: 'time-orb',
+        });
+        break;
+      }
     }
   }
 
@@ -944,6 +1130,22 @@ export class GameService implements OnDestroy {
       );
 
       for (const mob of affected) {
+        if (proj.slowPercent) {
+          mob.statusEffects.push({
+            type: 'slow',
+            intensity: proj.slowPercent,
+            durationMs: (proj.slowDuration ?? 3) * 1000,
+            remainingMs: (proj.slowDuration ?? 3) * 1000,
+          });
+        }
+        if (proj.stunChance && Math.random() < proj.stunChance) {
+          mob.statusEffects.push({
+            type: 'stun',
+            intensity: 1.0,
+            durationMs: 1200,
+            remainingMs: 1200,
+          });
+        }
         this.dealDamage(mob, proj.damage, proj.damageType, tower ?? null);
       }
     } else if (target && !target.isDead) {

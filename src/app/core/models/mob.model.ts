@@ -78,9 +78,9 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
   swiftbeak: {
     id: 'swiftbeak',
     name: 'Swiftbeak',
-    icon: '🦤',
+    icon: '🦅',
     badge: 'Sprinter',
-    color: '#eab308',
+    color: '#0284c7',
     baseHp: 130,
     baseSpeed: 2.1,
     armor: 0.05,
@@ -88,8 +88,9 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
     isFlying: false,
     crystalLoss: 1,
     goldReward: 9,
-    description: 'Ultra-fast avian galloper. Dashes past defense towers with high tenacity.',
-    specialTrait: 'Sprints swiftly; cuts incoming slow effects in half.',
+    description:
+      'Razor-crested avian predator. Sprints with extreme velocity and cuts incoming slows in half.',
+    specialTrait: 'Razor Gale: Sprints swiftly; cuts incoming slow effects in half.',
   },
 
   'prismatic-ooze': {

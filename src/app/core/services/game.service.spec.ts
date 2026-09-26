@@ -93,6 +93,33 @@ describe('GameService', () => {
     expect(service.waveActive()).toBe(true);
   });
 
+  it('calling startNextWave during an active wave does not rush or double-call waves', () => {
+    service.startNextWave();
+    expect(service.waveActive()).toBe(true);
+    const waveIndex = service.currentWaveIndex();
+
+    // Secondary call while wave is active
+    service.startNextWave();
+
+    // Wave index must remain unchanged and not rushed
+    expect(service.currentWaveIndex()).toBe(waveIndex);
+  });
+
+  it('rushWave requires canRushWave to be active before dispatching', () => {
+    service.startNextWave();
+    expect(service.canRushWave()).toBe(false);
+
+    const initialIdx = service.currentWaveIndex();
+    // Immediate rush attempt is blocked by safety lockout
+    service.rushWave();
+    expect(service.currentWaveIndex()).toBe(initialIdx);
+
+    // When ready
+    service.canRushWave.set(true);
+    service.rushWave();
+    expect(service.currentWaveIndex()).toBe(initialIdx + 1);
+  });
+
   it('generates rich monster composition summary for tactical scouting', () => {
     const summary = service.waveCompositionSummary();
     expect(summary.length).toBeGreaterThan(0);
@@ -181,5 +208,70 @@ describe('GameService', () => {
 
     expect(service.gold()).toBe(initialGold + 20);
     expect(rogue.goldGenerated).toBe(0);
+  });
+
+  it('enforces FFT job unlock progression: Red Mage unlocks when Elementalist and Oracle reach Lv 2', () => {
+    // Red Mage starts locked
+    expect(service.isClassUnlocked('red-mage')).toBe(false);
+
+    // Give enough gold for testing
+    service.gold.set(5000);
+
+    // Try placing Red Mage on build tile (0, 0)
+    const placedEarly = service.placeTower(0, 0, 'red-mage');
+    expect(placedEarly).toBe(false);
+    expect(service.towers().length).toBe(0);
+
+    // Place Elementalist at (0, 0) and Oracle at (0, 2)
+    service.placeTower(0, 0, 'elementalist');
+    service.placeTower(0, 2, 'oracle');
+
+    const elem = service.towers().find((t) => t.classId === 'elementalist')!;
+    const oracle = service.towers().find((t) => t.classId === 'oracle')!;
+
+    // Upgrade Elementalist to Lv 2
+    service.upgradeTower(elem.id);
+    expect(service.isClassUnlocked('red-mage')).toBe(false);
+
+    // Upgrade Oracle to Lv 2 -> Red Mage unlocks!
+    service.upgradeTower(oracle.id);
+    expect(service.isClassUnlocked('red-mage')).toBe(true);
+
+    // Now Red Mage can be placed on build tile (0, 3)
+    const placedRedMage = service.placeTower(0, 3, 'red-mage');
+    expect(placedRedMage).toBe(true);
+    expect(service.towers().some((t) => t.classId === 'red-mage')).toBe(true);
+  });
+
+  it('enforces FFT job unlock progression: Ninja unlocks when Ranger and Rogue reach Lv 2', () => {
+    expect(service.isClassUnlocked('ninja')).toBe(false);
+    service.gold.set(5000);
+
+    service.placeTower(0, 0, 'ranger');
+    service.placeTower(0, 2, 'rogue');
+
+    const ranger = service.towers().find((t) => t.classId === 'ranger')!;
+    const rogue = service.towers().find((t) => t.classId === 'rogue')!;
+
+    service.upgradeTower(ranger.id);
+    service.upgradeTower(rogue.id);
+
+    expect(service.isClassUnlocked('ninja')).toBe(true);
+  });
+
+  it('enforces FFT job unlock progression: Samurai unlocks when Blade Warden and Juggernaut reach Lv 2', () => {
+    expect(service.isClassUnlocked('samurai')).toBe(false);
+    service.gold.set(5000);
+
+    service.placeTower(0, 0, 'blade-warden');
+    service.placeTower(0, 2, 'juggernaut');
+
+    const warden = service.towers().find((t) => t.classId === 'blade-warden')!;
+    const jugg = service.towers().find((t) => t.classId === 'juggernaut')!;
+
+    service.upgradeTower(warden.id);
+    service.upgradeTower(jugg.id);
+
+    expect(service.isClassUnlocked('samurai')).toBe(true);
   });
 });

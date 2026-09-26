@@ -112,7 +112,7 @@ import { ALL_MAPS } from '../../core/models/map.model';
               type="button"
               class="call-wave-btn has-bonus"
               id="call-wave-btn"
-              (click)="game.startNextWave()"
+              (click)="onCallWaveClick($event)"
               [title]="
                 'Dispatch wave immediately for +' +
                 game.earlyCallBonusGold() +
@@ -142,15 +142,20 @@ import { ALL_MAPS } from '../../core/models/map.model';
                   type="button"
                   class="rush-wave-btn"
                   id="rush-wave-btn"
-                  (click)="game.startNextWave()"
-                  [title]="'Rush next wave for +' + game.earlyCallBonusGold() + 'G Bravery Bonus!'"
+                  (click)="game.rushWave()"
+                  [disabled]="!game.canRushWave()"
+                  [title]="
+                    game.canRushWave()
+                      ? 'Rush next wave for +' + game.earlyCallBonusGold() + 'G Bravery Bonus! [R]'
+                      : 'Rush locked: vanguard engaging...'
+                  "
                   [attr.aria-label]="
                     'Rush next wave for ' + game.earlyCallBonusGold() + ' Gold bonus'
                   "
                 >
                   <span class="rush-icon">⚡</span>
                   <span class="rush-text">Rush (+{{ game.earlyCallBonusGold() }}G)</span>
-                  <span class="gamepad-hint" aria-hidden="true">[X]</span>
+                  <span class="gamepad-hint" aria-hidden="true">[R]</span>
                 </button>
               }
             </div>
@@ -159,7 +164,7 @@ import { ALL_MAPS } from '../../core/models/map.model';
               type="button"
               class="call-wave-btn"
               id="call-wave-btn"
-              (click)="game.startNextWave()"
+              (click)="onCallWaveClick($event)"
               [attr.aria-label]="'Call Wave ' + (game.currentWaveIndex() + 1)"
             >
               <span class="btn-glow" aria-hidden="true"></span>
@@ -715,9 +720,17 @@ import { ALL_MAPS } from '../../core/models/map.model';
         cursor: pointer;
         transition: all 0.15s ease;
 
-        &:hover {
+        &:hover:not(:disabled) {
           transform: translateY(-1px);
           box-shadow: 0 6px 16px rgba(234, 88, 12, 0.6);
+        }
+
+        &:disabled {
+          opacity: 0.45;
+          filter: grayscale(0.6);
+          cursor: not-allowed;
+          transform: none;
+          box-shadow: none;
         }
       }
 
@@ -1305,6 +1318,11 @@ export class HudComponent {
     if (event.target === event.currentTarget) {
       this.toggleScout();
     }
+  }
+
+  protected onCallWaveClick(event: MouseEvent): void {
+    (event.currentTarget as HTMLElement)?.blur();
+    this.game.startNextWave();
   }
 
   protected onSelectMap(event: Event): void {

@@ -7,7 +7,12 @@ export type TowerClassId =
   | 'rogue'
   | 'lancer'
   | 'juggernaut'
-  | 'barricade';
+  | 'barricade'
+  | 'red-mage'
+  | 'ninja'
+  | 'samurai'
+  | 'paladin'
+  | 'astrologian';
 
 export type TargetPriority = 'first' | 'last' | 'strongest' | 'weakest' | 'closest' | 'flying';
 
@@ -632,4 +637,446 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
       },
     ],
   },
+
+  'red-mage': {
+    id: 'red-mage',
+    name: 'Red Mage',
+    fantasyRole: 'Dual-Cast Crimson Spellblade',
+    icon: '🧙‍♂️',
+    badge: 'Dual-Cast',
+    color: '#ef4444',
+    cost: 260,
+    damageType: 'magic',
+    targetsAir: true,
+    targetsGround: true,
+    description:
+      'Master of both arcane destruction and divine healing arts. Rapidly dual-casts piercing flame and holy spells.',
+    levels: [
+      {
+        level: 1,
+        title: 'Crimson Initiate',
+        upgradeCost: 200,
+        damage: 55,
+        range: 2.8,
+        cadence: 0.85,
+        splashRadius: 1.2,
+        specialDescription: 'Dual-cast: fires rapid flame spell followed by holy burst.',
+      },
+      {
+        level: 2,
+        title: 'Spellblade Adept',
+        upgradeCost: 340,
+        damage: 95,
+        range: 3.0,
+        cadence: 0.8,
+        splashRadius: 1.3,
+        specialDescription: 'Increased spell velocity and amplified dual-cast thermal damage.',
+      },
+      {
+        level: 3,
+        title: 'Arcane Dualist',
+        upgradeCost: 540,
+        damage: 155,
+        range: 3.2,
+        cadence: 0.75,
+        splashRadius: 1.4,
+        specialDescription: 'Dual-cast holy waves pierce 25% of magic resistance.',
+      },
+      {
+        level: 4,
+        title: 'Crimson Fencer',
+        upgradeCost: 820,
+        damage: 245,
+        range: 3.4,
+        cadence: 0.7,
+        splashRadius: 1.5,
+        specialDescription: 'High-frequency dual burst vaporizing grouped ground and air creeps.',
+      },
+      {
+        level: 5,
+        title: 'Grand Red Archon',
+        upgradeCost: 1250,
+        damage: 390,
+        range: 3.6,
+        cadence: 0.65,
+        splashRadius: 1.6,
+        specialDescription: 'Legendary twin-cast cataclysms melting all resistances.',
+      },
+    ],
+  },
+
+  ninja: {
+    id: 'ninja',
+    name: 'Ninja',
+    fantasyRole: 'Dual-Wield Shinobi Assassin',
+    icon: '🥷',
+    badge: 'Dual-Throw',
+    color: '#06b6d4',
+    cost: 250,
+    damageType: 'physical',
+    targetsAir: true,
+    targetsGround: true,
+    description:
+      'Lethal shadow operative. Hurls dual razor shurikens simultaneously with blazing cadence and critical chance.',
+    levels: [
+      {
+        level: 1,
+        title: 'Shadow Genin',
+        upgradeCost: 190,
+        damage: 38,
+        range: 2.6,
+        cadence: 0.48,
+        specialDescription: 'Dual-Throw: flings two shurikens per volley with 20% crit chance.',
+      },
+      {
+        level: 2,
+        title: 'Silent Chunin',
+        upgradeCost: 320,
+        damage: 64,
+        range: 2.8,
+        cadence: 0.44,
+        specialDescription: 'Swifter throws with 25% critical strike multiplier.',
+      },
+      {
+        level: 3,
+        title: 'Mist Jonin',
+        upgradeCost: 510,
+        damage: 106,
+        range: 3.0,
+        cadence: 0.4,
+        specialDescription: 'Dual heavy shadow stars with 30% critical strike chance.',
+      },
+      {
+        level: 4,
+        title: 'Shadow Assassin',
+        upgradeCost: 780,
+        damage: 172,
+        range: 3.2,
+        cadence: 0.36,
+        specialDescription: 'Hyper-speed shuriken barrage tearing through fast targets.',
+      },
+      {
+        level: 5,
+        title: 'Kage Master',
+        upgradeCost: 1180,
+        damage: 275,
+        range: 3.4,
+        cadence: 0.32,
+        specialDescription: 'Supreme assassination arts; unrivaled single-target physical DPS.',
+      },
+    ],
+  },
+
+  samurai: {
+    id: 'samurai',
+    name: 'Samurai',
+    fantasyRole: 'Iaido Spirit Blade Master',
+    icon: '⚔️',
+    badge: 'Iaido AoE',
+    color: '#f43f5e',
+    cost: 280,
+    damageType: 'physical',
+    targetsAir: false,
+    targetsGround: true,
+    description:
+      'Draws out spiritual energy from ancestral katanas. Unleashes circular Iaido spirit waves sundering enemy armor.',
+    levels: [
+      {
+        level: 1,
+        title: 'Ronin Swordsman',
+        upgradeCost: 220,
+        damage: 90,
+        range: 1.8,
+        cadence: 1.25,
+        splashRadius: 1.8,
+        specialDescription:
+          'Iaido Spirit Wave: strikes all nearby ground foes, sundering 20% armor.',
+      },
+      {
+        level: 2,
+        title: 'Bushi Veteran',
+        upgradeCost: 370,
+        damage: 155,
+        range: 1.9,
+        cadence: 1.2,
+        splashRadius: 1.9,
+        specialDescription: 'Expands spirit blade radius with 25% armor sunder.',
+      },
+      {
+        level: 3,
+        title: 'Kensei Master',
+        upgradeCost: 590,
+        damage: 250,
+        range: 2.0,
+        cadence: 1.15,
+        splashRadius: 2.0,
+        specialDescription: 'Kiku-ichimonji spirit slash sundering 30% armor.',
+      },
+      {
+        level: 4,
+        title: 'Shogun Sentinel',
+        upgradeCost: 900,
+        damage: 395,
+        range: 2.1,
+        cadence: 1.1,
+        splashRadius: 2.1,
+        specialDescription: 'Devastating 360-degree blade tempest shredding armored waves.',
+      },
+      {
+        level: 5,
+        title: 'Masamune Saint',
+        upgradeCost: 1380,
+        damage: 620,
+        range: 2.3,
+        cadence: 1.0,
+        splashRadius: 2.3,
+        specialDescription: 'Transcendent spirit blade cleavage that obliterates armor completely.',
+      },
+    ],
+  },
+
+  paladin: {
+    id: 'paladin',
+    name: 'Paladin',
+    fantasyRole: 'Radiant Holy Knight',
+    icon: '🛡️',
+    badge: 'Stasis Sword',
+    color: '#f59e0b',
+    cost: 290,
+    damageType: 'physical',
+    targetsAir: false,
+    targetsGround: true,
+    description:
+      'Holy vanguard sentinel wielding the Stasis Sword. Deals righteous physical damage and inflicts holy stuns.',
+    levels: [
+      {
+        level: 1,
+        title: 'Crusader Squire',
+        upgradeCost: 230,
+        damage: 110,
+        range: 1.6,
+        cadence: 1.15,
+        stunChance: 0.35,
+        specialDescription: 'Stasis Sword: heavy radiant slash with 35% chance to stun for 1.4s.',
+      },
+      {
+        level: 2,
+        title: 'Temple Knight',
+        upgradeCost: 380,
+        damage: 185,
+        range: 1.7,
+        cadence: 1.1,
+        stunChance: 0.4,
+        specialDescription: 'Increased holy impact with 40% stun chance.',
+      },
+      {
+        level: 3,
+        title: 'Justicar Champion',
+        upgradeCost: 610,
+        damage: 300,
+        range: 1.8,
+        cadence: 1.05,
+        stunChance: 0.45,
+        specialDescription: 'Judgment Blade: celestial shockwave with 45% stun chance.',
+      },
+      {
+        level: 4,
+        title: 'Holy Knight Lord',
+        upgradeCost: 930,
+        damage: 480,
+        range: 1.9,
+        cadence: 1.0,
+        stunChance: 0.5,
+        specialDescription: 'Cleansing smite locking tough enemies in stasis.',
+      },
+      {
+        level: 5,
+        title: 'Saint of the Font',
+        upgradeCost: 1420,
+        damage: 750,
+        range: 2.0,
+        cadence: 0.95,
+        stunChance: 0.6,
+        specialDescription: 'Divine stasis judgment; immovable fortress against boss waves.',
+      },
+    ],
+  },
+
+  astrologian: {
+    id: 'astrologian',
+    name: 'Astrologian',
+    fantasyRole: 'Cosmic Star Caller',
+    icon: '🌌',
+    badge: 'Cosmic Meteor',
+    color: '#8b5cf6',
+    cost: 320,
+    damageType: 'magic',
+    targetsAir: true,
+    targetsGround: true,
+    description:
+      'Harnesses the celestial sphere to summon gravitational wells and catastrophic star meteorites.',
+    levels: [
+      {
+        level: 1,
+        title: 'Star Observer',
+        upgradeCost: 250,
+        damage: 160,
+        range: 3.2,
+        cadence: 2.1,
+        splashRadius: 2.0,
+        slowPercent: 0.3,
+        slowDuration: 2.5,
+        specialDescription:
+          'Stellar Meteor: calls down a comet causing 2-tile magic AoE and 30% slow.',
+      },
+      {
+        level: 2,
+        title: 'Celestial Diviner',
+        upgradeCost: 410,
+        damage: 270,
+        range: 3.4,
+        cadence: 2.0,
+        splashRadius: 2.1,
+        slowPercent: 0.35,
+        slowDuration: 2.8,
+        specialDescription: 'Amplified meteorite explosion with 35% gravitational slow.',
+      },
+      {
+        level: 3,
+        title: 'Planetary Astromancer',
+        upgradeCost: 660,
+        damage: 430,
+        range: 3.6,
+        cadence: 1.9,
+        splashRadius: 2.2,
+        slowPercent: 0.4,
+        slowDuration: 3.0,
+        specialDescription: 'Supernova detonation with 40% gravitational slow.',
+      },
+      {
+        level: 4,
+        title: 'Galaxy Sovereign',
+        upgradeCost: 1020,
+        damage: 680,
+        range: 3.8,
+        cadence: 1.8,
+        splashRadius: 2.3,
+        slowPercent: 0.45,
+        slowDuration: 3.2,
+        specialDescription: 'Black hole implosion crushing entire clusters of fiends.',
+      },
+      {
+        level: 5,
+        title: 'Cosmic Arch-Astronomer',
+        upgradeCost: 1550,
+        damage: 1050,
+        range: 4.0,
+        cadence: 1.7,
+        splashRadius: 2.5,
+        slowPercent: 0.5,
+        slowDuration: 3.5,
+        specialDescription:
+          'Catastrophic starfall annihilating everything caught in its gravitational field.',
+      },
+    ],
+  },
 };
+
+export interface JobUnlockRule {
+  targetClassId: TowerClassId;
+  name: string;
+  badge: string;
+  color: string;
+  icon: string;
+  prerequisites: { classId: TowerClassId; minLevel: number }[];
+  hint: string;
+  lore: string;
+}
+
+export const JOB_UNLOCK_RULES: Record<string, JobUnlockRule> = {
+  'red-mage': {
+    targetClassId: 'red-mage',
+    name: 'Red Mage',
+    badge: 'Dual-Cast Spellblade',
+    color: '#ef4444',
+    icon: '🧙‍♂️',
+    prerequisites: [
+      { classId: 'elementalist', minLevel: 2 },
+      { classId: 'oracle', minLevel: 2 },
+    ],
+    hint: 'Upgrade an Elementalist (Black Mage) to Lv. 2 and an Oracle (White Mage) to Lv. 2',
+    lore: 'Master of both arcane destruction and radiant restoration. Weaves fire and holy spells with equal finesse.',
+  },
+  ninja: {
+    targetClassId: 'ninja',
+    name: 'Ninja',
+    badge: 'Dual-Wield Shinobi',
+    color: '#06b6d4',
+    icon: '🥷',
+    prerequisites: [
+      { classId: 'ranger', minLevel: 2 },
+      { classId: 'rogue', minLevel: 2 },
+    ],
+    hint: 'Upgrade a Ranger (Archer) to Lv. 2 and a Rogue (Thief) to Lv. 2',
+    lore: 'Shadow warrior trained in hidden arts. Hurls dual shurikens with lethal critical precision.',
+  },
+  samurai: {
+    targetClassId: 'samurai',
+    name: 'Samurai',
+    badge: 'Iaido Blade Master',
+    color: '#f43f5e',
+    icon: '⚔️',
+    prerequisites: [
+      { classId: 'blade-warden', minLevel: 2 },
+      { classId: 'juggernaut', minLevel: 2 },
+    ],
+    hint: 'Upgrade a Blade Warden (Warrior) to Lv. 2 and a Juggernaut (Berserker) to Lv. 2',
+    lore: 'Wields ancestral katanas through Iaido draw-out spirit arts, sundering enemy defenses in a flashing circle.',
+  },
+  paladin: {
+    targetClassId: 'paladin',
+    name: 'Paladin',
+    badge: 'Holy Sword Knight',
+    color: '#f59e0b',
+    icon: '🛡️',
+    prerequisites: [
+      { classId: 'blade-warden', minLevel: 2 },
+      { classId: 'oracle', minLevel: 2 },
+    ],
+    hint: 'Upgrade a Blade Warden (Warrior) to Lv. 2 and an Oracle (White Mage) to Lv. 2',
+    lore: 'Sacred knight wielding the Stasis Sword. Enforces celestial judgment with stunning holy strikes.',
+  },
+  astrologian: {
+    targetClassId: 'astrologian',
+    name: 'Astrologian',
+    badge: 'Cosmic Star Caller',
+    color: '#8b5cf6',
+    icon: '🌌',
+    prerequisites: [
+      { classId: 'elementalist', minLevel: 2 },
+      { classId: 'chronomancer', minLevel: 2 },
+    ],
+    hint: 'Upgrade an Elementalist (Black Mage) to Lv. 2 and a Chronomancer (Time Mage) to Lv. 2',
+    lore: 'Channels the celestial sphere to summon gravitational wells and catastrophic star meteors.',
+  },
+};
+
+export const BASE_TOWER_CLASSES: TowerClassDefinition[] = [
+  TOWER_CLASSES['blade-warden'],
+  TOWER_CLASSES.ranger,
+  TOWER_CLASSES.elementalist,
+  TOWER_CLASSES.chronomancer,
+  TOWER_CLASSES.oracle,
+  TOWER_CLASSES.rogue,
+  TOWER_CLASSES.lancer,
+  TOWER_CLASSES.juggernaut,
+  TOWER_CLASSES.barricade,
+];
+
+export const ADVANCED_TOWER_CLASSES: TowerClassDefinition[] = [
+  TOWER_CLASSES['red-mage'],
+  TOWER_CLASSES.ninja,
+  TOWER_CLASSES.samurai,
+  TOWER_CLASSES.paladin,
+  TOWER_CLASSES.astrologian,
+];

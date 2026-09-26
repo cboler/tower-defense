@@ -795,8 +795,8 @@ export class GameComponent implements OnInit, OnDestroy {
         if (tower) {
           // If a tower is inspected, [X] is Dismiss / Sell
           this.game.sellTower(tower.id);
-        } else {
-          // Otherwise [X] calls the next wave!
+        } else if (!this.game.waveActive()) {
+          // Otherwise [X] calls the next wave when not in combat!
           this.game.startNextWave();
         }
         break;
@@ -915,7 +915,14 @@ export class GameComponent implements OnInit, OnDestroy {
     if (e.key === 'x' || e.key === 'X') {
       const tower = this.game.selectedTower();
       if (tower) this.game.sellTower(tower.id);
-      else this.game.startNextWave();
+      else if (!this.game.waveActive()) this.game.startNextWave();
+      return;
+    }
+
+    if (e.key === 'r' || e.key === 'R') {
+      if (this.game.waveActive() && this.game.canRushWave()) {
+        this.game.rushWave();
+      }
       return;
     }
 
