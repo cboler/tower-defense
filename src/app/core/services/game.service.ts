@@ -44,7 +44,8 @@ export class GameService implements OnDestroy {
   public readonly totalWaves = signal<number>(31);
   public readonly waveActive = signal<boolean>(false);
   public readonly gameSpeed = signal<GameSpeed>(1);
-  public readonly isPaused = signal<boolean>(false);
+  public readonly isPaused = signal<boolean>(true);
+  public readonly hasUserEngaged = signal<boolean>(false);
   public readonly isGameOver = signal<boolean>(false);
   public readonly isVictory = signal<boolean>(false);
   public readonly isCampaignModalOpen = signal<boolean>(false);
@@ -248,7 +249,8 @@ export class GameService implements OnDestroy {
     this.currentWaveIndex.set(0);
     this.totalWaves.set(map.waves.length);
     this.waveActive.set(false);
-    this.isPaused.set(false);
+    this.isPaused.set(true);
+    this.hasUserEngaged.set(false);
     this.isGameOver.set(false);
     this.isVictory.set(false);
     this.selectedTile.set({ x: 0, y: 0 });
@@ -287,6 +289,11 @@ export class GameService implements OnDestroy {
     const now = Date.now();
     if (now - this.lastCallWaveRealTime < 600) return; // Debounce rapid double-clicks
     this.lastCallWaveRealTime = now;
+
+    if (!this.hasUserEngaged()) {
+      this.hasUserEngaged.set(true);
+    }
+    this.isPaused.set(false);
 
     if (this.isCountdownActive()) {
       // Early dispatch before countdown finishes -> Gil bonus!
@@ -380,6 +387,9 @@ export class GameService implements OnDestroy {
   }
 
   public togglePause(): void {
+    if (!this.hasUserEngaged()) {
+      this.hasUserEngaged.set(true);
+    }
     this.isPaused.update((p) => !p);
   }
 
@@ -503,6 +513,12 @@ export class GameService implements OnDestroy {
     this.towers.update((ts) => [...ts, newTower]);
     this.audio.playBuff();
     this.addFloatingText(`-${def.cost}G`, x, y, '#fbbf24', 'gold');
+
+    if (!this.hasUserEngaged()) {
+      this.hasUserEngaged.set(true);
+      this.isPaused.set(false);
+      this.addFloatingText('Defenses Engaged!', x, y - 0.5, '#38bdf8', 'buff');
+    }
     return true;
   }
 

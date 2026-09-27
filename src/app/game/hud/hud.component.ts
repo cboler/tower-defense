@@ -97,15 +97,26 @@ import { ALL_MAPS } from '../../core/models/map.model';
             <!-- Inter-Wave Preparation Timer -->
             <div
               class="countdown-pill"
-              [class.urgent]="game.secondsRemaining() <= 5"
-              title="Time until wave auto-deploys"
+              [class.urgent]="game.secondsRemaining() <= 5 && !game.isPaused()"
+              [class.paused]="game.isPaused()"
+              [title]="
+                game.isPaused()
+                  ? !game.hasUserEngaged()
+                    ? 'Game Paused: Deploy your first defender or press ▶ Play to begin'
+                    : 'Game Paused: Press ▶ Play to resume'
+                  : 'Time until wave auto-deploys'
+              "
             >
               <div
                 class="countdown-fill"
                 [style.width.%]="(game.countdownRemainingMs() / game.countdownDurationMs) * 100"
               ></div>
-              <span class="countdown-icon" aria-hidden="true">⏱️</span>
-              <span class="countdown-sec">{{ game.secondsRemaining() }}s</span>
+              <span class="countdown-icon" aria-hidden="true">{{
+                game.isPaused() ? '⏸️' : '⏱️'
+              }}</span>
+              <span class="countdown-sec">{{
+                game.isPaused() && !game.hasUserEngaged() ? 'PAUSED' : game.secondsRemaining() + 's'
+              }}</span>
             </div>
 
             <button
@@ -238,10 +249,17 @@ import { ALL_MAPS } from '../../core/models/map.model';
         <!-- Pause Toggle -->
         <button
           type="button"
-          class="hud-icon-btn"
+          class="hud-icon-btn pause-btn"
           id="pause-btn"
+          [class.initial-attention]="game.isPaused() && !game.hasUserEngaged()"
           (click)="game.togglePause()"
-          [title]="game.isPaused() ? 'Resume Game' : 'Pause Game'"
+          [title]="
+            game.isPaused()
+              ? !game.hasUserEngaged()
+                ? 'Start Battle / Play [Space]'
+                : 'Resume Game [Space]'
+              : 'Pause Game [Space]'
+          "
           [attr.aria-label]="game.isPaused() ? 'Resume Game' : 'Pause Game'"
         >
           {{ game.isPaused() ? '▶️' : '⏸️' }}
@@ -636,6 +654,12 @@ import { ALL_MAPS } from '../../core/models/map.model';
           animation: pulse-danger 0.8s infinite alternate;
         }
 
+        &.paused {
+          border-color: rgba(148, 163, 184, 0.4);
+          color: #94a3b8;
+          background: rgba(15, 23, 42, 0.9);
+        }
+
         .countdown-fill {
           position: absolute;
           left: 0;
@@ -845,6 +869,25 @@ import { ALL_MAPS } from '../../core/models/map.model';
           font-weight: 700;
           color: #38bdf8;
           min-width: 58px;
+        }
+
+        &.initial-attention {
+          background: rgba(56, 189, 248, 0.2);
+          border-color: #38bdf8;
+          box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+          animation: pulse-attention 1.8s infinite ease-in-out;
+        }
+
+        @keyframes pulse-attention {
+          0%,
+          100% {
+            transform: scale(1);
+            box-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
+          }
+          50% {
+            transform: scale(1.08);
+            box-shadow: 0 0 16px rgba(56, 189, 248, 0.7);
+          }
         }
       }
 

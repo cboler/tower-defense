@@ -960,7 +960,10 @@ export class GameComponent implements OnInit, OnDestroy {
     }
 
     if (e.key === ' ' || e.key === 'Spacebar') {
-      if (!this.game.waveActive()) {
+      if (this.game.isPaused()) {
+        this.game.togglePause();
+        e.preventDefault();
+      } else if (!this.game.waveActive()) {
         this.game.startNextWave();
         e.preventDefault();
       } else {

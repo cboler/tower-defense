@@ -74,11 +74,33 @@ describe('GameService', () => {
     expect(service.gameSpeed()).toBe(1);
   });
 
-  it('initializes with 31 waves and an active inter-wave preparation countdown', () => {
+  it('initializes with 31 waves, active countdown, and starts out paused until user engages', () => {
     expect(service.totalWaves()).toBe(31);
     expect(service.isCountdownActive()).toBe(true);
     expect(service.countdownRemainingMs()).toBe(20000);
     expect(service.secondsRemaining()).toBe(20);
+    expect(service.isPaused()).toBe(true);
+    expect(service.hasUserEngaged()).toBe(false);
+  });
+
+  it('automatically unpauses and marks engaged when first tower is placed', () => {
+    expect(service.isPaused()).toBe(true);
+    expect(service.hasUserEngaged()).toBe(false);
+
+    // Place a blade warden at (0, 0)
+    const placed = service.placeTower(0, 0, 'blade-warden');
+    expect(placed).toBe(true);
+    expect(service.hasUserEngaged()).toBe(true);
+    expect(service.isPaused()).toBe(false);
+  });
+
+  it('unpauses and marks engaged when play button (togglePause) is pressed', () => {
+    expect(service.isPaused()).toBe(true);
+    expect(service.hasUserEngaged()).toBe(false);
+
+    service.togglePause();
+    expect(service.hasUserEngaged()).toBe(true);
+    expect(service.isPaused()).toBe(false);
   });
 
   it('awards early dispatch gold bonus when calling wave during countdown', () => {
