@@ -161,6 +161,31 @@ export class AudioService {
     });
   }
 
+  public playLevelUp(): void {
+    const ctx = this.initContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Bright rising major arpeggio with a shimmering octave on top
+    [523.25, 659.25, 783.99, 1046.5, 1318.51].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const startTime = now + i * 0.06;
+      const length = i === 4 ? 0.45 : 0.2;
+
+      osc.type = i === 4 ? 'sine' : 'triangle';
+      osc.frequency.setValueAtTime(freq, startTime);
+
+      gain.gain.setValueAtTime(0.0001, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.1, startTime + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + length);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(startTime);
+      osc.stop(startTime + length);
+    });
+  }
+
   public playCoin(): void {
     const ctx = this.initContext();
     if (!ctx) return;

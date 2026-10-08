@@ -13,6 +13,7 @@ import { GamepadService } from '../../core/services/gamepad.service';
 import { TOWER_CLASSES, TowerClassId, TowerInstance } from '../../core/models/tower.model';
 import { MobInstance } from '../../core/models/mob.model';
 import { TileCode } from '../../core/models/map.model';
+import { FloatingText } from '../../core/models/game-state.model';
 import { CameraPreset, ThreeBattlefieldService } from './three-battlefield.service';
 
 @Component({
@@ -79,12 +80,13 @@ import { CameraPreset, ThreeBattlefieldService } from './three-battlefield.servi
         <!-- Floating Combat Text & Particle Sparks Overlay -->
         <div class="floating-text-layer" aria-hidden="true">
           @for (text of game.floatingTexts(); track text.id) {
+            @let pos = textPosition(text);
             <div
               class="floating-text"
               [class]="'text-' + text.style"
               [style.color]="text.color"
-              [style.left.%]="((text.x + 0.5) / game.activeMap().width) * 100"
-              [style.top.%]="((text.y + 0.5) / game.activeMap().height) * 100"
+              [style.left.%]="pos.left"
+              [style.top.%]="pos.top"
             >
               {{ text.text }}
             </div>
@@ -489,8 +491,9 @@ import { CameraPreset, ThreeBattlefieldService } from './three-battlefield.servi
         text-shadow:
           0 1px 3px rgba(0, 0, 0, 0.9),
           0 0 6px rgba(0, 0, 0, 0.8);
-        animation: float-damage 0.85s ease-out forwards;
+        animation: float-damage 0.85s cubic-bezier(0.22, 1, 0.36, 1) forwards;
         white-space: nowrap;
+        will-change: transform, opacity;
 
         &.text-gold {
           color: #facc15;
@@ -501,6 +504,21 @@ import { CameraPreset, ThreeBattlefieldService } from './three-battlefield.servi
           color: #fb923c;
           font-size: 1.05rem;
           text-shadow: 0 0 10px rgba(251, 146, 60, 0.8);
+          animation-name: float-crit;
+        }
+
+        &.text-alert {
+          animation-name: float-alert;
+        }
+
+        &.text-levelup {
+          font-family: var(--font-display);
+          font-size: 1.15rem;
+          letter-spacing: 0.04em;
+          text-shadow:
+            0 0 12px rgba(250, 204, 21, 0.9),
+            0 2px 3px rgba(0, 0, 0, 0.9);
+          animation: float-levelup 1.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
         }
 
         &.text-heal {
@@ -513,13 +531,101 @@ import { CameraPreset, ThreeBattlefieldService } from './three-battlefield.servi
           opacity: 0;
           transform: translate(-50%, 0) scale(0.6);
         }
-        25% {
+        20% {
           opacity: 1;
-          transform: translate(-50%, -12px) scale(1.15);
+          transform: translate(-50%, -14px) scale(1.18);
+        }
+        70% {
+          opacity: 1;
         }
         100% {
           opacity: 0;
-          transform: translate(-50%, -32px) scale(1);
+          transform: translate(-50%, -34px) scale(0.95);
+        }
+      }
+
+      @keyframes float-crit {
+        0% {
+          opacity: 0;
+          transform: translate(-50%, 0) scale(0.4) rotate(-8deg);
+        }
+        18% {
+          opacity: 1;
+          transform: translate(-50%, -16px) scale(1.55) rotate(4deg);
+        }
+        35% {
+          transform: translate(-50%, -18px) scale(1.15) rotate(0deg);
+        }
+        100% {
+          opacity: 0;
+          transform: translate(-50%, -38px) scale(1.05);
+        }
+      }
+
+      @keyframes float-alert {
+        0% {
+          opacity: 0;
+          transform: translate(-50%, -6px) scale(0.8);
+        }
+        15% {
+          opacity: 1;
+          transform: translate(calc(-50% - 4px), -10px) scale(1.1);
+        }
+        25% {
+          transform: translate(calc(-50% + 4px), -10px) scale(1.1);
+        }
+        35% {
+          transform: translate(calc(-50% - 2px), -11px) scale(1.05);
+        }
+        45% {
+          transform: translate(-50%, -12px) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: translate(-50%, -26px) scale(1);
+        }
+      }
+
+      @keyframes float-levelup {
+        0% {
+          opacity: 0;
+          transform: translate(-50%, 10px) scale(0.3);
+        }
+        15% {
+          opacity: 1;
+          transform: translate(-50%, -18px) scale(1.35);
+        }
+        30% {
+          transform: translate(-50%, -22px) scale(1);
+        }
+        80% {
+          opacity: 1;
+          transform: translate(-50%, -40px) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: translate(-50%, -52px) scale(0.95);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .floating-text,
+        .floating-text.text-crit,
+        .floating-text.text-alert,
+        .floating-text.text-levelup {
+          animation-name: float-fade;
+        }
+      }
+
+      @keyframes float-fade {
+        0%,
+        70% {
+          opacity: 1;
+          transform: translate(-50%, -12px);
+        }
+        100% {
+          opacity: 0;
+          transform: translate(-50%, -12px);
         }
       }
 
@@ -957,6 +1063,20 @@ export class BattleMapComponent implements AfterViewInit, OnDestroy {
   protected getTowerTitle(tower: TowerInstance): string {
     const def = TOWER_CLASSES[tower.classId];
     return `${def.name} Lv.${tower.level} (Kills: ${tower.kills}, Damage: ${tower.damageDealt})`;
+  }
+
+  /** Anchors combat text to the 3D scene, falling back to the flat grid without WebGL. */
+  protected textPosition(text: FloatingText): { left: number; top: number } {
+    const lift = text.style === 'levelup' ? 1.5 : 0.95;
+    const projected = this.three.isWebGLSupported()
+      ? this.three.projectGridToStage(text.x, text.y, lift)
+      : null;
+    if (projected) return projected;
+    const map = this.game.activeMap();
+    return {
+      left: ((text.x + 0.5) / map.width) * 100,
+      top: ((text.y + 0.5) / map.height) * 100,
+    };
   }
 
   protected getHealthColor(ratio: number): string {

@@ -3,8 +3,51 @@ import * as THREE from 'three';
 import { GameService } from '../../core/services/game.service';
 import { TOWER_CLASSES, TowerClassId } from '../../core/models/tower.model';
 import { MobInstance } from '../../core/models/mob.model';
+import { ParticleFx, Projectile } from '../../core/models/game-state.model';
 
 export type CameraPreset = 'tactics' | 'isometric' | 'topdown';
+
+type AttackStyle = 'lunge' | 'recoil' | 'cast' | 'slam' | 'hop' | 'none';
+
+/** How each hero's billboard moves when it acts. */
+const ATTACK_STYLE: Record<TowerClassId, AttackStyle> = {
+  'blade-warden': 'lunge',
+  samurai: 'lunge',
+  paladin: 'lunge',
+  ranger: 'recoil',
+  ninja: 'recoil',
+  elementalist: 'cast',
+  chronomancer: 'cast',
+  'red-mage': 'cast',
+  astrologian: 'cast',
+  lancer: 'slam',
+  juggernaut: 'slam',
+  rogue: 'hop',
+  oracle: 'none',
+  barricade: 'none',
+};
+
+/** Arc height per tile of flight distance. */
+const PROJECTILE_ARC: Record<Projectile['visualType'], number> = {
+  arrow: 0.12,
+  fireball: 0.28,
+  'magic-spark': 0.1,
+  'time-orb': 0.12,
+  spear: 0.35,
+  dagger: 0.03,
+};
+
+const MAX_PARTICLES = 450;
+
+interface BurstOptions {
+  speed?: number;
+  lift?: number;
+  gravity?: number;
+  life?: number;
+  size?: number;
+  additive?: boolean;
+  sparkle?: boolean;
+}
 
 interface ParticleInstance {
   mesh: THREE.Mesh;
@@ -13,7 +56,70 @@ interface ParticleInstance {
   vz: number;
   life: number;
   maxLife: number;
+  gravity: number;
+  baseScale: number;
+}
+
+interface TowerVisual {
+  group: THREE.Group;
+  classId: TowerClassId;
+  level: number;
+  lastActionTime: number;
+  attackAge: number;
+  attackDirX: number;
+  attackDirZ: number;
+  spawnAge: number;
+  levelUpAge: number;
+  xpRatio: number;
+  phase: number;
+}
+
+interface MobVisual {
+  group: THREE.Group;
+  sprite: THREE.Mesh;
+  spriteMat: THREE.MeshBasicMaterial;
+  shadow: THREE.Mesh;
+  hpGroup: THREE.Group;
+  hpFill: THREE.Mesh;
+  hpLag: THREE.Mesh;
+  hpTrail: number;
+  stunStars: THREE.Group;
+  spriteSize: number;
+  lastHp: number;
+  hitAge: number;
+  spawnAge: number;
+  stride: number;
+  lastX: number;
+  lastZ: number;
+  lean: number;
   color: THREE.Color;
+}
+
+interface FadingVisual {
+  group: THREE.Group;
+  age: number;
+  life: number;
+  kind: 'mob-death' | 'mob-escape' | 'tower-sell';
+  mob?: MobVisual;
+}
+
+interface ProjectileVisual {
+  group: THREE.Group;
+  body: THREE.Group;
+  prev: THREE.Vector3;
+  hasPrev: boolean;
+  spin: number;
+  trailTimer: number;
+  trailColor: number | null;
+  impactColor: number;
+}
+
+interface EffectVisual {
+  object: THREE.Object3D;
+  materials: THREE.Material[];
+  age: number;
+  life: number;
+  animate: (progress: number, object: THREE.Object3D) => void;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -52,11 +158,55 @@ export class ThreeBattlefieldService {
   private aetherVelocities: Float32Array | null = null;
   private cloudRings: THREE.Group | null = null;
 
-  // Pools
-  private towerSprites = new Map<string, THREE.Group>();
-  private mobSprites = new Map<string, THREE.Group>();
-  private projectileMeshes = new Map<string, THREE.Group>();
+  // Entity visuals & effect pools
+  private towerVisuals = new Map<string, TowerVisual>();
+  private mobVisuals = new Map<string, MobVisual>();
+  private projectileVisuals = new Map<string, ProjectileVisual>();
+  private fadingVisuals: FadingVisual[] = [];
+  private activeEffects: EffectVisual[] = [];
+  private seenEffectIds = new Set<string>();
   private activeParticles: ParticleInstance[] = [];
+  private mobHeights = new Map<string, number>();
+  private readonly tmpVec = new THREE.Vector3();
+
+  // Shared geometry (never disposed per-entity)
+  private readonly burstGeo = new THREE.BoxGeometry(0.06, 0.06, 0.06);
+  private readonly sparkleGeo = new THREE.OctahedronGeometry(0.045, 0);
+  private readonly gemGeo = new THREE.SphereGeometry(0.035, 8, 8);
+  private readonly shadowGeo = new THREE.CircleGeometry(0.32, 16);
+  private readonly fxSphereGeo = new THREE.SphereGeometry(1, 16, 12);
+  private readonly fxRingGeo = new THREE.RingGeometry(0.82, 1, 48);
+  private readonly fxArcGeo = new THREE.RingGeometry(0.62, 1, 24, 1, 0, Math.PI * 0.9);
+  private readonly fxWideArcGeo = new THREE.RingGeometry(0.78, 1, 48, 1, 0, Math.PI * 1.5);
+  private readonly fxPillarGeo = new THREE.CylinderGeometry(1, 1, 1, 20, 1, true).translate(
+    0,
+    0.5,
+    0,
+  );
+  private readonly sharedGeometries = new Set<THREE.BufferGeometry>([
+    this.burstGeo,
+    this.sparkleGeo,
+    this.gemGeo,
+    this.shadowGeo,
+    this.fxSphereGeo,
+    this.fxRingGeo,
+    this.fxArcGeo,
+    this.fxWideArcGeo,
+    this.fxPillarGeo,
+  ]);
+
+  // Reactive scene feedback
+  private portalPulseAge = Infinity;
+  private crystalHitAge = Infinity;
+  private shakeIntensity = 0;
+  private readonly reducedMotion =
+    typeof window !== 'undefined' &&
+    !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  private rangeRadius = -1;
+  private gridHalfW = 0;
+  private gridHalfH = 0;
+  private readonly projectVec = new THREE.Vector3();
+  private readonly crystalHitColor = new THREE.Color(0xef4444);
 
   // Raycasting
   private raycaster = new THREE.Raycaster();
@@ -70,6 +220,7 @@ export class ThreeBattlefieldService {
   // Camera Animation Targets
   private cameraTargetPos = new THREE.Vector3(0, 14, 12);
   private cameraLookTarget = new THREE.Vector3(0, 0, 0);
+  private cameraBasePos = new THREE.Vector3(0, 14, 12);
 
   // Sizing: Seamless 1.0 unit grid (Zero gap for cohesive tactical terrain)
   private readonly TILE_SIZE = 1.0;
@@ -224,6 +375,7 @@ export class ThreeBattlefieldService {
     }
 
     if (!animate) {
+      this.cameraBasePos.copy(this.cameraTargetPos);
       this.camera.position.copy(this.cameraTargetPos);
       this.camera.lookAt(this.cameraLookTarget);
     }
@@ -360,6 +512,8 @@ export class ThreeBattlefieldService {
     const map = game.activeMap();
     const halfW = (map.width - 1) / 2;
     const halfH = (map.height - 1) / 2;
+    this.gridHalfW = halfW;
+    this.gridHalfH = halfH;
 
     // 1. Build Sculpted Floating Sky Island Base
     this.buildSculptedIslandBase(map.width, map.height);
@@ -1113,30 +1267,51 @@ export class ThreeBattlefieldService {
     const halfW = (map.width - 1) / 2;
     const halfH = (map.height - 1) / 2;
 
-    // 1. Smooth Camera Interpolation
-    this.camera.position.lerp(this.cameraTargetPos, dt * 6.0);
-    this.camera.lookAt(this.cameraLookTarget);
+    // Simulation-time delta: creature and attack motion freezes on pause and speeds up at 2x/4x
+    const simRunning = !game.isPaused() && !game.isGameOver() && !game.isVictory();
+    const simDt = simRunning ? dt * game.gameSpeed() : 0;
 
-    // 2. Animate Crystal Altar, Satellites & Light Pillar
+    // 1. Smooth Camera Interpolation with decaying impact shake
+    this.cameraBasePos.lerp(this.cameraTargetPos, 1 - Math.exp(-dt * 6.0));
+    this.camera.position.copy(this.cameraBasePos);
+    this.camera.lookAt(this.cameraLookTarget);
+    if (this.shakeIntensity > 0.001) {
+      const s = this.shakeIntensity;
+      this.camera.position.x += (Math.random() - 0.5) * s;
+      this.camera.position.y += (Math.random() - 0.5) * s;
+      this.camera.position.z += (Math.random() - 0.5) * s;
+      this.shakeIntensity *= Math.exp(-dt * 12);
+    } else {
+      this.shakeIntensity = 0;
+    }
+
+    // 2. Animate Crystal Altar, Satellites & Light Pillar (flares red when monsters break through)
+    this.crystalHitAge += dt;
+    const hit = this.crystalHitAge < 0.6 ? 1 - this.crystalHitAge / 0.6 : 0;
     if (this.crystalCore) {
-      this.crystalCore.rotation.y += dt * 0.9;
+      this.crystalCore.rotation.y += dt * (0.9 + hit * 8);
       this.crystalCore.position.y = 0.72 + Math.sin(elapsed * 2.4) * 0.06;
+      this.crystalCore.position.x = hit * Math.sin(this.crystalHitAge * 70) * 0.05;
+      const coreMat = this.crystalCore.material as THREE.MeshStandardMaterial;
+      coreMat.emissive.setHex(0x0284c7).lerp(this.crystalHitColor, hit);
     }
     if (this.crystalShell) {
       this.crystalShell.rotation.y -= dt * 0.5;
       this.crystalShell.position.y = 0.72 + Math.sin(elapsed * 2.4) * 0.06;
+      this.crystalShell.scale.setScalar(1 + hit * 0.18);
     }
     if (this.crystalRing) {
-      this.crystalRing.rotation.z += dt * 1.3;
+      this.crystalRing.rotation.z += dt * (1.3 + hit * 10);
     }
     if (this.crystalLight) {
-      this.crystalLight.intensity = 2.4 + Math.sin(elapsed * 4.0) * 0.6;
+      this.crystalLight.intensity = 2.4 + Math.sin(elapsed * 4.0) * 0.6 + hit * 4;
+      this.crystalLight.color.setHex(0x38bdf8).lerp(this.crystalHitColor, hit);
     }
     if (this.crystalSatellites.length > 0) {
       for (let i = 0; i < this.crystalSatellites.length; i++) {
         const sat = this.crystalSatellites[i];
         const orbitAngle = elapsed * (1.2 + i * 0.3) + (i * Math.PI) / 2;
-        const orbitDist = 0.46;
+        const orbitDist = 0.46 + hit * 0.25;
         sat.position.set(
           Math.cos(orbitAngle) * orbitDist,
           0.72 + Math.sin(elapsed * 3.0 + i) * 0.08,
@@ -1146,13 +1321,17 @@ export class ThreeBattlefieldService {
       }
     }
 
-    // 3. Animate Spawn Portal Vortex
+    // 3. Animate Spawn Portal Vortex (pulses as each monster emerges)
+    this.portalPulseAge += simDt;
+    const portalPulse = this.portalPulseAge < 0.35 ? 1 - this.portalPulseAge / 0.35 : 0;
     if (this.spawnDisc) {
-      this.spawnDisc.rotation.z += dt * 2.0;
+      this.spawnDisc.rotation.z += dt * (2.0 + portalPulse * 6);
+      this.spawnDisc.scale.setScalar(1 + portalPulse * 0.35);
     }
     if (this.spawnCore) {
       this.spawnCore.rotation.y += dt * 1.8;
       this.spawnCore.position.y = 0.45 + Math.sin(elapsed * 3.5) * 0.04;
+      this.spawnCore.scale.setScalar(1 + portalPulse * 0.5);
     }
 
     // 4. Animate Aether Motes (Magical fireflies rising through the air)
@@ -1163,28 +1342,22 @@ export class ThreeBattlefieldService {
       this.cloudRings.rotation.y += dt * 0.04;
     }
 
-    // 6. Selection Reticle Update
+    // 6. Selection Reticle Update (frame-rate independent glide)
     const sel = game.selectedTile();
     if (sel && this.reticleMesh) {
+      const follow = 1 - Math.exp(-dt * 18);
       this.reticleMesh.visible = true;
       const targetX = (sel.x - halfW) * this.TILE_SIZE;
       const targetZ = (sel.y - halfH) * this.TILE_SIZE;
-      this.reticleMesh.position.x = THREE.MathUtils.lerp(
-        this.reticleMesh.position.x,
-        targetX,
-        0.25,
-      );
-      this.reticleMesh.position.z = THREE.MathUtils.lerp(
-        this.reticleMesh.position.z,
-        targetZ,
-        0.25,
-      );
+      this.reticleMesh.position.x += (targetX - this.reticleMesh.position.x) * follow;
+      this.reticleMesh.position.z += (targetZ - this.reticleMesh.position.z) * follow;
       this.reticleMesh.position.y = 0.25 + Math.sin(elapsed * 6.0) * 0.03;
+      this.reticleMesh.scale.setScalar(1 + Math.sin(elapsed * 6.0) * 0.04);
     } else if (this.reticleMesh) {
       this.reticleMesh.visible = false;
     }
 
-    // 7. Range Overlay Update
+    // 7. Range Overlay Update (geometry rebuilt only when the radius changes)
     const selTower = game.selectedTower();
     if (this.rangeMesh) {
       let rangeRadius = 0;
@@ -1199,13 +1372,18 @@ export class ThreeBattlefieldService {
       }
 
       if (rangeRadius > 0 && sel) {
+        if (rangeRadius !== this.rangeRadius) {
+          this.rangeRadius = rangeRadius;
+          this.rangeMesh.geometry.dispose();
+          this.rangeMesh.geometry = new THREE.RingGeometry(
+            Math.max(0.01, rangeRadius - 0.06),
+            rangeRadius,
+            64,
+          );
+        }
         this.rangeMesh.visible = true;
-        this.rangeMesh.geometry.dispose();
-        this.rangeMesh.geometry = new THREE.RingGeometry(
-          Math.max(0.01, rangeRadius - 0.06),
-          rangeRadius,
-          48,
-        );
+        (this.rangeMesh.material as THREE.MeshBasicMaterial).opacity =
+          0.26 + Math.sin(elapsed * 4) * 0.08;
         this.rangeMesh.position.set(
           (sel.x - halfW) * this.TILE_SIZE,
           0.24,
@@ -1216,11 +1394,30 @@ export class ThreeBattlefieldService {
       }
     }
 
-    // 8. Synchronize Dynamic Entities
-    this.syncTowers(game, halfW, halfH, elapsed);
-    this.syncMobs(game, halfW, halfH, dt, elapsed);
-    this.syncProjectiles(game, halfW, halfH);
+    // 8. Synchronize Dynamic Entities & Effects
+    this.syncTowers(game, halfW, halfH, dt, simDt, elapsed);
+    this.syncMobs(game, halfW, halfH, dt, simDt);
+    this.syncProjectiles(game, halfW, halfH, simDt);
+    this.syncEffects(game, halfW, halfH);
+    this.updateEffects(dt);
+    this.updateFadingVisuals(dt);
     this.updateParticles(dt);
+  }
+
+  /**
+   * Projects a grid coordinate (lifted above the terrain) into percentage offsets of the
+   * canvas, so HTML overlays like floating combat text track the 3D scene.
+   */
+  public projectGridToStage(
+    gx: number,
+    gy: number,
+    lift = 0.9,
+  ): { left: number; top: number } | null {
+    if (!this.camera) return null;
+    const v = this.projectVec
+      .set((gx - this.gridHalfW) * this.TILE_SIZE, lift, (gy - this.gridHalfH) * this.TILE_SIZE)
+      .project(this.camera);
+    return { left: (v.x + 1) * 50, top: (1 - v.y) * 50 };
   }
 
   private updateAetherParticles(dt: number): void {
@@ -1244,45 +1441,214 @@ export class ThreeBattlefieldService {
     this.aetherMotes.geometry.attributes['position'].needsUpdate = true;
   }
 
-  private syncTowers(game: GameService, halfW: number, halfH: number, elapsed: number): void {
+  // ---------------------------------------------------------------------------
+  // Heroes (towers)
+  // ---------------------------------------------------------------------------
+
+  private syncTowers(
+    game: GameService,
+    halfW: number,
+    halfH: number,
+    dt: number,
+    simDt: number,
+    elapsed: number,
+  ): void {
     const towers = game.towers();
     const activeIds = new Set<string>();
 
     for (const t of towers) {
       activeIds.add(t.id);
-      let group = this.towerSprites.get(t.id);
+      let vis = this.towerVisuals.get(t.id);
 
-      if (!group) {
-        group = this.createTowerMesh(t);
-        this.towerSprites.set(t.id, group);
+      if (!vis) {
+        const group = this.createTowerMesh(t);
+        vis = {
+          group,
+          classId: t.classId,
+          level: t.level,
+          lastActionTime: t.lastActionTime,
+          attackAge: Infinity,
+          attackDirX: 0,
+          attackDirZ: 0,
+          spawnAge: 0,
+          levelUpAge: Infinity,
+          xpRatio: -1,
+          phase: Math.random() * Math.PI * 2,
+        };
+        this.towerVisuals.set(t.id, vis);
         this.scene?.add(group);
+        const wx = (t.x - halfW) * this.TILE_SIZE;
+        const wz = (t.y - halfH) * this.TILE_SIZE;
+        this.spawnBurst(wx, 0.25, wz, new THREE.Color(TOWER_CLASSES[t.classId].color), 12, {
+          speed: 1.6,
+          lift: 1.2,
+        });
       }
 
-      const wx = (t.x - halfW) * this.TILE_SIZE;
-      const wz = (t.y - halfH) * this.TILE_SIZE;
-      group.position.set(wx, 0.18, wz);
+      const group = vis.group;
+      group.position.set((t.x - halfW) * this.TILE_SIZE, 0.18, (t.y - halfH) * this.TILE_SIZE);
 
-      // Idle Bob & Camera-facing billboard
-      const spriteObj = group.getObjectByName('billboard');
-      if (spriteObj && this.camera) {
-        spriteObj.quaternion.copy(this.camera.quaternion);
-        spriteObj.position.y = 0.45 + Math.sin(elapsed * 2.8 + t.x * 3) * 0.03;
+      // Placement: drop in with an elastic overshoot
+      vis.spawnAge += dt;
+      const spawnP = Math.min(1, vis.spawnAge / 0.5);
+      const spawnScale = this.easeOutBack(spawnP);
+      group.scale.setScalar(Math.max(0.001, spawnScale));
+
+      if (t.classId === 'barricade') continue;
+
+      // Promotion: rebuild level gems and play the level-up pose
+      if (t.level !== vis.level) {
+        if (t.level > vis.level) vis.levelUpAge = 0;
+        vis.level = t.level;
+        this.rebuildLevelGems(group, t.level);
+      }
+      vis.levelUpAge += dt;
+
+      // Attack detection: the game stamps lastActionTime whenever a hero acts
+      if (t.lastActionTime !== vis.lastActionTime) {
+        vis.lastActionTime = t.lastActionTime;
+        vis.attackAge = 0;
+        const angle = t.attackAngleRad;
+        vis.attackDirX = angle === undefined ? 0 : Math.cos(angle);
+        vis.attackDirZ = angle === undefined ? 0 : Math.sin(angle);
+      }
+      vis.attackAge += simDt;
+
+      const pose = this.attackPose(ATTACK_STYLE[t.classId], vis.attackAge);
+
+      // Idle breathing, attack pose, spawn drop and level-up hop layered together
+      const billboard = group.getObjectByName('billboard') as THREE.Mesh | undefined;
+      if (billboard && this.camera) {
+        const breathe = Math.sin(elapsed * 2.4 + vis.phase);
+        const levelP = vis.levelUpAge < 0.9 ? vis.levelUpAge / 0.9 : 1;
+        const levelHop = levelP < 1 ? Math.sin(levelP * Math.PI) * 0.35 : 0;
+        const levelSpin = levelP < 1 ? Math.sin(levelP * Math.PI * 4) * 0.25 * (1 - levelP) : 0;
+        const dropIn = (1 - this.easeOutCubic(spawnP)) * 0.9;
+
+        billboard.quaternion.copy(this.camera.quaternion);
+        if (levelSpin !== 0) billboard.rotateZ(levelSpin);
+        billboard.position.set(
+          vis.attackDirX * pose.forward,
+          -0.06 + breathe * 0.025 + pose.lift + levelHop + dropIn,
+          vis.attackDirZ * pose.forward,
+        );
+        const levelPop = levelP < 1 ? Math.sin(levelP * Math.PI) * 0.18 : 0;
+        billboard.scale.set(
+          1 + breathe * 0.012 + pose.scaleX + levelPop,
+          1 - breathe * 0.012 + pose.scaleY + levelPop,
+          1,
+        );
       }
 
-      // Rotating Aura Ring
-      const auraRing = group.getObjectByName('aura-ring');
+      // Aura ring spins steadily and flares on every action
+      const auraRing = group.getObjectByName('aura-ring') as THREE.Mesh | undefined;
       if (auraRing) {
-        auraRing.rotation.z += 0.02;
+        auraRing.rotation.z += dt * (1.2 + pose.flash * 10);
+        const mat = auraRing.material as THREE.MeshBasicMaterial;
+        mat.opacity = Math.min(
+          1,
+          0.65 + pose.flash * 0.35 + Math.sin(elapsed * 3 + vis.phase) * 0.1,
+        );
+        const s = 1 + pose.flash * 0.25;
+        auraRing.scale.set(s, s, 1);
+      }
+
+      // Experience ring fills around the plinth
+      const needed = game.rules.xpToNextLevel(t);
+      const ratio = needed === null ? 0 : Math.min(1, t.xp / needed);
+      const quantized = Math.round(ratio * 64) / 64;
+      if (quantized !== vis.xpRatio) {
+        vis.xpRatio = quantized;
+        this.updateXpRing(group, quantized);
       }
     }
 
-    // Cleanup sold towers
-    for (const [id, group] of this.towerSprites.entries()) {
+    // Dismissed heroes sink away instead of vanishing
+    for (const [id, vis] of this.towerVisuals.entries()) {
       if (!activeIds.has(id)) {
-        this.scene?.remove(group);
-        this.towerSprites.delete(id);
+        this.towerVisuals.delete(id);
+        this.fadingVisuals.push({ group: vis.group, age: 0, life: 0.35, kind: 'tower-sell' });
+        this.spawnBurst(vis.group.position.x, 0.3, vis.group.position.z, 0xfbbf24, 10, {
+          lift: 1.5,
+        });
       }
     }
+  }
+
+  private attackPose(
+    style: AttackStyle,
+    age: number,
+  ): { forward: number; lift: number; scaleX: number; scaleY: number; flash: number } {
+    const rest = { forward: 0, lift: 0, scaleX: 0, scaleY: 0, flash: 0 };
+    switch (style) {
+      case 'lunge': {
+        // Snap toward the target, then ease back to guard
+        const d = 0.3;
+        if (age >= d) return rest;
+        const p = age / d;
+        const f =
+          p < 0.25 ? this.easeOutCubic(p / 0.25) : 1 - this.easeInOutSine((p - 0.25) / 0.75);
+        return { forward: f * 0.26, lift: f * 0.04, scaleX: f * 0.14, scaleY: -f * 0.08, flash: f };
+      }
+      case 'recoil': {
+        const d = 0.24;
+        if (age >= d) return rest;
+        const p = age / d;
+        const f = p < 0.2 ? p / 0.2 : 1 - this.easeOutCubic((p - 0.2) / 0.8);
+        return { forward: -f * 0.09, lift: 0, scaleX: f * 0.05, scaleY: -f * 0.07, flash: f * 0.7 };
+      }
+      case 'cast': {
+        const d = 0.38;
+        if (age >= d) return rest;
+        const f = Math.sin((age / d) * Math.PI);
+        return { forward: 0, lift: f * 0.09, scaleX: f * 0.08, scaleY: f * 0.12, flash: f };
+      }
+      case 'slam': {
+        // Wind up, leap, crash down with a squash
+        const d = 0.45;
+        if (age >= d) return rest;
+        const p = age / d;
+        if (p < 0.55) {
+          const f = Math.sin((p / 0.55) * Math.PI);
+          return { forward: 0, lift: f * 0.3, scaleX: -f * 0.06, scaleY: f * 0.1, flash: 0.3 };
+        }
+        const f = 1 - (p - 0.55) / 0.45;
+        return { forward: 0, lift: 0, scaleX: f * 0.22, scaleY: -f * 0.22, flash: f };
+      }
+      case 'hop': {
+        const d = 0.3;
+        if (age >= d) return rest;
+        const f = Math.sin((age / d) * Math.PI);
+        return { forward: 0, lift: f * 0.14, scaleX: 0, scaleY: f * 0.05, flash: f * 0.6 };
+      }
+      default:
+        return rest;
+    }
+  }
+
+  private rebuildLevelGems(group: THREE.Group, level: number): void {
+    for (const old of group.children.filter((c) => c.name === 'level-gem')) {
+      group.remove(old);
+      ((old as THREE.Mesh).material as THREE.Material).dispose();
+    }
+    for (let i = 0; i < level; i++) {
+      const star = new THREE.Mesh(
+        this.gemGeo,
+        new THREE.MeshBasicMaterial({ color: level >= 5 ? 0xfde68a : 0xfacc15 }),
+      );
+      star.name = 'level-gem';
+      const starAngle = (i - (level - 1) / 2) * 0.22;
+      star.position.set(Math.sin(starAngle) * 0.44, 0.07, Math.cos(starAngle) * 0.44);
+      group.add(star);
+    }
+  }
+
+  private updateXpRing(group: THREE.Group, ratio: number): void {
+    const ring = group.getObjectByName('xp-ring') as THREE.Mesh | undefined;
+    if (!ring) return;
+    ring.geometry.dispose();
+    ring.visible = ratio > 0;
+    ring.geometry = new THREE.RingGeometry(0.27, 0.32, 40, 1, Math.PI / 2, -Math.PI * 2 * ratio);
   }
 
   private createTowerMesh(tower: { classId: TowerClassId; level: number }): THREE.Group {
@@ -1319,14 +1685,7 @@ export class ThreeBattlefieldService {
     group.add(plinth);
 
     // Level indicator gems on plinth face
-    for (let i = 0; i < tower.level; i++) {
-      const starGeo = new THREE.SphereGeometry(0.035, 8, 8);
-      const starMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
-      const star = new THREE.Mesh(starGeo, starMat);
-      const starAngle = (i - (tower.level - 1) / 2) * 0.22;
-      star.position.set(Math.sin(starAngle) * 0.44, 0.07, Math.cos(starAngle) * 0.44);
-      group.add(star);
-    }
+    this.rebuildLevelGems(group, tower.level);
 
     // Glowing Class Elemental Ring on Plinth
     const auraGeo = new THREE.RingGeometry(0.34, 0.42, 24);
@@ -1342,6 +1701,23 @@ export class ThreeBattlefieldService {
     auraMesh.position.y = 0.08;
     group.add(auraMesh);
 
+    // Golden experience arc that fills toward the next free promotion
+    const xpRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.27, 0.32, 8),
+      new THREE.MeshBasicMaterial({
+        color: 0xfacc15,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+      }),
+    );
+    xpRing.name = 'xp-ring';
+    xpRing.rotation.x = -Math.PI / 2;
+    xpRing.position.y = 0.085;
+    xpRing.visible = false;
+    group.add(xpRing);
+
     // High-Res Heroic Character Billboard Sprite
     const texture = this.textures.get(tower.classId);
     const spriteMat = new THREE.MeshBasicMaterial({
@@ -1352,217 +1728,697 @@ export class ThreeBattlefieldService {
       depthWrite: false,
     });
 
+    // Pivot the sprite at its feet so squash & stretch reads as weight, not scaling
     const spriteGeo = new THREE.PlaneGeometry(1.05, 1.05);
+    spriteGeo.translate(0, 0.525, 0);
     const spriteMesh = new THREE.Mesh(spriteGeo, spriteMat);
     spriteMesh.name = 'billboard';
-    spriteMesh.position.set(0, 0.52, 0);
+    spriteMesh.position.set(0, 0.0, 0);
     group.add(spriteMesh);
 
     return group;
   }
+
+  // ---------------------------------------------------------------------------
+  // Monsters
+  // ---------------------------------------------------------------------------
 
   private syncMobs(
     game: GameService,
     halfW: number,
     halfH: number,
     dt: number,
-    elapsed: number,
+    simDt: number,
   ): void {
     const mobs = game.mobs();
     const activeIds = new Set<string>();
+    this.mobHeights.clear();
 
     for (const mob of mobs) {
-      if (mob.isDead || mob.hasEscaped) continue;
-      activeIds.add(mob.id);
+      if (mob.hasEscaped) continue;
+      let vis = this.mobVisuals.get(mob.id);
 
-      let group = this.mobSprites.get(mob.id);
-      if (!group) {
-        group = this.createMobMesh(mob);
-        this.mobSprites.set(mob.id, group);
-        this.scene?.add(group);
+      if (mob.isDead) {
+        // Killing blow landed this frame: hand the body to the death animation
+        if (vis) this.beginMobDeath(mob.id, vis);
+        continue;
       }
+      activeIds.add(mob.id);
 
       const wx = (mob.x - halfW) * this.TILE_SIZE;
       const wz = (mob.y - halfH) * this.TILE_SIZE;
-      const yAlt = mob.isFlying ? 0.95 : 0.28;
 
-      group.position.set(wx, yAlt, wz);
-
-      // Facing Billboard & Idle animation
-      const spriteObj = group.getObjectByName('mob-sprite');
-      if (spriteObj && this.camera) {
-        spriteObj.quaternion.copy(this.camera.quaternion);
-        spriteObj.position.y = mob.isFlying
-          ? 0.48 + Math.sin(elapsed * 5.0 + mob.spawnTimeMs) * 0.08
-          : 0.42 + Math.sin(elapsed * 8.0) * 0.04;
+      if (!vis) {
+        vis = this.createMobVisual(mob, wx, wz);
+        this.mobVisuals.set(mob.id, vis);
+        this.scene?.add(vis.group);
+        this.portalPulseAge = 0;
       }
+      const yAlt = mob.isFlying ? 0.95 : 0.2;
+      vis.group.position.set(wx, yAlt, wz);
+      this.mobHeights.set(mob.id, yAlt + vis.spriteSize * 0.45);
 
-      // Update 3D Health Bar
-      const hpFill = group.getObjectByName('hp-fill') as THREE.Mesh;
-      if (hpFill) {
+      vis.spawnAge += simDt;
+      vis.hitAge += simDt;
+
+      const stunned = mob.statusEffects.some((e) => e.type === 'stun' && e.remainingMs > 0);
+      const slowed = mob.statusEffects.some((e) => e.type === 'slow' && e.remainingMs > 0);
+
+      // Damage taken since last frame -> white flash + recoil
+      if (mob.hp < vis.lastHp) vis.hitAge = 0;
+      vis.lastHp = mob.hp;
+
+      // Walk cycle advances with distance travelled, so slowed monsters visibly trudge
+      const moved = Math.hypot(wx - vis.lastX, wz - vis.lastZ);
+      if (!stunned) vis.stride += moved * (mob.isFlying ? 3.2 : 7.5) + simDt * 1.5;
+      const moveX = wx - vis.lastX;
+      const moveZ = wz - vis.lastZ;
+      vis.lastX = wx;
+      vis.lastZ = wz;
+
+      if (this.camera) {
+        // Lean into the direction of travel as seen on screen
+        this.tmpVec.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
+        const screenDx = moved > 1e-5 ? (moveX * this.tmpVec.x + moveZ * this.tmpVec.z) / moved : 0;
+        const targetLean = -screenDx * 0.1;
+        vis.lean += (targetLean - vis.lean) * Math.min(1, dt * 8);
+
+        const sprite = vis.sprite;
+        sprite.quaternion.copy(this.camera.quaternion);
+
+        let bob: number;
+        let rock: number;
+        let squashY = 0;
+        if (stunned) {
+          bob = 0;
+          rock = Math.sin(vis.spawnAge * 18) * 0.12;
+        } else if (mob.isFlying) {
+          bob = Math.sin(vis.stride) * 0.09;
+          rock = Math.sin(vis.stride * 0.5) * 0.05;
+          squashY = Math.sin(vis.stride * 2) * 0.05; // wingbeat
+        } else {
+          const step = Math.abs(Math.sin(vis.stride));
+          bob = step * 0.07;
+          rock = Math.sin(vis.stride) * 0.09;
+          squashY = (step - 0.5) * 0.06;
+        }
+
+        // Hit reaction
+        const hitP = vis.hitAge < 0.18 ? 1 - vis.hitAge / 0.18 : 0;
+        const jitter = hitP * 0.05 * Math.sin(vis.hitAge * 90);
+
+        // Emerge from the portal
+        const spawnP = Math.min(1, vis.spawnAge / 0.4);
+        const emerge = this.easeOutBack(spawnP);
+
+        sprite.rotateZ(rock + vis.lean);
+        sprite.position.set(jitter, bob - (1 - spawnP) * 0.3, 0);
+        sprite.scale.set(
+          Math.max(0.001, emerge * (1 + hitP * 0.12 - squashY * 0.5)),
+          Math.max(0.001, emerge * (1 - hitP * 0.1 + squashY)),
+          1,
+        );
+
+        // Tint: hit flash > stun gold > slow frost
+        const c = vis.spriteMat.color;
+        if (hitP > 0) c.setRGB(1 + hitP * 2.5, 1 + hitP * 2.2, 1 + hitP * 2.2);
+        else if (slowed) c.setRGB(0.62, 0.82, 1.35);
+        else c.setRGB(1, 1, 1);
+
+        vis.shadow.scale.setScalar(Math.max(0.001, emerge * (1 - bob * 1.5)));
+
+        // Health bar faces the camera
+        vis.hpGroup.quaternion.copy(this.camera.quaternion);
+        vis.hpGroup.visible = spawnP >= 1;
         const ratio = Math.max(0, Math.min(1, mob.hp / mob.maxHp));
-        hpFill.scale.set(ratio, 1, 1);
-        hpFill.position.x = -(1 - ratio) * 0.25;
+        vis.hpTrail = Math.max(ratio, vis.hpTrail - dt * 0.6);
+        vis.hpFill.scale.set(Math.max(0.001, ratio), 1, 1);
+        vis.hpFill.position.x = -(1 - ratio) * 0.27;
+        vis.hpLag.scale.set(Math.max(0.001, vis.hpTrail), 1, 1);
+        vis.hpLag.position.x = -(1 - vis.hpTrail) * 0.27;
+        const hpMat = vis.hpFill.material as THREE.MeshBasicMaterial;
+        if (ratio > 0.6) hpMat.color.setHex(0x10b981);
+        else if (ratio > 0.25) hpMat.color.setHex(0xf59e0b);
+        else hpMat.color.setHex(0xef4444);
 
-        const mat = hpFill.material as THREE.MeshBasicMaterial;
-        if (ratio > 0.6) mat.color.setHex(0x10b981);
-        else if (ratio > 0.25) mat.color.setHex(0xf59e0b);
-        else mat.color.setHex(0xef4444);
+        // Dizzy stars orbit stunned heads
+        vis.stunStars.visible = stunned;
+        if (stunned) vis.stunStars.rotation.y += dt * 6;
       }
     }
 
-    // Cleanup dead creeps & trigger particles on death
-    for (const [id, group] of this.mobSprites.entries()) {
-      if (!activeIds.has(id)) {
-        this.spawnBurst(group.position.x, group.position.y + 0.3, group.position.z, 0xf87171, 10);
-        this.scene?.remove(group);
-        this.mobSprites.delete(id);
+    // Monsters that vanished without dying slipped through to the crystal
+    for (const [id, vis] of this.mobVisuals.entries()) {
+      if (activeIds.has(id)) continue;
+      if (vis.lastHp <= 0) {
+        this.beginMobDeath(id, vis);
+      } else {
+        this.mobVisuals.delete(id);
+        this.fadingVisuals.push({ group: vis.group, age: 0, life: 0.35, kind: 'mob-escape' });
+        this.crystalHitAge = 0;
+        this.shake(0.12);
+        this.spawnBurst(vis.group.position.x, 0.6, vis.group.position.z, 0xef4444, 14, {
+          speed: 2.4,
+        });
       }
     }
   }
 
-  private createMobMesh(mob: MobInstance): THREE.Group {
+  private beginMobDeath(id: string, vis: MobVisual): void {
+    this.mobVisuals.delete(id);
+    vis.hpGroup.visible = false;
+    vis.stunStars.visible = false;
+    this.fadingVisuals.push({ group: vis.group, age: 0, life: 0.45, kind: 'mob-death', mob: vis });
+    const p = vis.group.position;
+    this.spawnBurst(p.x, p.y + vis.spriteSize * 0.4, p.z, vis.color, 14, { speed: 2.2 });
+    this.spawnBurst(p.x, p.y + vis.spriteSize * 0.4, p.z, 0xffffff, 5, { speed: 1.2, lift: 2.5 });
+  }
+
+  private createMobVisual(mob: MobInstance, wx: number, wz: number): MobVisual {
     const group = new THREE.Group();
 
-    // Soft Drop Shadow (Essential for grounding creeps in 3D space)
-    const shadowGeo = new THREE.CircleGeometry(0.32, 16);
-    const shadowMat = new THREE.MeshBasicMaterial({
-      color: 0x000000,
-      transparent: true,
-      opacity: 0.42,
-    });
-    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+    // Soft drop shadow grounds creeps in 3D space
+    const shadow = new THREE.Mesh(
+      this.shadowGeo,
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.42 }),
+    );
     shadow.rotation.x = -Math.PI / 2;
-    shadow.position.y = mob.isFlying ? -0.7 : -0.05;
+    shadow.position.y = mob.isFlying ? -0.7 : 0.03;
     group.add(shadow);
 
-    // Monster Sprite Billboard with heroic sizing for bosses
     const isBoss = mob.typeId === 'sky-sovereign' || mob.typeId === 'bramble-golem';
     const sprSize = isBoss ? 1.35 : 0.95;
 
-    const texture = this.textures.get(mob.typeId);
     const spriteMat = new THREE.MeshBasicMaterial({
-      map: texture || null,
+      map: this.textures.get(mob.typeId) || null,
       transparent: true,
       alphaTest: 0.15,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
-    const spriteMesh = new THREE.Mesh(new THREE.PlaneGeometry(sprSize, sprSize), spriteMat);
-    spriteMesh.name = 'mob-sprite';
-    spriteMesh.position.set(0, sprSize * 0.45, 0);
-    group.add(spriteMesh);
+    // Feet-anchored pivot so bobbing and squashing stay planted on the road
+    const spriteGeo = new THREE.PlaneGeometry(sprSize, sprSize);
+    spriteGeo.translate(0, sprSize * 0.5, 0);
+    const sprite = new THREE.Mesh(spriteGeo, spriteMat);
+    sprite.name = 'mob-sprite';
+    group.add(sprite);
 
-    // 3D Mini Health Bar
+    // Camera-facing health bar with a trailing "recent damage" segment
+    const hpGroup = new THREE.Group();
+    hpGroup.position.y = sprSize + 0.08;
     const hpBg = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.56, 0.08),
+      new THREE.PlaneGeometry(0.58, 0.09),
       new THREE.MeshBasicMaterial({ color: 0x0f172a }),
     );
-    hpBg.position.set(0, sprSize + 0.06, 0);
-
+    const hpLag = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.54, 0.06),
+      new THREE.MeshBasicMaterial({ color: 0xfef3c7 }),
+    );
+    hpLag.position.z = 0.003;
     const hpFill = new THREE.Mesh(
       new THREE.PlaneGeometry(0.54, 0.06),
       new THREE.MeshBasicMaterial({ color: 0x10b981 }),
     );
-    hpFill.name = 'hp-fill';
-    hpFill.position.set(0, sprSize + 0.06, 0.005);
+    hpFill.position.z = 0.006;
+    hpGroup.add(hpBg, hpLag, hpFill);
+    hpGroup.visible = false;
+    group.add(hpGroup);
 
-    group.add(hpBg);
-    group.add(hpFill);
+    const stunStars = new THREE.Group();
+    stunStars.position.y = sprSize + 0.22;
+    const starMat = new THREE.MeshBasicMaterial({ color: 0xfde047 });
+    for (let i = 0; i < 3; i++) {
+      const star = new THREE.Mesh(this.sparkleGeo, starMat);
+      const a = (i / 3) * Math.PI * 2;
+      star.position.set(Math.cos(a) * 0.22, 0, Math.sin(a) * 0.22);
+      star.scale.setScalar(1.4);
+      stunStars.add(star);
+    }
+    stunStars.visible = false;
+    group.add(stunStars);
 
-    return group;
+    return {
+      group,
+      sprite,
+      spriteMat,
+      shadow,
+      hpGroup,
+      hpFill,
+      hpLag,
+      hpTrail: 1,
+      stunStars,
+      spriteSize: sprSize,
+      lastHp: mob.hp,
+      hitAge: Infinity,
+      spawnAge: 0,
+      stride: Math.random() * Math.PI * 2,
+      lastX: wx,
+      lastZ: wz,
+      lean: 0,
+      color: new THREE.Color(mob.color),
+    };
   }
 
-  private syncProjectiles(game: GameService, halfW: number, halfH: number): void {
+  /** Death, escape and dismissal animations that outlive their game entity. */
+  private updateFadingVisuals(dt: number): void {
+    for (let i = this.fadingVisuals.length - 1; i >= 0; i--) {
+      const f = this.fadingVisuals[i];
+      f.age += dt;
+      const p = Math.min(1, f.age / f.life);
+
+      if (f.kind === 'mob-death' && f.mob) {
+        // Flash white, flatten and float up as the spirit leaves
+        const sprite = f.mob.sprite;
+        if (this.camera) sprite.quaternion.copy(this.camera.quaternion);
+        sprite.rotateZ(p * 0.6);
+        sprite.position.y = p * 0.35;
+        sprite.scale.set(1 + p * 0.5, Math.max(0.001, 1 - p * 0.85), 1);
+        f.mob.spriteMat.color.setRGB(3, 3, 3);
+        f.mob.spriteMat.opacity = 1 - p;
+        (f.mob.shadow.material as THREE.MeshBasicMaterial).opacity = 0.42 * (1 - p);
+      } else if (f.kind === 'mob-escape') {
+        f.group.scale.setScalar(Math.max(0.001, 1 - this.easeInOutSine(p)));
+        f.group.position.y += dt * 1.5;
+      } else {
+        f.group.scale.setScalar(Math.max(0.001, 1 - this.easeInOutSine(p)));
+        f.group.position.y -= dt * 0.6;
+      }
+
+      if (p >= 1) {
+        this.disposeObject(f.group);
+        this.fadingVisuals.splice(i, 1);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Projectiles
+  // ---------------------------------------------------------------------------
+
+  private syncProjectiles(game: GameService, halfW: number, halfH: number, simDt: number): void {
     const projs = game.projectiles();
     const activeIds = new Set<string>();
 
     for (const p of projs) {
       activeIds.add(p.id);
-      let mesh = this.projectileMeshes.get(p.id);
+      let vis = this.projectileVisuals.get(p.id);
 
-      if (!mesh) {
-        mesh = this.createProjectileMesh(p.visualType);
-        this.projectileMeshes.set(p.id, mesh);
-        this.scene?.add(mesh);
+      if (!vis) {
+        vis = this.createProjectileVisual(p.visualType);
+        this.projectileVisuals.set(p.id, vis);
+        this.scene?.add(vis.group);
       }
+
+      // Parabolic flight from the hero's hands to the monster's body
+      const traveled = Math.hypot(p.currentX - p.startX, p.currentY - p.startY);
+      const remaining = Math.hypot(p.targetX - p.currentX, p.targetY - p.currentY);
+      const total = Math.max(0.0001, traveled + remaining);
+      const prog = traveled / total;
+      const endH = this.mobHeights.get(p.targetMobId) ?? 0.6;
+      const startH = 0.95;
+      const arc = Math.min(1.6, total * PROJECTILE_ARC[p.visualType]);
+      const y = startH + (endH - startH) * prog + arc * 4 * prog * (1 - prog);
 
       const wx = (p.currentX - halfW) * this.TILE_SIZE;
       const wz = (p.currentY - halfH) * this.TILE_SIZE;
-      mesh.position.set(wx, 0.55, wz);
+      vis.group.position.set(wx, y, wz);
 
-      mesh.rotation.y += 0.2;
+      // Point along the flight path
+      if (vis.hasPrev) {
+        this.tmpVec.set(wx - vis.prev.x, y - vis.prev.y, wz - vis.prev.z);
+        if (this.tmpVec.lengthSq() > 1e-8) {
+          this.tmpVec.add(vis.group.position);
+          vis.group.lookAt(this.tmpVec);
+        }
+      }
+      vis.prev.set(wx, y, wz);
+      vis.hasPrev = true;
+
+      // Per-type flair
+      vis.spin += simDt;
+      if (p.visualType === 'dagger') {
+        vis.body.rotation.y = vis.spin * 28;
+      } else if (p.visualType === 'fireball' || p.visualType === 'time-orb') {
+        const pulse = 1 + Math.sin(vis.spin * 30) * 0.12;
+        vis.body.scale.setScalar(pulse);
+      }
+
+      // Glowing trails
+      vis.trailTimer -= simDt;
+      if (vis.trailColor !== null && vis.trailTimer <= 0) {
+        vis.trailTimer = 0.025;
+        this.spawnBurst(wx, y, wz, vis.trailColor, 1, {
+          speed: 0.25,
+          lift: 0.4,
+          gravity: -0.5,
+          life: 0.32,
+          size: p.visualType === 'fireball' ? 2.4 : 1.6,
+          additive: true,
+        });
+      }
     }
 
-    for (const [id, mesh] of this.projectileMeshes.entries()) {
+    for (const [id, vis] of this.projectileVisuals.entries()) {
       if (!activeIds.has(id)) {
-        this.spawnBurst(mesh.position.x, mesh.position.y, mesh.position.z, 0xfbbf24, 6);
-        this.scene?.remove(mesh);
-        this.projectileMeshes.delete(id);
+        const pos = vis.group.position;
+        this.spawnBurst(pos.x, pos.y, pos.z, vis.impactColor, 7, { speed: 1.8, additive: true });
+        this.disposeObject(vis.group);
+        this.projectileVisuals.delete(id);
       }
     }
   }
 
-  private createProjectileMesh(type: string): THREE.Group {
+  private createProjectileVisual(type: Projectile['visualType']): ProjectileVisual {
     const group = new THREE.Group();
+    const body = new THREE.Group();
+    group.add(body);
+    let trailColor: number | null = null;
+    let impactColor: number;
 
     if (type === 'fireball') {
-      const geo = new THREE.SphereGeometry(0.18, 12, 12);
-      const mat = new THREE.MeshBasicMaterial({ color: 0xf97316 });
-      group.add(new THREE.Mesh(geo, mat));
-
-      const light = new THREE.PointLight(0xf97316, 1.8, 3);
-      group.add(light);
+      body.add(new THREE.Mesh(this.fxSphereGeo, new THREE.MeshBasicMaterial({ color: 0xfff7ed })));
+      body.children[0].scale.setScalar(0.11);
+      const glow = new THREE.Mesh(this.fxSphereGeo, this.additiveMat(0xf97316, 0.55));
+      glow.scale.setScalar(0.24);
+      body.add(glow);
+      trailColor = 0xf97316;
+      impactColor = 0xfb923c;
     } else if (type === 'time-orb') {
-      const geo = new THREE.SphereGeometry(0.18, 12, 12);
-      const mat = new THREE.MeshBasicMaterial({ color: 0xc084fc });
-      group.add(new THREE.Mesh(geo, mat));
-
-      const light = new THREE.PointLight(0xc084fc, 1.6, 3);
-      group.add(light);
+      body.add(new THREE.Mesh(this.fxSphereGeo, new THREE.MeshBasicMaterial({ color: 0xf5d0fe })));
+      body.children[0].scale.setScalar(0.1);
+      const glow = new THREE.Mesh(this.fxSphereGeo, this.additiveMat(0xa855f7, 0.5));
+      glow.scale.setScalar(0.22);
+      body.add(glow);
+      const ring = new THREE.Mesh(this.fxRingGeo, this.additiveMat(0xc084fc, 0.8));
+      ring.scale.setScalar(0.2);
+      body.add(ring);
+      trailColor = 0xa855f7;
+      impactColor = 0xc084fc;
     } else if (type === 'arrow') {
-      const geo = new THREE.CylinderGeometry(0.02, 0.02, 0.35, 6);
-      const mat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
-      const m = new THREE.Mesh(geo, mat);
-      m.rotation.z = Math.PI / 2;
-      group.add(m);
+      // Built along +Z so lookAt() aims it down the flight path
+      const shaft = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.015, 0.015, 0.42, 5),
+        new THREE.MeshBasicMaterial({ color: 0xfef08a }),
+      );
+      shaft.rotation.x = Math.PI / 2;
+      const head = new THREE.Mesh(
+        new THREE.ConeGeometry(0.04, 0.1, 6),
+        new THREE.MeshBasicMaterial({ color: 0xe2e8f0 }),
+      );
+      head.rotation.x = Math.PI / 2;
+      head.position.z = 0.24;
+      body.add(shaft, head);
+      trailColor = 0xfef9c3;
+      impactColor = 0xfde68a;
     } else if (type === 'dagger') {
-      // Shuriken / Throwing Dagger
-      const geo = new THREE.BoxGeometry(0.2, 0.02, 0.2);
-      const mat = new THREE.MeshBasicMaterial({ color: 0x06b6d4 });
-      group.add(new THREE.Mesh(geo, mat));
+      const star = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.12, 0),
+        new THREE.MeshBasicMaterial({ color: 0x67e8f9 }),
+      );
+      star.scale.set(1, 0.15, 1);
+      body.add(star);
+      impactColor = 0x22d3ee;
     } else {
-      const geo = new THREE.ConeGeometry(0.08, 0.4, 8);
-      const mat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
-      group.add(new THREE.Mesh(geo, mat));
+      // Spear
+      const shaft = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.02, 0.02, 0.6, 6),
+        new THREE.MeshBasicMaterial({ color: 0x94a3b8 }),
+      );
+      shaft.rotation.x = Math.PI / 2;
+      const head = new THREE.Mesh(
+        new THREE.ConeGeometry(0.06, 0.18, 6),
+        new THREE.MeshBasicMaterial({ color: 0x38bdf8 }),
+      );
+      head.rotation.x = Math.PI / 2;
+      head.position.z = 0.36;
+      body.add(shaft, head);
+      trailColor = 0x7dd3fc;
+      impactColor = 0x38bdf8;
     }
 
-    return group;
+    return {
+      group,
+      body,
+      prev: new THREE.Vector3(),
+      hasPrev: false,
+      spin: 0,
+      trailTimer: 0,
+      trailColor,
+      impactColor,
+    };
   }
 
-  public spawnBurst(x: number, y: number, z: number, colorHex: number, count = 8): void {
+  // ---------------------------------------------------------------------------
+  // Combat effects (driven by GameService.particles)
+  // ---------------------------------------------------------------------------
+
+  private syncEffects(game: GameService, halfW: number, halfH: number): void {
+    const fxList = game.particles();
+    const live = new Set<string>();
+    for (const fx of fxList) {
+      live.add(fx.id);
+      if (this.seenEffectIds.has(fx.id)) continue;
+      this.seenEffectIds.add(fx.id);
+      this.spawnEffect(fx, (fx.x - halfW) * this.TILE_SIZE, (fx.y - halfH) * this.TILE_SIZE);
+    }
+    for (const id of this.seenEffectIds) {
+      if (!live.has(id)) this.seenEffectIds.delete(id);
+    }
+  }
+
+  private spawnEffect(fx: ParticleFx, wx: number, wz: number): void {
     if (!this.scene) return;
+    const color = new THREE.Color(fx.color);
+    const r = fx.maxRadius;
 
-    const geo = new THREE.BoxGeometry(0.06, 0.06, 0.06);
-    const color = new THREE.Color(colorHex);
+    switch (fx.type) {
+      case 'slash': {
+        if (r > 1.5) {
+          // Whirlwind: a full sweeping blade arc around the hero
+          const mat = this.additiveMat(color, 0.9);
+          const arc = new THREE.Mesh(this.fxWideArcGeo, mat);
+          arc.rotation.x = -Math.PI / 2;
+          arc.position.set(wx, 0.45, wz);
+          this.addEffect(arc, [mat], 0.35, (p, o) => {
+            o.rotation.z = -p * Math.PI * 2.2;
+            o.scale.setScalar(r * (0.6 + 0.4 * this.easeOutCubic(p)));
+            mat.opacity = 0.9 * (1 - p);
+          });
+        } else {
+          // Crescent slash facing the camera at the monster
+          const mat = this.additiveMat(color, 1);
+          const arc = new THREE.Mesh(this.fxArcGeo, mat);
+          arc.position.set(wx, 0.6, wz);
+          const tilt = Math.random() * Math.PI;
+          this.addEffect(arc, [mat], 0.22, (p, o) => {
+            if (this.camera) o.quaternion.copy(this.camera.quaternion);
+            o.rotateZ(tilt - p * 2.4);
+            o.scale.setScalar(0.35 + p * 0.25);
+            mat.opacity = 1 - p * p;
+          });
+        }
+        this.spawnBurst(wx, 0.6, wz, color, 4, { speed: 1.6, additive: true });
+        break;
+      }
 
-    for (let i = 0; i < count; i++) {
-      const mat = new THREE.MeshBasicMaterial({ color });
+      case 'death': {
+        // The body's own death animation carries the kill; this is just a soft ground flash
+        this.groundRing(wx, wz, color, r * 0.6, 0.3);
+        break;
+      }
+
+      case 'explosion': {
+        const coreMat = this.additiveMat(color, 0.65);
+        const core = new THREE.Mesh(this.fxSphereGeo, coreMat);
+        core.position.set(wx, 0.5, wz);
+        this.addEffect(core, [coreMat], 0.4, (p, o) => {
+          o.scale.setScalar(Math.max(0.001, r * 0.5 * this.easeOutCubic(p)));
+          coreMat.opacity = 0.65 * (1 - p) * (1 - p);
+        });
+        this.groundRing(wx, wz, color, r, 0.45);
+        this.spawnBurst(wx, 0.5, wz, color, 10, { speed: 2.4, additive: true });
+        this.shake(Math.min(0.08, 0.025 * r));
+        break;
+      }
+
+      case 'tremor': {
+        this.groundRing(wx, wz, color, r, 0.5);
+        this.groundRing(wx, wz, new THREE.Color(0xfde68a), r * 0.7, 0.4, 0.08);
+        this.spawnBurst(wx, 0.25, wz, 0x78716c, 12, { speed: 2.8, lift: 1.6 });
+        this.shake(0.09);
+        break;
+      }
+
+      case 'time-pulse': {
+        const mat = this.additiveMat(color, 0.9);
+        const ring = new THREE.Mesh(this.fxRingGeo, mat);
+        ring.position.set(wx, 0.55, wz);
+        this.addEffect(ring, [mat], 0.45, (p, o) => {
+          if (this.camera) o.quaternion.copy(this.camera.quaternion);
+          o.scale.setScalar(Math.max(0.001, 0.75 * (1 - this.easeOutCubic(p)) + 0.1));
+          mat.opacity = 0.9 * (1 - p);
+        });
+        break;
+      }
+
+      case 'aura': {
+        const mat = this.additiveMat(color, 0.8);
+        const ring = new THREE.Mesh(this.fxRingGeo, mat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(wx, 0.2, wz);
+        this.addEffect(ring, [mat], 0.6, (p, o) => {
+          o.position.y = 0.2 + p * 0.8;
+          o.scale.setScalar(Math.max(0.001, r * 0.45 * (0.5 + p * 0.5)));
+          mat.opacity = 0.8 * (1 - p);
+        });
+        this.spawnBurst(wx, 0.4, wz, color, 6, { speed: 0.6, lift: 1.4, gravity: -1.5 });
+        break;
+      }
+
+      case 'levelup': {
+        // Pillar of golden light with rising halos and sparkles
+        const pillarMat = this.additiveMat(color, 0.6);
+        const pillar = new THREE.Mesh(this.fxPillarGeo, pillarMat);
+        pillar.position.set(wx, 0.15, wz);
+        this.addEffect(pillar, [pillarMat], 1.0, (p, o) => {
+          const grow = this.easeOutCubic(Math.min(1, p * 3));
+          o.scale.set(0.38 * (1 - p * 0.5), Math.max(0.001, 3 * grow), 0.38 * (1 - p * 0.5));
+          pillarMat.opacity = 0.6 * (1 - p);
+        });
+        for (let i = 0; i < 3; i++) {
+          const mat = this.additiveMat(color, 0.9);
+          const halo = new THREE.Mesh(this.fxRingGeo, mat);
+          halo.rotation.x = -Math.PI / 2;
+          halo.position.set(wx, 0.2, wz);
+          const delay = i * 0.15;
+          this.addEffect(halo, [mat], 0.9, (p, o) => {
+            const q = Math.max(0, Math.min(1, (p * 0.9 - delay) / (0.9 - delay)));
+            o.position.y = 0.2 + q * 1.6;
+            o.scale.setScalar(Math.max(0.001, 0.55 - q * 0.25));
+            mat.opacity = q <= 0 ? 0 : 0.9 * (1 - q);
+          });
+        }
+        this.spawnBurst(wx, 0.4, wz, color, 18, {
+          speed: 1.1,
+          lift: 2.6,
+          gravity: -0.6,
+          life: 0.9,
+          size: 1.4,
+          additive: true,
+          sparkle: true,
+        });
+        break;
+      }
+
+      case 'stun': {
+        this.spawnBurst(wx, 0.8, wz, color, 6, { speed: 1, additive: true, sparkle: true });
+        break;
+      }
+    }
+  }
+
+  private groundRing(
+    wx: number,
+    wz: number,
+    color: THREE.Color,
+    radius: number,
+    life: number,
+    y = 0.16,
+  ): void {
+    const mat = this.additiveMat(color, 0.85);
+    const ring = new THREE.Mesh(this.fxRingGeo, mat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(wx, y, wz);
+    this.addEffect(ring, [mat], life, (p, o) => {
+      o.scale.setScalar(Math.max(0.001, radius * this.easeOutCubic(p)));
+      mat.opacity = 0.85 * (1 - p);
+    });
+  }
+
+  private addEffect(
+    object: THREE.Object3D,
+    materials: THREE.Material[],
+    life: number,
+    animate: (progress: number, object: THREE.Object3D) => void,
+  ): void {
+    if (!this.scene) return;
+    animate(0, object);
+    this.scene.add(object);
+    this.activeEffects.push({ object, materials, age: 0, life, animate });
+  }
+
+  private updateEffects(dt: number): void {
+    for (let i = this.activeEffects.length - 1; i >= 0; i--) {
+      const e = this.activeEffects[i];
+      e.age += dt;
+      const p = Math.min(1, e.age / e.life);
+      e.animate(p, e.object);
+      if (p >= 1) {
+        this.scene?.remove(e.object);
+        e.materials.forEach((m) => m.dispose());
+        this.activeEffects.splice(i, 1);
+      }
+    }
+  }
+
+  private additiveMat(color: THREE.ColorRepresentation, opacity: number): THREE.MeshBasicMaterial {
+    return new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Spark particles
+  // ---------------------------------------------------------------------------
+
+  public spawnBurst(
+    x: number,
+    y: number,
+    z: number,
+    color: THREE.ColorRepresentation,
+    count = 8,
+    opts: BurstOptions = {},
+  ): void {
+    if (!this.scene) return;
+    const budget = MAX_PARTICLES - this.activeParticles.length;
+    const n = Math.min(count, budget);
+    if (n <= 0) return;
+
+    const speedBase = opts.speed ?? 2.0;
+    const geo = opts.sparkle ? this.sparkleGeo : this.burstGeo;
+
+    for (let i = 0; i < n; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 1,
+        depthWrite: false,
+        blending: opts.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+      });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(x, y, z);
+      mesh.rotation.set(Math.random() * 3, Math.random() * 3, 0);
       this.scene.add(mesh);
 
       const angle = Math.random() * Math.PI * 2;
-      const speed = 1.2 + Math.random() * 2.0;
+      const speed = speedBase * (0.5 + Math.random() * 0.8);
+      const baseScale = (opts.size ?? 1) * (0.7 + Math.random() * 0.6);
+      mesh.scale.setScalar(baseScale);
 
       this.activeParticles.push({
         mesh,
         vx: Math.cos(angle) * speed,
-        vy: 1.5 + Math.random() * 2.5,
+        vy: (opts.lift ?? 2.0) * (0.6 + Math.random() * 0.8),
         vz: Math.sin(angle) * speed,
         life: 0,
-        maxLife: 0.35 + Math.random() * 0.25,
-        color,
+        maxLife: (opts.life ?? 0.45) * (0.75 + Math.random() * 0.5),
+        gravity: opts.gravity ?? 9.8,
+        baseScale,
       });
     }
   }
@@ -1574,20 +2430,58 @@ export class ThreeBattlefieldService {
 
       if (p.life >= p.maxLife) {
         this.scene?.remove(p.mesh);
-        p.mesh.geometry.dispose();
         (p.mesh.material as THREE.Material).dispose();
         this.activeParticles.splice(i, 1);
         continue;
       }
 
-      p.vy -= 9.8 * dt; // gravity
+      p.vy -= p.gravity * dt;
+      p.vx *= 1 - Math.min(1, dt * 2.5);
+      p.vz *= 1 - Math.min(1, dt * 2.5);
       p.mesh.position.x += p.vx * dt;
       p.mesh.position.y += p.vy * dt;
       p.mesh.position.z += p.vz * dt;
+      p.mesh.rotation.x += dt * 6;
+      p.mesh.rotation.y += dt * 4;
 
-      const progress = 1 - p.life / p.maxLife;
-      p.mesh.scale.set(progress, progress, progress);
+      const remaining = 1 - p.life / p.maxLife;
+      p.mesh.scale.setScalar(Math.max(0.001, p.baseScale * remaining));
+      (p.mesh.material as THREE.MeshBasicMaterial).opacity = Math.min(1, remaining * 1.6);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  private shake(amount: number): void {
+    if (this.reducedMotion) return;
+    this.shakeIntensity = Math.min(0.2, Math.max(this.shakeIntensity, amount));
+  }
+
+  private disposeObject(root: THREE.Object3D): void {
+    this.scene?.remove(root);
+    root.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        if (!this.sharedGeometries.has(obj.geometry)) obj.geometry.dispose();
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach((m) => m.dispose()); // textures are shared and stay cached
+      }
+    });
+  }
+
+  private easeOutCubic(t: number): number {
+    return 1 - Math.pow(1 - t, 3);
+  }
+
+  private easeInOutSine(t: number): number {
+    return -(Math.cos(Math.PI * t) - 1) / 2;
+  }
+
+  private easeOutBack(t: number): number {
+    const c1 = 1.70158;
+    const c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
   }
 
   private render(): void {
@@ -1608,9 +2502,13 @@ export class ThreeBattlefieldService {
 
     this.scene = null;
     this.camera = null;
-    this.towerSprites.clear();
-    this.mobSprites.clear();
-    this.projectileMeshes.clear();
+    this.towerVisuals.clear();
+    this.mobVisuals.clear();
+    this.projectileVisuals.clear();
+    this.fadingVisuals = [];
+    this.activeEffects = [];
+    this.seenEffectIds.clear();
     this.activeParticles = [];
+    this.rangeRadius = -1;
   }
 }

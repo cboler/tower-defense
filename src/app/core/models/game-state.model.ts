@@ -34,7 +34,7 @@ export interface FloatingText {
   color: string;
   createdAt: number;
   durationMs: number;
-  style: 'damage' | 'magic' | 'gold' | 'crit' | 'alert' | 'buff' | 'slow';
+  style: 'damage' | 'magic' | 'gold' | 'crit' | 'alert' | 'buff' | 'slow' | 'levelup';
 }
 
 export interface ParticleFx {
@@ -46,5 +46,5 @@ export interface ParticleFx {
   maxRadius: number;
   durationMs: number;
   createdAt: number;
-  type: 'slash' | 'explosion' | 'time-pulse' | 'aura' | 'tremor' | 'stun';
+  type: 'slash' | 'explosion' | 'time-pulse' | 'aura' | 'tremor' | 'stun' | 'levelup' | 'death';
 }

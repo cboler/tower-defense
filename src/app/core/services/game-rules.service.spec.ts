@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { GameRulesService } from './game-rules.service';
 import { MobInstance } from '../models/mob.model';
-import { TowerInstance } from '../models/tower.model';
+import { TowerInstance, XP_PER_KILL_GOLD, XP_PER_UPGRADE_GOLD } from '../models/tower.model';
 import { StageModifier } from '../models/campaign.model';
 
 describe('GameRulesService', () => {
@@ -161,6 +161,7 @@ describe('GameRulesService', () => {
         kills: 0,
         damageDealt: 0,
         goldGenerated: 0,
+        xp: 0,
       };
       const result = service.calculateKillBounty(mob, [rogue]);
       expect(result.earnedGold).toBe(30);
@@ -173,6 +174,43 @@ describe('GameRulesService', () => {
     it('should calculate 1000 points per crystal and 10 points per gold', () => {
       const bonus = service.calculateClearScoreBonus(15, 120);
       expect(bonus).toBe(15 * 1000 + 120 * 10);
+    });
+  });
+
+  describe('experience', () => {
+    it('scales the XP needed for a free promotion with the upgrade price', () => {
+      // Blade Warden Lv.2 costs 120G -> 120 * XP_PER_UPGRADE_GOLD
+      expect(service.xpToNextLevel({ classId: 'blade-warden', level: 1 })).toBe(
+        120 * XP_PER_UPGRADE_GOLD,
+      );
+      expect(service.xpToNextLevel({ classId: 'blade-warden', level: 5 })).toBeNull();
+      expect(service.xpToNextLevel({ classId: 'barricade', level: 1 })).toBeNull();
+    });
+
+    it('ignores overkill damage when awarding hit XP', () => {
+      expect(service.calculateHitXp(40, 100)).toBe(40);
+      expect(service.calculateHitXp(500, 30)).toBe(30);
+      expect(service.calculateHitXp(50, 0)).toBe(0);
+    });
+
+    it('awards kill XP from the monster bounty', () => {
+      expect(service.calculateKillXp({ goldReward: 6 })).toBe(6 * XP_PER_KILL_GOLD);
+    });
+
+    it('carries leftover XP across multiple level-ups', () => {
+      const toLv2 = service.xpToNextLevel({ classId: 'blade-warden', level: 1 })!;
+      const toLv3 = service.xpToNextLevel({ classId: 'blade-warden', level: 2 })!;
+      const result = service.resolveExperience({
+        classId: 'blade-warden',
+        level: 1,
+        xp: toLv2 + toLv3 + 15,
+      });
+      expect(result).toEqual({ level: 3, xp: 15, levelsGained: 2 });
+    });
+
+    it('stops at max level and discards surplus XP', () => {
+      const result = service.resolveExperience({ classId: 'blade-warden', level: 4, xp: 1e9 });
+      expect(result).toEqual({ level: 5, xp: 0, levelsGained: 1 });
     });
   });
 });

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { GameService } from './game.service';
 import { MAP_VERDANT_CROSSROADS } from '../models/map.model';
 import { MobInstance } from '../models/mob.model';
+import { ORACLE_XP_SHARE, XP_PER_KILL_GOLD } from '../models/tower.model';
 
 describe('GameService', () => {
   let service: GameService;
@@ -295,5 +296,100 @@ describe('GameService', () => {
     service.upgradeTower(jugg.id);
 
     expect(service.isClassUnlocked('samurai')).toBe(true);
+  });
+
+  describe('hero experience', () => {
+    const makeMob = (hp: number, goldReward = 6): MobInstance => ({
+      id: 'mob-xp',
+      typeId: 'skulker',
+      name: 'Skulker',
+      icon: '👺',
+      color: '#10b981',
+      hp,
+      maxHp: hp,
+      baseSpeed: 1,
+      effectiveSpeed: 1,
+      armor: 0,
+      magicResist: 0,
+      isFlying: false,
+      crystalLoss: 1,
+      goldReward,
+      x: 1,
+      y: 1,
+      waypointIndex: 0,
+      pathLengthWalked: 0,
+      statusEffects: [],
+      isDead: false,
+      hasEscaped: false,
+      spawnTimeMs: 0,
+    });
+    const flush = () =>
+      (service as unknown as { flushTowerExperience(): void }).flushTowerExperience();
+
+    it('banks XP from damage and kills', () => {
+      service.placeTower(0, 0, 'blade-warden');
+      const warden = service.towers()[0];
+
+      service.dealDamage(makeMob(100), 40, 'pure', warden);
+      expect(warden.xp).toBe(40);
+
+      // Killing blow: only the 10 HP actually removed counts, plus the kill bounty XP
+      service.dealDamage(makeMob(10, 6), 40, 'pure', warden);
+      expect(warden.xp).toBe(40 + 10 + 6 * XP_PER_KILL_GOLD);
+    });
+
+    it('promotes a hero for free once its XP bar fills', () => {
+      service.placeTower(0, 0, 'blade-warden');
+      const goldAfterPlacing = service.gold();
+      const warden = service.towers()[0];
+      const needed = service.rules.xpToNextLevel(warden)!;
+
+      warden.xp = needed - 5;
+      service.dealDamage(makeMob(100), 25, 'pure', warden);
+      flush();
+
+      const promoted = service.towers()[0];
+      expect(promoted.level).toBe(2);
+      expect(promoted.xp).toBe(20);
+      expect(promoted.totalInvested).toBe(100); // free promotion doesn't inflate refunds
+      expect(service.gold()).toBe(goldAfterPlacing);
+      expect(service.floatingTexts().some((t) => t.style === 'levelup')).toBe(true);
+    });
+
+    it('free promotions count toward job unlocks', () => {
+      service.gold.set(5000);
+      service.placeTower(0, 0, 'blade-warden');
+      service.placeTower(0, 2, 'juggernaut');
+      const warden = service.towers().find((t) => t.classId === 'blade-warden')!;
+      const jugg = service.towers().find((t) => t.classId === 'juggernaut')!;
+
+      warden.xp = service.rules.xpToNextLevel(warden)! - 1;
+      jugg.xp = service.rules.xpToNextLevel(jugg)! - 1;
+      service.dealDamage(makeMob(100), 1, 'pure', warden);
+      service.dealDamage(makeMob(100), 1, 'pure', jugg);
+      flush();
+
+      expect(service.isClassUnlocked('samurai')).toBe(true);
+    });
+
+    it('shares a cut of earned XP with Oracles whose halo covers the hero', () => {
+      service.gold.set(5000);
+      service.placeTower(0, 0, 'blade-warden');
+      service.placeTower(1, 0, 'oracle');
+      const warden = service.towers().find((t) => t.classId === 'blade-warden')!;
+      const oracle = service.towers().find((t) => t.classId === 'oracle')!;
+
+      service.dealDamage(makeMob(1000), 100, 'pure', warden);
+      expect(oracle.xp).toBe(100 * ORACLE_XP_SHARE);
+    });
+
+    it('stops accruing XP at max level', () => {
+      service.placeTower(0, 0, 'blade-warden');
+      const warden = service.towers()[0];
+      warden.level = 5;
+
+      service.dealDamage(makeMob(100), 50, 'pure', warden);
+      expect(warden.xp).toBe(0);
+    });
   });
 });

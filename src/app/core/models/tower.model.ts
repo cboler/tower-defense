@@ -64,9 +64,22 @@ export interface TowerInstance {
   kills: number;
   damageDealt: number;
   goldGenerated: number;
+  xp: number; // experience banked toward the next level
   attackAngleRad?: number;
   isAttackingAnimation?: boolean;
 }
+
+/**
+ * Experience tuning. A hero needs `nextLevel.upgradeCost * XP_PER_UPGRADE_GOLD` XP to earn
+ * a free promotion, so XP thresholds scale with the gold price of the same upgrade.
+ */
+export const XP_PER_UPGRADE_GOLD = 8;
+/** XP awarded on the killing blow, per gold of the monster's bounty. */
+export const XP_PER_KILL_GOLD = 5;
+/** XP awarded to support heroes (Rogue) per gold they generate. */
+export const XP_PER_SUPPORT_GOLD = 10;
+/** Share of an ally's earned XP that flows to each Oracle whose halo covers it. */
+export const ORACLE_XP_SHARE = 0.25;
 
 export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
   'blade-warden': {

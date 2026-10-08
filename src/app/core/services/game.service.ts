@@ -3,11 +3,13 @@ import { MAP_VERDANT_CROSSROADS, MapDefinition, Point } from '../models/map.mode
 import {
   DamageType,
   JOB_UNLOCK_RULES,
+  ORACLE_XP_SHARE,
   TOWER_CLASSES,
   TargetPriority,
   TowerClassId,
   TowerInstance,
   TowerLevelConfig,
+  XP_PER_SUPPORT_GOLD,
 } from '../models/tower.model';
 import { MOB_TYPES, MobInstance, MobTypeId } from '../models/mob.model';
 import { FloatingText, GameSpeed, ParticleFx, Projectile } from '../models/game-state.model';
@@ -210,6 +212,9 @@ export class GameService implements OnDestroy {
   private lastTime = 0;
   private gameTimeMs = 0;
   private spawnQueue: SpawnQueueItem[] = [];
+  // Towers whose XP changed since the last publish to the towers() signal
+  private readonly xpDirtyIds = new Set<string>();
+  private lastXpFlushMs = 0;
 
   constructor() {
     this.loadMission(this.campaign.activeMission());
@@ -262,6 +267,8 @@ export class GameService implements OnDestroy {
     this.barricades.set(new Set());
     this.unlockedJobIds.set(new Set());
     this.spawnQueue = [];
+    this.xpDirtyIds.clear();
+    this.lastXpFlushMs = 0;
     this.countdownRemainingMs.set(this.countdownDurationMs);
     this.isCountdownActive.set(true);
     this.canRushWave.set(false);
@@ -508,6 +515,7 @@ export class GameService implements OnDestroy {
       kills: 0,
       damageDealt: 0,
       goldGenerated: 0,
+      xp: 0,
     };
 
     this.towers.update((ts) => [...ts, newTower]);
@@ -656,6 +664,9 @@ export class GameService implements OnDestroy {
 
     // 7. Check wave completion
     this.checkWaveProgress();
+
+    // 8. Promote heroes that banked enough experience
+    this.flushTowerExperience();
   }
 
   private calculateOracleBuffs(): Map<string, { speedMult: number; damageMult: number }> {
@@ -805,6 +816,7 @@ export class GameService implements OnDestroy {
             const stolen = lvl.pickpocketGold ?? 2;
             this.gold.update((g) => g + stolen);
             tower.goldGenerated += stolen;
+            this.grantXp(tower, stolen * XP_PER_SUPPORT_GOLD);
             this.audio.playCoin();
             this.addFloatingText(`+${stolen}G`, target.x, target.y - 0.2, '#facc15', 'gold');
             this.addParticle(target.x, target.y, '#facc15', 0.6, 'aura');
@@ -1208,10 +1220,12 @@ export class GameService implements OnDestroy {
       this.activeMission().modifiers,
     );
     const effectiveDamage = dmg.effectiveDamage;
+    const hpBeforeHit = mob.hp;
 
     mob.hp -= effectiveDamage;
     if (tower) {
       tower.damageDealt += effectiveDamage;
+      this.grantXp(tower, this.rules.calculateHitXp(effectiveDamage, hpBeforeHit));
     }
 
     this.addFloatingText(
@@ -1245,10 +1259,12 @@ export class GameService implements OnDestroy {
 
     if (tower) {
       tower.kills++;
+      this.grantXp(tower, this.rules.calculateKillXp(mob));
     }
 
     if (plunderRogue && bonusGold > 0) {
       plunderRogue.goldGenerated += bonusGold;
+      this.grantXp(plunderRogue, bonusGold * XP_PER_SUPPORT_GOLD);
       this.addFloatingText(
         `+${earnedGold}G (x${bestMultiplier} Plunder!)`,
         mob.x,
@@ -1261,15 +1277,21 @@ export class GameService implements OnDestroy {
       this.addFloatingText(`+${mob.goldReward}G`, mob.x, mob.y, '#fbbf24', 'gold');
     }
 
-    this.addParticle(mob.x, mob.y, mob.color, 1.0, 'explosion');
+    this.addParticle(mob.x, mob.y, mob.color, 1.0, 'death');
   }
 
   private updateVisuals(): void {
     const now = this.gameTimeMs;
 
-    this.floatingTexts.update((texts) => texts.filter((t) => now - t.createdAt < t.durationMs));
+    const texts = this.floatingTexts();
+    if (texts.some((t) => now - t.createdAt >= t.durationMs)) {
+      this.floatingTexts.set(texts.filter((t) => now - t.createdAt < t.durationMs));
+    }
 
-    this.particles.update((particles) => particles.filter((p) => now - p.createdAt < p.durationMs));
+    const particles = this.particles();
+    if (particles.some((p) => now - p.createdAt >= p.durationMs)) {
+      this.particles.set(particles.filter((p) => now - p.createdAt < p.durationMs));
+    }
   }
 
   private checkWaveProgress(): void {
@@ -1286,6 +1308,10 @@ export class GameService implements OnDestroy {
 
       const wave = this.currentWaveDef();
       const bonus = wave?.bonusGold ?? 50;
+      const drillXp = this.rules.calculateWaveClearXp(this.currentWaveIndex() + 1);
+      for (const t of this.towers()) {
+        this.grantXp(t, drillXp, false);
+      }
       this.gold.update((g) => g + bonus);
       this.score.update((s) => s + bonus * 20);
       this.audio.playVictory();
@@ -1325,12 +1351,66 @@ export class GameService implements OnDestroy {
     }
   }
 
+  /**
+   * Banks XP on a hero (mutated in place mid-tick like kills/damageDealt) and shares a cut
+   * with any Oracle whose halo covers it. Promotions are resolved in flushTowerExperience().
+   */
+  private grantXp(tower: TowerInstance, amount: number, shareWithOracles = true): void {
+    if (amount <= 0 || this.rules.xpToNextLevel(tower) === null) return;
+    tower.xp += amount;
+    this.xpDirtyIds.add(tower.id);
+
+    if (!shareWithOracles || tower.classId === 'oracle') return;
+    for (const oracle of this.towers()) {
+      if (oracle.classId !== 'oracle') continue;
+      const range = TOWER_CLASSES.oracle.levels[oracle.level - 1].range;
+      if (Math.hypot(tower.x - oracle.x, tower.y - oracle.y) <= range) {
+        this.grantXp(oracle, amount * ORACLE_XP_SHARE, false);
+      }
+    }
+  }
+
+  /**
+   * Publishes banked XP to the towers() signal (throttled so the dossier XP bar stays live
+   * without re-rendering every frame) and applies free level-ups immediately.
+   */
+  private flushTowerExperience(): void {
+    if (this.xpDirtyIds.size === 0) return;
+
+    const towers = this.towers();
+    const promotionReady = towers.some(
+      (t) => this.xpDirtyIds.has(t.id) && this.rules.resolveExperience(t).levelsGained > 0,
+    );
+    if (!promotionReady && this.gameTimeMs - this.lastXpFlushMs < 250) return;
+    this.lastXpFlushMs = this.gameTimeMs;
+
+    const promoted: TowerInstance[] = [];
+    const next = towers.map((t) => {
+      if (!this.xpDirtyIds.has(t.id)) return t;
+      const result = this.rules.resolveExperience(t);
+      const updated = { ...t, level: result.level, xp: result.xp };
+      if (result.levelsGained > 0) promoted.push(updated);
+      return updated;
+    });
+    this.xpDirtyIds.clear();
+    this.towers.set(next);
+
+    if (promoted.length === 0) return;
+    this.audio.playLevelUp();
+    for (const t of promoted) {
+      this.addFloatingText(`LEVEL UP! Lv.${t.level}`, t.x, t.y - 0.3, '#facc15', 'levelup', 1600);
+      this.addParticle(t.x, t.y, '#facc15', 1.6, 'levelup');
+    }
+    this.checkJobUnlocks();
+  }
+
   public addFloatingText(
     text: string,
     x: number,
     y: number,
     color: string,
     style: FloatingText['style'],
+    durationMs = 900,
   ): void {
     const item: FloatingText = {
       id: `text-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1339,7 +1419,7 @@ export class GameService implements OnDestroy {
       y,
       color,
       createdAt: this.gameTimeMs,
-      durationMs: 900,
+      durationMs,
       style,
     };
     this.floatingTexts.update((ts) => [...ts, item]);

@@ -1,5 +1,11 @@
 import { Injectable } from '@angular/core';
-import { DamageType, TowerInstance, TOWER_CLASSES } from '../models/tower.model';
+import {
+  DamageType,
+  TowerInstance,
+  TOWER_CLASSES,
+  XP_PER_KILL_GOLD,
+  XP_PER_UPGRADE_GOLD,
+} from '../models/tower.model';
 import { MobInstance } from '../models/mob.model';
 import { StageModifier } from '../models/campaign.model';
 
@@ -227,5 +233,62 @@ export class GameRulesService {
     const crystalHonor = remainingCrystals * 1000;
     const goldHonor = treasuryGold * 10;
     return crystalHonor + goldHonor;
+  }
+
+  /**
+   * XP required to earn the next level for free, or null when the hero cannot level further.
+   */
+  public xpToNextLevel(tower: Pick<TowerInstance, 'classId' | 'level'>): number | null {
+    if (tower.classId === 'barricade') return null;
+    const def = TOWER_CLASSES[tower.classId];
+    if (tower.level >= def.levels.length) return null;
+    return Math.round(def.levels[tower.level].upgradeCost * XP_PER_UPGRADE_GOLD);
+  }
+
+  /**
+   * XP earned from a hit. Overkill is ignored so finishing blows on nearly-dead monsters
+   * don't out-earn the heroes that did the real work.
+   */
+  public calculateHitXp(effectiveDamage: number, hpBeforeHit: number): number {
+    return Math.max(0, Math.min(effectiveDamage, hpBeforeHit));
+  }
+
+  public calculateKillXp(mob: Pick<MobInstance, 'goldReward'>): number {
+    return mob.goldReward * XP_PER_KILL_GOLD;
+  }
+
+  /**
+   * Veteran drill XP every hero receives when a wave is cleared, so support and
+   * back-line heroes still progress.
+   */
+  public calculateWaveClearXp(waveNumber: number): number {
+    return 30 + waveNumber * 10;
+  }
+
+  /**
+   * Spends banked XP on as many level-ups as it covers. XP is discarded at max level.
+   */
+  public resolveExperience(tower: Pick<TowerInstance, 'classId' | 'level' | 'xp'>): {
+    level: number;
+    xp: number;
+    levelsGained: number;
+  } {
+    let level = tower.level;
+    let xp = tower.xp;
+    let levelsGained = 0;
+
+    for (;;) {
+      const needed = this.xpToNextLevel({ classId: tower.classId, level });
+      if (needed === null) {
+        xp = 0;
+        break;
+      }
+      if (xp < needed) break;
+      xp -= needed;
+      level++;
+      levelsGained++;
+    }
+
+    return { level, xp, levelsGained };
   }
 }

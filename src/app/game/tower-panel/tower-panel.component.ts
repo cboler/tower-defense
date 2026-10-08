@@ -97,6 +97,36 @@ import {
                 </div>
                 <p class="special-perk">{{ getCurLevel(tower).specialDescription }}</p>
 
+                @if (tower.classId !== 'barricade') {
+                  @let xpNeeded = game.rules.xpToNextLevel(tower);
+                  <div
+                    class="xp-track"
+                    role="progressbar"
+                    [attr.aria-label]="'Experience toward level ' + (tower.level + 1)"
+                    aria-valuemin="0"
+                    [attr.aria-valuemax]="xpNeeded ?? 1"
+                    [attr.aria-valuenow]="xpNeeded === null ? 1 : round(tower.xp)"
+                  >
+                    <div class="xp-head">
+                      <span class="xp-lbl">EXP</span>
+                      @if (xpNeeded !== null) {
+                        <span class="xp-val">{{ round(tower.xp) }} / {{ xpNeeded }}</span>
+                      } @else {
+                        <span class="xp-val xp-max">MASTERED</span>
+                      }
+                    </div>
+                    <div class="xp-bar">
+                      <div
+                        class="xp-fill"
+                        [style.width.%]="xpNeeded === null ? 100 : (tower.xp / xpNeeded) * 100"
+                      ></div>
+                    </div>
+                    @if (xpNeeded !== null) {
+                      <span class="xp-hint">Fills from combat — free promotion at full bar</span>
+                    }
+                  </div>
+                }
+
                 <!-- Stats Grid -->
                 <div class="stats-matrix">
                   @if (tower.classId === 'rogue') {
@@ -1114,6 +1144,61 @@ import {
         font-size: 0.72rem;
         color: var(--text-muted);
         line-height: 1.3;
+      }
+
+      .xp-track {
+        margin: 0 0 6px;
+      }
+
+      .xp-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 2px;
+      }
+
+      .xp-lbl {
+        font-family: var(--font-tactical);
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: #facc15;
+      }
+
+      .xp-val {
+        font-family: var(--font-mono);
+        font-size: 0.66rem;
+        color: var(--text-muted);
+
+        &.xp-max {
+          color: #facc15;
+          font-weight: 700;
+        }
+      }
+
+      .xp-bar {
+        position: relative;
+        height: 5px;
+        background: rgba(0, 0, 0, 0.45);
+        border: 1px solid rgba(250, 204, 21, 0.25);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .xp-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #a16207, #facc15 70%, #fef08a);
+        box-shadow: 0 0 6px rgba(250, 204, 21, 0.6);
+        border-radius: inherit;
+        transition: width 0.25s ease-out;
+      }
+
+      .xp-hint {
+        display: block;
+        margin-top: 2px;
+        font-size: 0.6rem;
+        color: var(--text-muted);
+        opacity: 0.8;
       }
 
       .stats-matrix {
