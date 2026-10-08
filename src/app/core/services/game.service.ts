@@ -52,6 +52,12 @@ export class GameService implements OnDestroy {
   public readonly isVictory = signal<boolean>(false);
   public readonly isCampaignModalOpen = signal<boolean>(false);
   public readonly isBestiaryModalOpen = signal<boolean>(false);
+  public readonly isScoutOpen = signal<boolean>(false);
+
+  public toggleScout(): void {
+    this.isScoutOpen.update((v) => !v);
+    this.audio.playSelect();
+  }
 
   public toggleCampaignModal(): void {
     this.isCampaignModalOpen.update((v) => !v);

@@ -23,9 +23,15 @@ test.describe('Crystal Wardens Tower Defense Smoke Tests', () => {
     await expect(page.locator('#battlefield-map')).toBeVisible();
     await expect(page.locator('#call-wave-btn')).toBeVisible();
 
-    // 3. Command dock and tactical action bar are visible
+    // 3. Command dock and wave command bar are visible
     await expect(page.locator('.tower-command-panel')).toBeVisible();
-    await expect(page.locator('.controller-guide-bar')).toBeVisible();
+    await expect(page.locator('app-command-bar')).toBeVisible();
+
+    // Keyboard/controller prompts show wherever there is room (hidden on short landscape phones)
+    const viewport = page.viewportSize();
+    if (viewport && viewport.height >= 520) {
+      await expect(page.locator('.controller-guide-bar')).toBeVisible();
+    }
 
     // 4. Controller & Keyboard interaction test (pure controller/keyboard playable)
     // Press '2' to select Ranger class

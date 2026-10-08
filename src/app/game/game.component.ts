@@ -1,4 +1,13 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  DOCUMENT,
+  OnDestroy,
+  OnInit,
+  computed,
+  effect,
+  inject,
+  signal,
+} from '@angular/core';
 import { Subscription } from 'rxjs';
 import { GameService } from '../core/services/game.service';
 import { GamepadAction, GamepadService } from '../core/services/gamepad.service';
@@ -8,6 +17,8 @@ import { TowerClassId } from '../core/models/tower.model';
 import { HudComponent } from './hud/hud.component';
 import { BattleMapComponent } from './battle-map/battle-map.component';
 import { TowerPanelComponent } from './tower-panel/tower-panel.component';
+import { CommandBarComponent } from './command-bar/command-bar.component';
+import { IconComponent } from './icon/icon.component';
 import { CameraPreset, ThreeBattlefieldService } from './battle-map/three-battlefield.service';
 import { CampaignModalComponent } from './campaign-modal/campaign-modal.component';
 import { BestiaryModalComponent } from './bestiary-modal/bestiary-modal.component';
@@ -20,21 +31,20 @@ import { StoryDialogueOverlayComponent } from './story-dialogue-overlay/story-di
     HudComponent,
     BattleMapComponent,
     TowerPanelComponent,
+    CommandBarComponent,
+    IconComponent,
     CampaignModalComponent,
     BestiaryModalComponent,
     StoryDialogueOverlayComponent,
   ],
   template: `
     <div class="game-view" role="main" aria-label="Crystal Wardens Arena">
-      <!-- Top HUD -->
-      <app-hud class="game-hud-block" />
+      <app-hud class="game-hud-block" (openMenu)="isPauseMenuOpen.set(true)" />
 
-      <!-- Main Arena Presentation Container (Zero-Scroll Viewport) -->
       <div class="arena-stage-area">
-        <!-- Center Battlefield & Action Bar -->
         <app-battle-map class="battle-map-stage" />
 
-        <!-- Tower Command Panel (Mobile drawer / Tablet bottom dock / Desktop side console) -->
+        <!-- Phones: in-flow drawer that shrinks the map. Landscape / desktop: side panel. -->
         <app-tower-panel
           class="tower-command-dock"
           [class.is-visible]="isVantageSelected()"
@@ -42,191 +52,223 @@ import { StoryDialogueOverlayComponent } from './story-dialogue-overlay/story-di
         />
       </div>
 
-      <!-- Game Over Modal Overlay -->
+      <app-command-bar class="command-bar-block" />
+
+      <!-- Defeat -->
       @if (game.isGameOver()) {
-        <div class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="defeat-title">
-          <div class="modal-card defeat-card">
-            <span class="modal-icon" aria-hidden="true">💔</span>
-            <h2 id="defeat-title" class="modal-heading">The Crystals Have Shattered!</h2>
-            <p class="modal-subtitle">
-              The marauding hordes overwhelmed your perimeter and plundered the sacred sanctuary.
-            </p>
+        <div class="cw-scrim" role="dialog" aria-modal="true" aria-labelledby="defeat-title">
+          <div class="cw-sheet result-sheet defeat">
+            <div class="cw-sheet-body result-body">
+              <span class="result-emblem" aria-hidden="true">
+                <app-icon name="crystal" [size]="34" />
+              </span>
+              <span class="cw-eyebrow">Defeat</span>
+              <h2 id="defeat-title" class="cw-title result-title">The crystals have shattered</h2>
+              <p class="result-sub">The hordes overran the sanctuary. Regroup and try again.</p>
 
-            <div class="defeat-stats">
-              <div class="stat-pill">
-                <span class="stat-tag">Waves Survived</span>
-                <span class="stat-num"
-                  >{{ game.currentWaveIndex() }} / {{ game.totalWaves() }}</span
-                >
-              </div>
-              <div class="stat-pill">
-                <span class="stat-tag">Final Score</span>
-                <span class="stat-num">{{ game.score() }}</span>
-              </div>
-              <div class="stat-pill">
-                <span class="stat-tag">Defenders Deployed</span>
-                <span class="stat-num">{{ game.towers().length }}</span>
-              </div>
+              <dl class="result-stats">
+                <div>
+                  <dt>Waves</dt>
+                  <dd>{{ game.currentWaveIndex() }}/{{ game.totalWaves() }}</dd>
+                </div>
+                <div>
+                  <dt>Score</dt>
+                  <dd>{{ game.score() }}</dd>
+                </div>
+                <div>
+                  <dt>Defenders</dt>
+                  <dd>{{ game.towers().length }}</dd>
+                </div>
+              </dl>
             </div>
-
-            <button
-              type="button"
-              class="modal-btn restart-btn"
-              id="defeat-restart-btn"
-              (click)="restartGame()"
-            >
-              🔄 Try Again [A]
-            </button>
+            <div class="cw-sheet-footer">
+              <button
+                type="button"
+                class="cw-btn primary block"
+                id="defeat-restart-btn"
+                (click)="restartGame()"
+              >
+                <app-icon name="refresh" [size]="18" />
+                Try again
+                <span class="btn-kbd">A</span>
+              </button>
+            </div>
           </div>
         </div>
       }
 
-      <!-- Victory Modal Overlay -->
+      <!-- Victory -->
       @if (game.isVictory()) {
-        <div class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="victory-title">
-          <div class="modal-card victory-card">
-            <span class="modal-icon" aria-hidden="true">👑</span>
-            <h2 id="victory-title" class="modal-heading">Sacred Sanctuary Protected!</h2>
-            <p class="modal-subtitle">
-              All {{ game.totalWaves() }} waves of marauders and apex titans were defeated!
-            </p>
+        <div class="cw-scrim" role="dialog" aria-modal="true" aria-labelledby="victory-title">
+          <div class="cw-sheet result-sheet victory">
+            <div class="cw-sheet-body result-body">
+              <span class="result-emblem" aria-hidden="true">
+                <app-icon name="star" [size]="34" />
+              </span>
+              <span class="cw-eyebrow">Victory · {{ getRank() }}</span>
+              <h2 id="victory-title" class="cw-title result-title">Sanctuary protected</h2>
+              <p class="result-sub">All {{ game.totalWaves() }} waves defeated.</p>
 
-            <div class="victory-stats">
-              <div class="stat-pill">
-                <span class="stat-tag">Crystals Saved</span>
-                <span class="stat-num">{{ game.crystals() }} / {{ game.maxCrystals() }}</span>
-              </div>
-              <div class="stat-pill">
-                <span class="stat-tag">Victory Honor Score</span>
-                <span class="stat-num">{{ game.score() }}</span>
-              </div>
-              <div class="stat-pill">
-                <span class="stat-tag">Battle Rank</span>
-                <span class="stat-num rank-s">{{ getRank() }}</span>
-              </div>
-            </div>
-
-            <!-- Authentic FFCD Score Breakdown -->
-            <div class="score-breakdown-box">
-              <span class="breakdown-title">HONOR SCORE BREAKDOWN:</span>
-              <div class="breakdown-row">
-                <span>Crystal Preservation ({{ game.crystals() }} × 1,000)</span>
-                <span class="breakdown-pts">+{{ game.crystals() * 1000 }} pts</span>
-              </div>
-              <div class="breakdown-row">
-                <span>Treasury Surplus ({{ game.gold() }} × 10)</span>
-                <span class="breakdown-pts">+{{ game.gold() * 10 }} pts</span>
-              </div>
-            </div>
-
-            <!-- Campaign Victory Story Epilogue -->
-            @if (game.activeMission().victoryEpilogue; as epilogue) {
-              <div class="victory-story-box">
-                <div class="story-avatar-wrap">
-                  <img [src]="epilogue.avatar" [alt]="epilogue.speaker" class="epilogue-avatar" />
-                  <span class="story-speaker">{{ epilogue.speaker }}</span>
+              <dl class="result-stats">
+                <div>
+                  <dt>Crystals</dt>
+                  <dd>{{ game.crystals() }}/{{ game.maxCrystals() }}</dd>
                 </div>
-                <div class="story-lines">
-                  @for (line of epilogue.lines; track line) {
-                    <p class="story-line">{{ line }}</p>
-                  }
+                <div>
+                  <dt>Score</dt>
+                  <dd>{{ game.score() }}</dd>
                 </div>
-              </div>
-            }
+                <div>
+                  <dt>Rank</dt>
+                  <dd class="rank">{{ getRank().split('-')[0] }}</dd>
+                </div>
+              </dl>
 
-            <div class="victory-actions">
+              <ul class="score-breakdown">
+                <li>
+                  <span>Crystals preserved ({{ game.crystals() }} × 1,000)</span>
+                  <b>+{{ game.crystals() * 1000 }}</b>
+                </li>
+                <li>
+                  <span>Treasury surplus ({{ game.gold() }} × 10)</span>
+                  <b>+{{ game.gold() * 10 }}</b>
+                </li>
+              </ul>
+
+              @if (game.activeMission().victoryEpilogue; as epilogue) {
+                <figure class="epilogue">
+                  <img [src]="epilogue.avatar" [alt]="epilogue.speaker" />
+                  <blockquote>
+                    @for (line of epilogue.lines; track line) {
+                      <p>{{ line }}</p>
+                    }
+                    <figcaption>— {{ epilogue.speaker }}</figcaption>
+                  </blockquote>
+                </figure>
+              }
+            </div>
+            <div class="cw-sheet-footer">
+              <button type="button" class="cw-btn" id="victory-replay-btn" (click)="restartGame()">
+                <app-icon name="refresh" [size]="18" />
+                Replay
+              </button>
               <button
                 type="button"
-                class="modal-btn next-stage-btn"
+                class="cw-btn primary action-grow"
                 id="victory-next-btn"
                 (click)="nextStage()"
               >
-                🗺️ Next Stage [A]
-              </button>
-              <button
-                type="button"
-                class="modal-btn replay-btn"
-                id="victory-replay-btn"
-                (click)="restartGame()"
-              >
-                🔄 Replay Stage
+                Next stage
+                <app-icon name="chevron" [size]="18" />
+                <span class="btn-kbd">A</span>
               </button>
             </div>
           </div>
         </div>
       }
 
-      <!-- Tactical Pause / System Options Modal Overlay -->
+      <!-- Pause / options menu -->
       @if (isPauseMenuOpen()) {
-        <div class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="pause-title">
-          <div class="modal-card pause-card">
-            <div class="modal-header-banner">
-              <span class="modal-icon" aria-hidden="true">📜</span>
-              <h2 id="pause-title" class="modal-heading">Tactical Pause</h2>
-              <p class="modal-subtitle">Battle suspended. Adjust tactical settings or resume.</p>
-            </div>
-
-            <div class="pause-options-list">
+        <div
+          class="cw-scrim"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pause-title"
+          tabindex="-1"
+          (click)="onPauseBackdrop($event)"
+          (keydown.escape)="$event.stopPropagation(); isPauseMenuOpen.set(false)"
+        >
+          <div class="cw-sheet pause-sheet">
+            <div class="cw-sheet-header">
+              <div class="cw-sheet-titles">
+                <span class="cw-eyebrow">{{ game.activeMap().name }}</span>
+                <h2 id="pause-title" class="cw-title">Menu</h2>
+              </div>
               <button
                 type="button"
-                class="modal-btn resume-btn"
+                class="cw-icon-btn"
+                (click)="isPauseMenuOpen.set(false)"
+                aria-label="Close menu"
+              >
+                <app-icon name="close" />
+              </button>
+            </div>
+
+            <div class="cw-sheet-body pause-body">
+              <button
+                type="button"
+                class="cw-btn primary block"
                 id="pause-resume-btn"
                 (click)="isPauseMenuOpen.set(false)"
               >
-                <span>⚔️ Resume Battle</span>
-                <kbd class="btn-kbd">[B / Start]</kbd>
+                <app-icon name="play" [size]="18" />
+                Resume battle
+                <span class="btn-kbd">B</span>
               </button>
 
-              <button type="button" class="modal-btn opt-btn" (click)="cycleCameraPreset()">
-                <span>📐 Camera: {{ three.activeCameraMode() }}</span>
-                <kbd class="btn-kbd">[View / Back]</kbd>
-              </button>
+              <div class="option-grid">
+                <button type="button" class="option-tile" (click)="openFromMenu('missions')">
+                  <app-icon name="map" />
+                  <span>Missions</span>
+                </button>
+                <button type="button" class="option-tile" (click)="openFromMenu('bestiary')">
+                  <app-icon name="book" />
+                  <span>Bestiary</span>
+                </button>
+                <button type="button" class="option-tile" (click)="cycleCameraPreset()">
+                  <app-icon name="camera" />
+                  <span>Camera: {{ cameraLabel() }}</span>
+                  <span class="btn-kbd">View</span>
+                </button>
+                <button type="button" class="option-tile" (click)="audio.toggleMute()">
+                  <app-icon [name]="audio.muted() ? 'mute' : 'volume'" />
+                  <span>{{ audio.muted() ? 'Sound off' : 'Sound on' }}</span>
+                  <span class="btn-kbd">Y</span>
+                </button>
+              </div>
 
-              <button type="button" class="modal-btn opt-btn" (click)="audio.toggleMute()">
-                <span>{{ audio.muted() ? '🔇 Audio: Muted' : '🔊 Audio: Active' }}</span>
-                <kbd class="btn-kbd">[Y]</kbd>
-              </button>
-
-              <div class="stage-select-box">
-                <span class="stage-select-label">SELECT STAGE [D-Pad ◄ ►]:</span>
+              <section class="stage-select-box" aria-labelledby="stage-select-label">
+                <h3 id="stage-select-label" class="option-label">
+                  Stage <span class="btn-kbd">◄ ►</span>
+                </h3>
                 <div class="stage-buttons-row">
                   @for (m of allMaps; track m.id) {
                     <button
                       type="button"
                       class="stage-choice-btn"
                       [class.active]="game.activeMap().id === m.id"
+                      [attr.aria-pressed]="game.activeMap().id === m.id"
                       (click)="game.loadMap(m); isPauseMenuOpen.set(false)"
                     >
-                      {{ m.name }}
+                      <span class="stage-name">{{ m.name }}</span>
+                      <span class="stage-diff">{{ m.difficulty }}</span>
                     </button>
                   }
                 </div>
-              </div>
+              </section>
 
               <button
                 type="button"
-                class="modal-btn opt-btn restart-opt"
+                class="cw-btn danger block"
                 (click)="restartGame(); isPauseMenuOpen.set(false)"
               >
-                <span>🔄 Restart Stage</span>
-                <kbd class="btn-kbd">[X]</kbd>
+                <app-icon name="refresh" [size]="18" />
+                Restart stage
+                <span class="btn-kbd">X</span>
               </button>
             </div>
           </div>
         </div>
       }
 
-      <!-- Campaign Chronicles Modal -->
       @if (game.isCampaignModalOpen()) {
         <app-campaign-modal (closeModal)="game.isCampaignModalOpen.set(false)" />
       }
 
-      <!-- Monster Bestiary Modal -->
       @if (game.isBestiaryModalOpen()) {
         <app-bestiary-modal (closeModal)="game.isBestiaryModalOpen.set(false)" />
       }
 
-      <!-- Story Cutscenes & Narrative Milestone Dialogue Overlay -->
       <app-story-dialogue-overlay />
     </div>
   `,
@@ -236,32 +278,27 @@ import { StoryDialogueOverlayComponent } from './story-dialogue-overlay/story-di
         display: block;
         width: 100%;
         height: 100%;
-        max-height: 100dvh;
+        min-height: 0;
         overflow: hidden;
       }
 
+      /* Mobile first: top bar · battlefield (+ drawer) · command bar */
       .game-view {
         position: relative;
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        grid-template-columns: minmax(0, 1fr);
         width: 100%;
         height: 100%;
-        max-height: 100dvh;
         overflow: hidden;
-      }
-
-      .game-hud-block {
-        flex-shrink: 0;
-        z-index: 10;
       }
 
       .arena-stage-area {
         position: relative;
-        flex: 1;
-        min-height: 0;
-        width: 100%;
         display: flex;
         flex-direction: column;
+        min-height: 0;
+        min-width: 0;
         overflow: hidden;
       }
 
@@ -269,443 +306,293 @@ import { StoryDialogueOverlayComponent } from './story-dialogue-overlay/story-di
         flex: 1;
         min-height: 0;
         min-width: 0;
-        width: 100%;
-        height: 100%;
         display: flex;
         flex-direction: column;
       }
 
-      /* Layout 1: Mobile First (<= 767px, Pixel 9 Pro) */
+      /* The drawer lives in the layout flow, so the map shrinks (and the camera
+         re-fits) instead of being covered by the panel. */
       .tower-command-dock {
-        position: absolute;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        width: 100%;
-        max-height: 52dvh;
-        z-index: 50;
-        transform: translateY(105%);
-        opacity: 0;
-        pointer-events: none;
-        transition:
-          transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-          opacity 0.2s ease;
+        flex-shrink: 0;
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s var(--ease-out);
 
         &.is-visible {
-          transform: translateY(0);
-          opacity: 1;
-          pointer-events: auto;
+          max-height: min(52%, 420px);
+          min-height: 0;
         }
       }
 
-      /* Layout 2: Tablet (768px - 1024px) */
-      @media (min-width: 768px) and (max-width: 1024px) {
-        .game-view {
-          padding: 0 10px;
-          gap: 6px;
-        }
-
-        .arena-stage-area {
-          flex-direction: column;
-        }
-
-        .tower-command-dock {
-          position: relative;
-          width: 100%;
-          max-height: 0;
-          overflow: hidden;
-          opacity: 0;
-          pointer-events: none;
-          margin-top: 0;
-          transform: none;
-          transition:
-            max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-            opacity 0.25s ease,
-            margin 0.25s ease;
-
-          &.is-visible {
-            max-height: 250px;
-            opacity: 1;
-            pointer-events: auto;
-            margin-top: 6px;
-          }
-        }
-      }
-
-      /* Layout 3: Desktop (> 1024px) */
-      @media (min-width: 1025px) {
-        :host {
-          max-width: 1600px;
-          margin: 0 auto;
-        }
-
-        .game-view {
-          padding: 6px 16px;
-          gap: 8px;
-        }
-
+      /* Landscape phones, tablets in landscape, desktop: persistent side panel */
+      @media (orientation: landscape) and (min-width: 640px) {
         .arena-stage-area {
           flex-direction: row;
-          gap: 16px;
         }
 
-        .battle-map-stage {
-          flex: 1;
-          min-width: 0;
+        .tower-command-dock,
+        .tower-command-dock.is-visible {
+          width: 300px;
+          max-height: none;
           height: 100%;
-        }
-
-        .tower-command-dock {
-          position: relative;
-          width: 0;
-          height: 100%;
-          max-height: 100%;
-          overflow: hidden;
-          opacity: 0;
-          pointer-events: none;
-          transform: translateX(24px);
-          margin-left: -16px;
-          transition:
-            width 0.32s cubic-bezier(0.16, 1, 0.3, 1),
-            opacity 0.25s ease,
-            transform 0.32s cubic-bezier(0.16, 1, 0.3, 1),
-            margin 0.32s ease;
-
-          &.is-visible {
-            width: 380px;
-            opacity: 1;
-            transform: translateX(0);
-            pointer-events: auto;
-            margin-left: 0;
-          }
+          transition: none;
         }
       }
 
-      /* Modal Overlays */
-      .modal-backdrop {
-        position: fixed;
-        inset: 0;
-        z-index: 1000;
-        background: rgba(4, 6, 12, 0.88);
-        backdrop-filter: blur(8px);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: var(--space-4);
-        animation: fade-in 0.2s ease-out;
-      }
-
-      @keyframes fade-in {
-        from {
-          opacity: 0;
-        }
-        to {
-          opacity: 1;
+      @media (orientation: landscape) and (min-width: 1100px) {
+        .tower-command-dock,
+        .tower-command-dock.is-visible {
+          width: 360px;
         }
       }
 
-      .modal-card {
-        width: 100%;
-        max-width: 480px;
-        background: linear-gradient(180deg, #0e1e38 0%, #070d18 100%);
-        border: 2px solid #ca8a04;
-        border-radius: var(--radius-lg);
-        padding: var(--space-6);
+      /* Tall tablets in portrait: the drawer can afford more height */
+      @media (orientation: portrait) and (min-width: 600px) {
+        .tower-command-dock.is-visible {
+          max-height: min(44%, 460px);
+        }
+      }
+
+      /* Result dialogs */
+      .result-body {
         text-align: center;
-        box-shadow:
-          0 24px 64px rgba(0, 0, 0, 0.9),
-          0 0 24px rgba(202, 138, 4, 0.25);
-        animation: scale-up 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       }
 
-      @keyframes scale-up {
-        from {
-          transform: scale(0.94);
-          opacity: 0;
-        }
-        to {
-          transform: scale(1);
-          opacity: 1;
-        }
-      }
-
-      .defeat-card {
-        border-color: rgba(239, 68, 68, 0.7);
-        box-shadow: 0 0 32px rgba(239, 68, 68, 0.35);
-      }
-
-      .victory-card {
-        border-color: rgba(56, 189, 248, 0.7);
-        box-shadow: 0 0 32px rgba(56, 189, 248, 0.35);
-      }
-
-      .pause-card {
-        border-color: #38bdf8;
-        box-shadow: 0 0 32px rgba(56, 189, 248, 0.3);
-      }
-
-      .modal-icon {
-        font-size: 3rem;
-        display: block;
+      .result-emblem {
+        display: inline-grid;
+        place-items: center;
+        width: 64px;
+        height: 64px;
         margin-bottom: var(--space-2);
+        border-radius: 50%;
+        color: var(--tone);
+        background: color-mix(in srgb, var(--tone) 14%, transparent);
+        border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
       }
 
-      .modal-heading {
-        font-size: 1.5rem;
-        font-weight: 800;
-        letter-spacing: 0.04em;
-        margin: 0 0 var(--space-2) 0;
-        color: #f8fafc;
+      .result-sheet.defeat {
+        --tone: var(--color-error);
       }
 
-      .modal-subtitle {
+      .result-sheet.victory {
+        --tone: var(--color-gold);
+      }
+
+      .result-sheet .cw-eyebrow {
+        color: var(--tone);
+      }
+
+      .result-title {
+        font-size: var(--font-size-2xl);
+      }
+
+      .result-sub {
+        margin: var(--space-2) 0 var(--space-4);
         font-size: var(--font-size-sm);
-        color: #94a3b8;
-        margin: 0 0 var(--space-5) 0;
       }
 
-      .defeat-stats,
-      .victory-stats {
+      .result-stats {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
         gap: var(--space-2);
-        margin-bottom: var(--space-6);
-      }
+        margin: 0 0 var(--space-4);
 
-      .stat-pill {
-        display: flex;
-        flex-direction: column;
-        background: rgba(15, 23, 42, 0.7);
-        border: 1px solid var(--border-subtle);
-        border-radius: var(--radius-md);
-        padding: var(--space-2);
-      }
+        div {
+          padding: var(--space-2);
+          border-radius: var(--radius-md);
+          background: rgba(148, 163, 184, 0.06);
+          border: 1px solid var(--border-subtle);
+        }
 
-      .stat-tag {
-        font-size: 0.65rem;
-        text-transform: uppercase;
-        color: var(--text-muted);
-        margin-bottom: 2px;
-      }
+        dt {
+          font-size: var(--font-size-2xs);
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: var(--text-muted);
+        }
 
-      .stat-num {
-        font-family: var(--font-mono);
-        font-size: 1.15rem;
-        font-weight: 800;
-        color: var(--text-primary);
+        dd {
+          margin: 0;
+          font-family: var(--font-tactical);
+          font-size: var(--font-size-xl);
+          font-weight: 700;
+        }
 
-        &.rank-s {
-          color: #fbbf24;
-          text-shadow: 0 0 10px rgba(251, 191, 36, 0.6);
+        .rank {
+          color: var(--color-gold);
         }
       }
 
-      .pause-options-list {
+      .score-breakdown {
+        list-style: none;
+        margin: 0 0 var(--space-4);
+        padding: var(--space-2) var(--space-3);
+        border-radius: var(--radius-md);
+        background: rgba(245, 196, 81, 0.05);
+        border: 1px solid rgba(245, 196, 81, 0.2);
+        text-align: left;
+
+        li {
+          display: flex;
+          justify-content: space-between;
+          gap: var(--space-2);
+          padding: 3px 0;
+          font-size: var(--font-size-xs);
+          color: var(--text-secondary);
+        }
+
+        b {
+          font-family: var(--font-tactical);
+          color: var(--color-gold);
+        }
+      }
+
+      .epilogue {
         display: flex;
-        flex-direction: column;
         gap: var(--space-3);
+        margin: 0;
+        padding: var(--space-3);
+        border-radius: var(--radius-md);
+        background: rgba(56, 189, 248, 0.05);
+        border-left: 3px solid var(--color-primary);
+        text-align: left;
+
+        img {
+          width: 48px;
+          height: 48px;
+          border-radius: var(--radius-sm);
+          object-fit: cover;
+          flex-shrink: 0;
+        }
+
+        blockquote {
+          margin: 0;
+        }
+
+        p {
+          margin: 0 0 4px;
+          font-size: var(--font-size-sm);
+          color: var(--text-primary);
+          line-height: 1.45;
+        }
+
+        figcaption {
+          font-size: var(--font-size-xs);
+          color: var(--color-primary);
+        }
       }
 
-      .modal-btn {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: var(--space-3) var(--space-4);
-        border-radius: var(--radius-md);
-        font-size: var(--font-size-sm);
-        font-weight: 700;
-        cursor: pointer;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        transition: all 0.15s ease;
-
-        &:hover {
-          transform: translateY(-2px);
-          filter: brightness(1.1);
-        }
+      .action-grow {
+        flex: 1;
       }
 
       .btn-kbd {
-        font-family: var(--font-mono);
-        font-size: 0.7rem;
-        padding: 2px 6px;
-        background: rgba(0, 0, 0, 0.4);
-        border-radius: 4px;
-        color: #38bdf8;
+        align-items: center;
+        padding: 0 5px;
+        border-radius: 5px;
+        font-family: var(--font-tactical);
+        font-size: 0.6875rem;
+        line-height: 18px;
+        font-weight: 700;
+        color: inherit;
+        background: rgba(0, 0, 0, 0.25);
       }
 
-      .resume-btn {
-        background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
-        color: #ffffff;
-        box-shadow: 0 4px 16px rgba(37, 99, 235, 0.4);
-      }
-
-      .opt-btn {
-        background: rgba(30, 41, 59, 0.7);
-        color: #f1f5f9;
-
-        &:hover {
-          background: rgba(51, 65, 85, 0.9);
-          border-color: #38bdf8;
-        }
-      }
-
-      .restart-opt {
-        color: #f87171;
-        border-color: rgba(248, 113, 113, 0.3);
-      }
-
-      .stage-select-box {
+      /* Pause menu */
+      .pause-body {
         display: flex;
+        flex-direction: column;
+        gap: var(--space-4);
+      }
+
+      .option-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--space-2);
+      }
+
+      .option-tile {
         flex-direction: column;
         gap: 6px;
-        text-align: left;
-        padding: var(--space-2) 0;
-
-        .stage-select-label {
-          font-size: 0.65rem;
-          font-weight: 700;
-          color: #94a3b8;
-          letter-spacing: 0.05em;
-        }
-
-        .stage-buttons-row {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-          gap: 6px;
-        }
-
-        .stage-choice-btn {
-          background: #111827;
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          border-radius: 6px;
-          padding: 6px;
-          font-size: 0.7rem;
-          font-weight: 600;
-          color: #94a3b8;
-          cursor: pointer;
-          transition: all 0.15s ease;
-
-          &:hover {
-            color: #ffffff;
-            border-color: #38bdf8;
-          }
-
-          &.active {
-            background: rgba(2, 132, 199, 0.25);
-            border-color: #38bdf8;
-            color: #38bdf8;
-            font-weight: 700;
-          }
-        }
-      }
-
-      .victory-actions {
-        display: flex;
-        gap: var(--space-3);
-        justify-content: center;
-      }
-
-      .score-breakdown-box {
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-        background: rgba(15, 23, 42, 0.7);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        min-height: 76px;
+        padding: var(--space-2);
         border-radius: var(--radius-md);
-        padding: 8px 12px;
-        margin-bottom: var(--space-4);
-        text-align: left;
-      }
-
-      .breakdown-title {
-        font-family: var(--font-mono);
-        font-size: 0.62rem;
-        font-weight: 700;
-        color: #94a3b8;
-      }
-
-      .breakdown-row {
-        display: flex;
-        justify-content: space-between;
-        font-size: 0.75rem;
-        color: #cbd5e1;
-      }
-
-      .breakdown-pts {
-        font-family: var(--font-mono);
-        font-weight: 700;
-        color: #facc15;
-      }
-
-      .victory-story-box {
-        display: flex;
-        gap: 10px;
-        background: rgba(30, 41, 59, 0.6);
-        border-left: 3px solid #38bdf8;
-        border-radius: 0 8px 8px 0;
-        padding: 8px 12px;
-        margin-bottom: var(--space-4);
-        text-align: left;
-      }
-
-      .story-avatar-wrap {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        width: 60px;
-        flex-shrink: 0;
-      }
-
-      .epilogue-avatar {
-        width: 44px;
-        height: 44px;
-        border-radius: 6px;
-        border: 1px solid #38bdf8;
-        object-fit: cover;
-      }
-
-      .story-speaker {
-        font-size: 0.58rem;
-        font-weight: 700;
-        color: #38bdf8;
+        background: rgba(148, 163, 184, 0.06);
+        border: 1px solid var(--border-subtle);
+        color: var(--text-primary);
+        font-size: var(--font-size-sm);
+        font-weight: 600;
         text-align: center;
-        margin-top: 2px;
+
+        app-icon {
+          color: var(--color-primary);
+        }
+
+        &:hover {
+          background: rgba(148, 163, 184, 0.12);
+          border-color: var(--border-muted);
+        }
       }
 
-      .story-lines {
-        flex: 1;
+      .option-label {
         display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        margin: 0 0 var(--space-2);
+        font-family: var(--font-tactical);
+        font-size: var(--font-size-2xs);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+      }
+
+      .stage-buttons-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 6px;
+      }
+
+      .stage-choice-btn {
         flex-direction: column;
-        gap: 4px;
+        align-items: flex-start;
+        gap: 2px;
+        min-height: 52px;
+        padding: 6px 10px;
+        border-radius: var(--radius-md);
+        background: rgba(148, 163, 184, 0.05);
+        border: 1px solid var(--border-subtle);
+        color: var(--text-primary);
+        text-align: left;
+
+        &:hover {
+          border-color: var(--border-muted);
+        }
+
+        &.active {
+          border-color: var(--color-primary);
+          background: rgba(56, 189, 248, 0.12);
+        }
       }
 
-      .story-line {
-        margin: 0;
-        font-size: 0.75rem;
-        color: #e2e8f0;
-        line-height: 1.35;
+      .stage-name {
+        font-size: var(--font-size-sm);
+        font-weight: 600;
+        line-height: 1.2;
       }
 
-      .restart-btn {
-        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-        color: #ffffff;
-        box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
-        width: 100%;
-        justify-content: center;
+      .stage-diff {
+        font-size: var(--font-size-2xs);
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
       }
 
-      .next-stage-btn {
-        flex: 1;
-        background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
-        color: #ffffff;
-        justify-content: center;
-      }
-
-      .replay-btn {
-        flex: 1;
-        background: #334155;
-        color: #f1f5f9;
-        justify-content: center;
+      @media (min-width: 480px) {
+        .option-grid {
+          grid-template-columns: repeat(4, 1fr);
+        }
       }
     `,
   ],
@@ -715,10 +602,21 @@ export class GameComponent implements OnInit, OnDestroy {
   protected readonly gamepad = inject(GamepadService);
   protected readonly audio = inject(AudioService);
   protected readonly three = inject(ThreeBattlefieldService);
+  private readonly document = inject(DOCUMENT);
   protected readonly allMaps = ALL_MAPS;
 
   public readonly isPauseMenuOpen = signal<boolean>(false);
   private sub?: Subscription;
+
+  private static readonly CAMERA_LABELS: Record<CameraPreset, string> = {
+    tactics: 'Tactics',
+    isometric: 'Corner',
+    topdown: 'Overhead',
+  };
+
+  protected readonly cameraLabel = computed(
+    () => GameComponent.CAMERA_LABELS[this.three.activeCameraMode()],
+  );
 
   public readonly isVantageSelected = computed(() => {
     const tile = this.game.selectedTile();
@@ -728,6 +626,15 @@ export class GameComponent implements OnInit, OnDestroy {
     const hasTower = !!this.game.selectedTower();
     return cellType === 'B' || cellType === 'M' || hasTower;
   });
+
+  constructor() {
+    // Lets global styles reveal controller prompts only while a pad is in use
+    effect(() => {
+      const root = this.document.documentElement;
+      if (this.gamepad.lastActiveInput() === 'gamepad') root.dataset['input'] = 'gamepad';
+      else delete root.dataset['input'];
+    });
+  }
 
   public deselectVantage(): void {
     this.game.selectTile(-1, -1);
@@ -747,6 +654,7 @@ export class GameComponent implements OnInit, OnDestroy {
     if (typeof window !== 'undefined') {
       window.removeEventListener('keydown', this.onGlobalKeyDown);
     }
+    delete this.document.documentElement.dataset['input'];
   }
 
   protected handleGamepadAction(action: GamepadAction): void {
@@ -823,19 +731,19 @@ export class GameComponent implements OnInit, OnDestroy {
         break;
 
       case 'cursor-up':
-        this.game.moveCursor(0, -1);
+        this.moveCursorOnScreen(0, -1);
         break;
 
       case 'cursor-down':
-        this.game.moveCursor(0, 1);
+        this.moveCursorOnScreen(0, 1);
         break;
 
       case 'cursor-left':
-        this.game.moveCursor(-1, 0);
+        this.moveCursorOnScreen(-1, 0);
         break;
 
       case 'cursor-right':
-        this.game.moveCursor(1, 0);
+        this.moveCursorOnScreen(1, 0);
         break;
 
       case 'confirm': {
@@ -872,11 +780,27 @@ export class GameComponent implements OnInit, OnDestroy {
     }
   }
 
+  /** D-pad and arrow input follow the screen, even when the board is rotated for portrait. */
+  private moveCursorOnScreen(dx: number, dy: number): void {
+    const [gx, gy] = this.three.screenDeltaToGrid(dx, dy);
+    this.game.moveCursor(gx, gy);
+  }
+
   public cycleCameraPreset(): void {
     const modes: CameraPreset[] = ['tactics', 'isometric', 'topdown'];
     const cur = this.three.activeCameraMode();
     const next = modes[(modes.indexOf(cur) + 1) % modes.length];
     this.three.setCameraPreset(next);
+  }
+
+  protected openFromMenu(target: 'missions' | 'bestiary'): void {
+    this.isPauseMenuOpen.set(false);
+    if (target === 'missions') this.game.toggleCampaignModal();
+    else this.game.toggleBestiaryModal();
+  }
+
+  protected onPauseBackdrop(event: MouseEvent): void {
+    if (event.target === event.currentTarget) this.isPauseMenuOpen.set(false);
   }
 
   protected cycleMapInPause(direction: 'next' | 'prev'): void {
@@ -890,7 +814,12 @@ export class GameComponent implements OnInit, OnDestroy {
 
   private readonly onGlobalKeyDown = (e: KeyboardEvent): void => {
     if (e.key === 'Escape') {
-      this.isPauseMenuOpen.set(!this.isPauseMenuOpen());
+      // Escape closes whichever overlay is on top; it only opens the menu from the battlefield
+      const overlayOpen =
+        this.game.isScoutOpen() ||
+        this.game.isCampaignModalOpen() ||
+        this.game.isBestiaryModalOpen();
+      if (!overlayOpen) this.isPauseMenuOpen.set(!this.isPauseMenuOpen());
       e.preventDefault();
       return;
     }
@@ -933,11 +862,6 @@ export class GameComponent implements OnInit, OnDestroy {
       } else {
         this.game.cycleSpeed();
       }
-      return;
-    }
-
-    if (e.key === 'm' || e.key === 'M') {
-      this.audio.toggleMute();
       return;
     }
 

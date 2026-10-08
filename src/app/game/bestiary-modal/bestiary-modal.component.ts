@@ -343,6 +343,7 @@ const BESTIARY_DATA: Record<
 
       .roster-item-card {
         display: flex;
+        flex-shrink: 0;
         align-items: center;
         gap: 10px;
         padding: 8px 10px;
@@ -637,15 +638,48 @@ const BESTIARY_DATA: Record<
       }
 
       @media (max-width: 767px) {
+        .modal-backdrop {
+          align-items: flex-end;
+          padding: 0;
+        }
+
+        .bestiary-modal-card {
+          max-height: 94dvh;
+          border-width: 1px 0 0;
+          border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+          padding-bottom: var(--safe-bottom);
+        }
+
+        .modal-header {
+          padding: 12px 12px 12px 16px;
+        }
+
+        .close-btn {
+          width: 44px;
+          height: 44px;
+          flex-shrink: 0;
+        }
+
         .bestiary-grid {
           grid-template-columns: 1fr;
           overflow-y: auto;
         }
 
+        /* Roster becomes a swipeable row of monsters */
         .roster-rail {
-          max-height: 140px;
+          flex-direction: row;
+          overflow-x: auto;
+          overflow-y: visible;
+          scroll-snap-type: x proximity;
+          scrollbar-width: none;
+          padding: 10px 16px;
           border-right: none;
           border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .roster-item-card {
+          flex: 0 0 auto;
+          scroll-snap-align: start;
         }
 
         .stats-overview-grid {

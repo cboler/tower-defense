@@ -15,11 +15,12 @@ import { MobInstance } from '../../core/models/mob.model';
 import { TileCode } from '../../core/models/map.model';
 import { FloatingText } from '../../core/models/game-state.model';
 import { CameraPreset, ThreeBattlefieldService } from './three-battlefield.service';
+import { IconComponent } from '../icon/icon.component';
 
 @Component({
   selector: 'app-battle-map',
   standalone: true,
-  imports: [],
+  imports: [IconComponent],
   template: `
     <div
       class="battlefield-container"
@@ -29,44 +30,17 @@ import { CameraPreset, ThreeBattlefieldService } from './three-battlefield.servi
       id="battlefield-map"
       (keydown)="onKeyDown($event)"
     >
-      <!-- Tactical Camera & Mode Control Toolbar -->
-      <div class="battlefield-toolbar" aria-label="Battlefield View Controls">
-        <div class="camera-pill">
-          <span class="toolbar-label">VIEW:</span>
-          <button
-            type="button"
-            class="cam-btn"
-            [class.active]="three.activeCameraMode() === 'tactics'"
-            (click)="setCameraMode('tactics')"
-            title="Isometric 2.5D Tactics Diorama"
-          >
-            📐 Tactics 2.5D
-          </button>
-          <button
-            type="button"
-            class="cam-btn"
-            [class.active]="three.activeCameraMode() === 'isometric'"
-            (click)="setCameraMode('isometric')"
-            title="45° Corner Isometric View"
-          >
-            💎 Corner Iso
-          </button>
-          <button
-            type="button"
-            class="cam-btn"
-            [class.active]="three.activeCameraMode() === 'topdown'"
-            (click)="setCameraMode('topdown')"
-            title="Top-Down Overhead Tactical"
-          >
-            🎯 Top-Down
-          </button>
-        </div>
-
-        <div class="map-badge-pill">
-          <span class="pill-dot"></span>
-          <span class="map-name">{{ game.activeMap().name }}</span>
-        </div>
-      </div>
+      <!-- Floating view control: one tap cycles the camera angle -->
+      <button
+        type="button"
+        class="map-fab camera-fab"
+        (click)="cycleCamera()"
+        [title]="'Camera: ' + cameraLabel() + ' [C / View]'"
+        [attr.aria-label]="'Change camera view, currently ' + cameraLabel()"
+      >
+        <app-icon name="camera" [size]="18" />
+        <span class="fab-label">{{ cameraLabel() }}</span>
+      </button>
 
       <!-- Main Battlefield Stage (Three.js WebGL Engine) -->
       <div class="battlefield-stage-wrapper">
@@ -364,90 +338,47 @@ import { CameraPreset, ThreeBattlefieldService } from './three-battlefield.servi
         width: 100%;
         height: 100%;
         min-height: 0;
-        background: #080c14;
-        border: 2px solid #1e293b;
-        border-radius: var(--radius-lg);
+        background: radial-gradient(120% 90% at 50% 40%, #0d1528 0%, #060913 70%);
         overflow: hidden;
-        box-shadow:
-          0 16px 36px rgba(0, 0, 0, 0.75),
-          inset 0 1px 0 rgba(255, 255, 255, 0.08);
         outline: none;
 
         &:focus-visible {
+          box-shadow: inset 0 0 0 2px var(--color-primary);
+        }
+      }
+
+      /* Floating map controls */
+      .map-fab {
+        position: absolute;
+        top: var(--space-2);
+        right: var(--space-2);
+        z-index: 30;
+        gap: 6px;
+        min-height: 40px;
+        min-width: 40px;
+        padding: 0 10px;
+        border-radius: var(--radius-full);
+        background: var(--bg-glass);
+        border: 1px solid var(--border-muted);
+        color: var(--text-secondary);
+        font-size: var(--font-size-xs);
+        font-weight: 600;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+
+        &:hover {
+          color: var(--text-primary);
           border-color: var(--color-primary);
         }
       }
 
-      /* View Toolbar */
-      .battlefield-toolbar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 6px 12px;
-        background: linear-space(#090e17 0%, #111827 100%);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-        user-select: none;
+      .fab-label {
+        display: none;
       }
 
-      .camera-pill {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-
-      .toolbar-label {
-        font-size: 0.7rem;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        color: #64748b;
-        margin-right: 4px;
-      }
-
-      .cam-btn {
-        background: #1e293b;
-        color: #94a3b8;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 6px;
-        padding: 3px 8px;
-        font-size: 0.72rem;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.15s ease;
-
-        &:hover {
-          background: #334155;
-          color: #f8fafc;
-        }
-
-        &.active {
-          background: #0284c7;
-          color: #ffffff;
-          border-color: #38bdf8;
-          box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
-        }
-      }
-
-      .map-badge-pill {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        background: rgba(15, 23, 42, 0.8);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        border-radius: 9999px;
-        padding: 3px 10px;
-
-        .pill-dot {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: #38bdf8;
-          box-shadow: 0 0 6px #38bdf8;
-        }
-
-        .map-name {
-          font-size: 0.72rem;
-          font-weight: 600;
-          color: #cbd5e1;
+      @media (min-width: 640px) {
+        .fab-label {
+          display: inline;
         }
       }
 
@@ -851,78 +782,54 @@ import { CameraPreset, ThreeBattlefieldService } from './three-battlefield.servi
       }
 
       /* Controller Guide Bar */
+      /* Controller / keyboard prompts: hidden on touch, shown for mouse+keyboard or a live pad */
       .controller-guide-bar {
-        display: flex;
+        display: none;
         align-items: center;
-        justify-content: space-around;
+        justify-content: center;
         flex-wrap: wrap;
-        gap: 6px;
+        gap: 4px 14px;
         padding: 6px 12px;
-        background: #090e17;
-        border-top: 1px solid rgba(255, 255, 255, 0.06);
+        background: rgba(7, 10, 18, 0.9);
+        border-top: 1px solid var(--border-subtle);
+      }
+
+      @media (hover: hover) and (pointer: fine) {
+        .controller-guide-bar {
+          display: flex;
+        }
+      }
+
+      :host-context([data-input='gamepad']) .controller-guide-bar {
+        display: flex;
       }
 
       .guide-item {
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 5px;
       }
 
       .key-badge {
-        background: #1e293b;
-        color: #38bdf8;
+        background: rgba(56, 189, 248, 0.1);
+        color: var(--color-primary);
         border: 1px solid rgba(56, 189, 248, 0.3);
         border-radius: 4px;
-        padding: 1px 5px;
-        font-size: 0.65rem;
+        padding: 0 5px;
+        font-size: 0.6875rem;
+        line-height: 18px;
         font-family: var(--font-mono);
         font-weight: 700;
       }
 
       .guide-desc {
-        font-size: 0.68rem;
-        color: #94a3b8;
+        font-size: var(--font-size-2xs);
+        color: var(--text-secondary);
       }
 
-      @media (max-width: 767px) {
-        .battlefield-toolbar {
-          padding: 4px 8px;
-
-          .toolbar-label {
-            display: none;
-          }
-
-          .cam-btn {
-            padding: 2px 6px;
-            font-size: 0.65rem;
-          }
-
-          .map-badge-pill {
-            padding: 2px 8px;
-
-            .map-name {
-              font-size: 0.65rem;
-            }
-          }
-        }
-
+      @media (orientation: landscape) and (max-height: 519px) {
         .controller-guide-bar {
-          display: flex;
-          padding: 3px 6px;
-          gap: 4px;
-
-          .guide-item {
-            gap: 2px;
-          }
-
-          .guide-desc {
-            font-size: 0.6rem;
-          }
-
-          .key-badge {
-            font-size: 0.58rem;
-            padding: 1px 3px;
-          }
+          display: none !important;
         }
       }
     `,
@@ -972,8 +879,26 @@ export class BattleMapComponent implements AfterViewInit, OnDestroy {
     this.three.destroy();
   }
 
-  protected setCameraMode(mode: CameraPreset): void {
-    this.three.setCameraPreset(mode);
+  private static readonly CAMERA_LABELS: Record<CameraPreset, string> = {
+    tactics: 'Tactics',
+    isometric: 'Corner',
+    topdown: 'Overhead',
+  };
+
+  protected readonly cameraLabel = computed(
+    () => BattleMapComponent.CAMERA_LABELS[this.three.activeCameraMode()],
+  );
+
+  protected cycleCamera(): void {
+    const modes: CameraPreset[] = ['tactics', 'isometric', 'topdown'];
+    const next = modes[(modes.indexOf(this.three.activeCameraMode()) + 1) % modes.length];
+    this.three.setCameraPreset(next);
+  }
+
+  /** Arrow keys follow the screen, even when the board is rotated for portrait. */
+  private moveCursorOnScreen(dx: number, dy: number): void {
+    const [gx, gy] = this.three.screenDeltaToGrid(dx, dy);
+    this.game.moveCursor(gx, gy);
   }
 
   protected readonly activeClassDef = computed(() => TOWER_CLASSES[this.game.selectedClassId()]);
@@ -1098,25 +1023,25 @@ export class BattleMapComponent implements AfterViewInit, OnDestroy {
       case 'ArrowUp':
       case 'w':
       case 'W':
-        this.game.moveCursor(0, -1);
+        this.moveCursorOnScreen(0, -1);
         event.preventDefault();
         break;
       case 'ArrowDown':
       case 's':
       case 'S':
-        this.game.moveCursor(0, 1);
+        this.moveCursorOnScreen(0, 1);
         event.preventDefault();
         break;
       case 'ArrowLeft':
       case 'a':
       case 'A':
-        this.game.moveCursor(-1, 0);
+        this.moveCursorOnScreen(-1, 0);
         event.preventDefault();
         break;
       case 'ArrowRight':
       case 'd':
       case 'D':
-        this.game.moveCursor(1, 0);
+        this.moveCursorOnScreen(1, 0);
         event.preventDefault();
         break;
       case 'Enter': {

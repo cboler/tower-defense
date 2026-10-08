@@ -334,6 +334,7 @@ import { TOWER_CLASSES } from '../../core/models/tower.model';
 
       .mission-tab-card {
         display: flex;
+        flex-shrink: 0;
         flex-direction: column;
         gap: 4px;
         padding: 10px 12px;
@@ -676,15 +677,52 @@ import { TOWER_CLASSES } from '../../core/models/tower.model';
       }
 
       @media (max-width: 767px) {
+        .modal-backdrop {
+          align-items: flex-end;
+          padding: 0;
+        }
+
+        .campaign-modal-card {
+          max-height: 94dvh;
+          border-width: 1px 0 0;
+          border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+          padding-bottom: var(--safe-bottom);
+        }
+
+        .modal-header {
+          padding: 12px 12px 12px 16px;
+        }
+
+        .close-btn {
+          width: 44px;
+          height: 44px;
+          flex-shrink: 0;
+        }
+
+        .header-stats {
+          gap: 8px;
+        }
+
         .modal-body-grid {
           grid-template-columns: 1fr;
           overflow-y: auto;
         }
 
+        /* Missions become a swipeable row so every card keeps its full height */
         .missions-rail {
-          max-height: 160px;
+          flex-direction: row;
+          overflow-x: auto;
+          overflow-y: visible;
+          scroll-snap-type: x proximity;
+          scrollbar-width: none;
+          padding: 12px 16px;
           border-right: none;
           border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .mission-tab-card {
+          flex: 0 0 min(240px, 78%);
+          scroll-snap-align: start;
         }
 
         .briefing-box {
@@ -701,6 +739,12 @@ import { TOWER_CLASSES } from '../../core/models/tower.model';
           flex-direction: column;
           gap: 8px;
           align-items: stretch;
+          position: sticky;
+          bottom: 0;
+          z-index: 2;
+          margin: 0 -20px -16px;
+          padding: 10px 20px 12px;
+          background: linear-gradient(180deg, rgba(8, 15, 29, 0.85), #080f1d 30%);
         }
 
         .deploy-stage-btn {

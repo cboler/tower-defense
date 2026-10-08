@@ -132,6 +132,8 @@ export class ThreeBattlefieldService {
 
   public readonly isWebGLSupported = signal<boolean>(false);
   public readonly activeCameraMode = signal<CameraPreset>('tactics');
+  /** True while the board is shown rotated 90° to fill a portrait canvas. */
+  public readonly portraitBoard = signal<boolean>(false);
 
   // Scene Groups
   private terrainGroup: THREE.Group | null = null;
@@ -360,25 +362,62 @@ export class ThreeBattlefieldService {
     this.activeCameraMode.set(preset);
     if (!this.camera) return;
 
-    if (preset === 'tactics') {
-      // Classic 2.5D Tactics isometric elevation
-      this.cameraTargetPos.set(0, 14.5, 12.5);
-      this.cameraLookTarget.set(0, 0, 0);
-    } else if (preset === 'isometric') {
-      // 45-degree corner isometric diorama
-      this.cameraTargetPos.set(-9.5, 15, 10.5);
-      this.cameraLookTarget.set(0, 0, 0);
-    } else if (preset === 'topdown') {
-      // High-angle retro tactical
-      this.cameraTargetPos.set(0, 18.5, 0.05);
-      this.cameraLookTarget.set(0, 0, 0);
-    }
+    this.fitCameraToBoard();
 
     if (!animate) {
       this.cameraBasePos.copy(this.cameraTargetPos);
       this.camera.position.copy(this.cameraTargetPos);
       this.camera.lookAt(this.cameraLookTarget);
     }
+  }
+
+  /**
+   * Converts a screen-space step (right = +x, down = +y) into a grid step. When the board
+   * is rotated for portrait, grid +x runs down the screen and grid +y runs to the left.
+   */
+  public screenDeltaToGrid(dx: number, dy: number): [number, number] {
+    return this.portraitBoard() ? [dy, -dx] : [dx, dy];
+  }
+
+  /**
+   * Places the camera so the whole board fits the canvas. On portrait canvases the view
+   * orbits 90° so the board's long axis runs down the screen instead of being squeezed.
+   */
+  private fitCameraToBoard(): void {
+    if (!this.camera) return;
+    const aspect = this.camera.aspect || 1;
+    // Keyed to the screen, not the canvas, so opening the build drawer never flips the board
+    const portrait =
+      typeof window !== 'undefined' ? window.innerHeight > window.innerWidth * 1.1 : aspect < 1;
+    this.portraitBoard.set(portrait);
+
+    const preset = this.activeCameraMode();
+    const dir =
+      preset === 'isometric'
+        ? this.tmpVec.set(-9.5, 15, 10.5)
+        : preset === 'topdown'
+          ? this.tmpVec.set(0, 18.5, 0.05)
+          : this.tmpVec.set(0, 14.5, 12.5);
+    if (portrait) dir.set(dir.z, dir.y, -dir.x);
+    dir.normalize();
+
+    const halfW = (this.gridHalfW || 6.5) + 0.9;
+    const halfH = (this.gridHalfH || 4) + 0.9;
+    let across = portrait ? halfH : halfW;
+    let deep = portrait ? halfW : halfH;
+    if (preset === 'isometric') {
+      across = deep = (halfW + halfH) / Math.SQRT2;
+    }
+
+    const elevation = Math.asin(dir.y);
+    const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const tanH = tanV * aspect;
+    const fitH = across / tanH;
+    const fitV = (deep * Math.sin(elevation) + 0.8 * Math.cos(elevation)) / tanV;
+    const distance = Math.max(fitH, fitV) * 1.04 + deep * Math.cos(elevation) * 0.35;
+
+    this.cameraTargetPos.copy(dir).multiplyScalar(Math.max(distance, 10));
+    this.cameraLookTarget.set(0, 0, 0);
   }
 
   /**
@@ -514,6 +553,7 @@ export class ThreeBattlefieldService {
     const halfH = (map.height - 1) / 2;
     this.gridHalfW = halfW;
     this.gridHalfH = halfH;
+    this.fitCameraToBoard();
 
     // 1. Build Sculpted Floating Sky Island Base
     this.buildSculptedIslandBase(map.width, map.height);
@@ -1240,9 +1280,15 @@ export class ThreeBattlefieldService {
     const height = parent?.clientHeight || this.canvas.clientHeight;
     if (width === 0 || height === 0) return;
 
+    const wasPortrait = this.portraitBoard();
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
+    this.fitCameraToBoard();
+    // Snap instead of sweeping when the board flips orientation
+    if (wasPortrait !== this.portraitBoard()) {
+      this.cameraBasePos.copy(this.cameraTargetPos);
+    }
   }
 
   private startLoop(game: GameService): void {
