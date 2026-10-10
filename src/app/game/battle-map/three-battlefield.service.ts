@@ -170,6 +170,11 @@ export class ThreeBattlefieldService {
   private activeParticles: ParticleInstance[] = [];
   private mobHeights = new Map<string, number>();
   private readonly tmpVec = new THREE.Vector3();
+  /** Camera-facing orientation for character sprites, with the backward lean capped. */
+  private readonly billboardQuat = new THREE.Quaternion();
+  private readonly billboardEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+  // Past this lean, sprites lie low enough to sink into the walls flanking the road
+  private readonly MAX_BILLBOARD_TILT = THREE.MathUtils.degToRad(58);
 
   // Shared geometry (never disposed per-entity)
   private readonly burstGeo = new THREE.BoxGeometry(0.06, 0.06, 0.06);
@@ -339,7 +344,7 @@ export class ThreeBattlefieldService {
     ];
 
     for (const id of classIds) {
-      this.textures.set(id, this.textureLoader.load(`assets/sprites/${id}.png`));
+      this.textures.set(id, this.loadSpriteTexture(`assets/sprites/${id}.png`));
     }
 
     const mobIds = [
@@ -354,8 +359,17 @@ export class ThreeBattlefieldService {
     ];
 
     for (const id of mobIds) {
-      this.textures.set(id, this.textureLoader.load(`assets/monsters/${id}-sprite.png`));
+      this.textures.set(id, this.loadSpriteTexture(`assets/monsters/${id}-sprite.png`));
     }
+  }
+
+  /** Character art is authored in sRGB; tagging it keeps colors from washing out. */
+  private loadSpriteTexture(url: string): THREE.Texture {
+    const tex = this.textureLoader.load(url);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    // Billboards tilt back with the camera, so filter anisotropically to keep them crisp
+    tex.anisotropy = this.renderer?.capabilities.getMaxAnisotropy() ?? 1;
+    return tex;
   }
 
   public setCameraPreset(preset: CameraPreset, animate = true): void {
@@ -1330,6 +1344,10 @@ export class ThreeBattlefieldService {
     } else {
       this.shakeIntensity = 0;
     }
+    this.billboardEuler.setFromQuaternion(this.camera.quaternion, 'YXZ');
+    this.billboardEuler.x = Math.max(this.billboardEuler.x, -this.MAX_BILLBOARD_TILT);
+    this.billboardEuler.z = 0;
+    this.billboardQuat.setFromEuler(this.billboardEuler);
 
     // 2. Animate Crystal Altar, Satellites & Light Pillar (flares red when monsters break through)
     this.crystalHitAge += dt;
@@ -1337,7 +1355,8 @@ export class ThreeBattlefieldService {
     if (this.crystalCore) {
       this.crystalCore.rotation.y += dt * (0.9 + hit * 8);
       this.crystalCore.position.y = 0.72 + Math.sin(elapsed * 2.4) * 0.06;
-      this.crystalCore.position.x = hit * Math.sin(this.crystalHitAge * 70) * 0.05;
+      // Guarded: crystalHitAge starts at Infinity and 0 * sin(Infinity) is NaN
+      this.crystalCore.position.x = hit > 0 ? hit * Math.sin(this.crystalHitAge * 70) * 0.05 : 0;
       const coreMat = this.crystalCore.material as THREE.MeshStandardMaterial;
       coreMat.emissive.setHex(0x0284c7).lerp(this.crystalHitColor, hit);
     }
@@ -1571,7 +1590,7 @@ export class ThreeBattlefieldService {
         const levelSpin = levelP < 1 ? Math.sin(levelP * Math.PI * 4) * 0.25 * (1 - levelP) : 0;
         const dropIn = (1 - this.easeOutCubic(spawnP)) * 0.9;
 
-        billboard.quaternion.copy(this.camera.quaternion);
+        billboard.quaternion.copy(this.billboardQuat);
         if (levelSpin !== 0) billboard.rotateZ(levelSpin);
         billboard.position.set(
           vis.attackDirX * pose.forward,
@@ -1850,7 +1869,7 @@ export class ThreeBattlefieldService {
         vis.lean += (targetLean - vis.lean) * Math.min(1, dt * 8);
 
         const sprite = vis.sprite;
-        sprite.quaternion.copy(this.camera.quaternion);
+        sprite.quaternion.copy(this.billboardQuat);
 
         let bob: number;
         let rock: number;
@@ -1871,7 +1890,8 @@ export class ThreeBattlefieldService {
 
         // Hit reaction
         const hitP = vis.hitAge < 0.18 ? 1 - vis.hitAge / 0.18 : 0;
-        const jitter = hitP * 0.05 * Math.sin(vis.hitAge * 90);
+        // Guarded: hitAge starts at Infinity and 0 * sin(Infinity) is NaN, which hides the sprite
+        const jitter = hitP > 0 ? hitP * 0.05 * Math.sin(vis.hitAge * 90) : 0;
 
         // Emerge from the portal
         const spawnP = Math.min(1, vis.spawnAge / 0.4);
@@ -2035,7 +2055,7 @@ export class ThreeBattlefieldService {
       if (f.kind === 'mob-death' && f.mob) {
         // Flash white, flatten and float up as the spirit leaves
         const sprite = f.mob.sprite;
-        if (this.camera) sprite.quaternion.copy(this.camera.quaternion);
+        sprite.quaternion.copy(this.billboardQuat);
         sprite.rotateZ(p * 0.6);
         sprite.position.y = p * 0.35;
         sprite.scale.set(1 + p * 0.5, Math.max(0.001, 1 - p * 0.85), 1);
