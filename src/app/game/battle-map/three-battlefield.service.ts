@@ -208,6 +208,11 @@ export class ThreeBattlefieldService {
   private readonly reducedMotion =
     typeof window !== 'undefined' &&
     !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  // CPU-rasterized WebGL (SwiftShader, llvmpipe, headless CI) can't afford
+  // MSAA, shadow maps, or a full-rate loop without starving the main thread
+  private softwareRenderer = false;
+  private lastRenderTime = 0;
+  private readonly SOFTWARE_FRAME_MS = 50;
   private rangeRadius = -1;
   private gridHalfW = 0;
   private gridHalfH = 0;
@@ -238,12 +243,16 @@ export class ThreeBattlefieldService {
     this.canvas = canvas;
 
     // 1. WebGL Support Verification
+    // Probe on a throwaway canvas so the real one keeps the context attributes we pick below
     try {
-      const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+      const probe = document.createElement('canvas');
+      const gl = probe.getContext('webgl2') || probe.getContext('webgl');
       if (!gl) {
         this.isWebGLSupported.set(false);
         return false;
       }
+      this.softwareRenderer = isSoftwareRenderer(gl);
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
     } catch {
       this.isWebGLSupported.set(false);
       return false;
@@ -264,14 +273,16 @@ export class ThreeBattlefieldService {
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: true,
+      antialias: !this.softwareRenderer,
       alpha: true,
       powerPreference: 'high-performance',
     });
     this.renderer.setSize(width, height, false);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.setPixelRatio(
+      this.softwareRenderer ? 1 : Math.min(window.devicePixelRatio || 1, 2),
+    );
+    this.renderer.shadowMap.enabled = !this.softwareRenderer;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
 
@@ -1479,6 +1490,8 @@ export class ThreeBattlefieldService {
       lastTime = time;
 
       this.update(game, dt, time * 0.001);
+      if (this.softwareRenderer && time - this.lastRenderTime < this.SOFTWARE_FRAME_MS) return;
+      this.lastRenderTime = time;
       this.render();
     };
 
@@ -2805,4 +2818,12 @@ export class ThreeBattlefieldService {
     this.activeParticles = [];
     this.rangeRadius = -1;
   }
+}
+
+const SOFTWARE_RENDERER_PATTERN = /swiftshader|llvmpipe|softpipe|software|basic render/i;
+
+export function isSoftwareRenderer(gl: WebGLRenderingContext | WebGL2RenderingContext): boolean {
+  const info = gl.getExtension('WEBGL_debug_renderer_info');
+  const renderer = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? '');
+  return SOFTWARE_RENDERER_PATTERN.test(renderer);
 }
