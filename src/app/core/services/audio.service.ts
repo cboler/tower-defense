@@ -99,6 +99,30 @@ export class AudioService {
     osc.stop(now + 0.1);
   }
 
+  /** Plucked lyre string on a random pentatonic note, for the Bard's song arrows. */
+  public playHarp(): void {
+    const ctx = this.initContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const notes = [523.25, 587.33, 659.25, 783.99, 880];
+    const root = notes[Math.floor(Math.random() * notes.length)];
+    [1, 2].forEach((harmonic, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(root * harmonic, now);
+
+      gain.gain.setValueAtTime(i === 0 ? 0.08 : 0.025, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.35);
+    });
+  }
+
   public playExplosion(): void {
     const ctx = this.initContext();
     if (!ctx) return;

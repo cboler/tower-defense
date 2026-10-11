@@ -1151,6 +1151,26 @@ export class GameService implements OnDestroy {
         });
         break;
       }
+
+      case 'bard': {
+        // Battle Hymn: song-strung arrow; the haste aura is applied in calculateTowerBuffs
+        this.audio.playHarp();
+        this.spawnProjectile({
+          sourceTowerId: tower.id,
+          targetMobId: target.id,
+          startX: tower.x,
+          startY: tower.y,
+          currentX: tower.x,
+          currentY: tower.y,
+          targetX: target.x,
+          targetY: target.y,
+          speed: 11.0,
+          damage,
+          damageType: 'physical',
+          visualType: 'song-arrow',
+        });
+        break;
+      }
     }
   }
 

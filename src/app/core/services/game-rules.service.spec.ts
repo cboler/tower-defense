@@ -78,6 +78,30 @@ describe('GameRulesService', () => {
     expect(buffs.has(outside.id)).toBe(false);
   });
 
+  it('adds the strongest allied Bard hymn to Oracle haste, without self-buffing', () => {
+    const ally = tower('ally', 'ranger');
+    const bard = tower('bard', 'bard', 5, 1);
+    const weaker = tower('weaker', 'bard', 1, 2);
+    const oracle = tower('oracle', 'oracle', 1, 1);
+    const buffs = service.calculateTowerBuffs([ally, bard, weaker, oracle]);
+    expect(buffs.get(ally.id)?.speedMult).toBeCloseTo(1.6);
+    expect(buffs.get(ally.id)?.damageMult).toBeCloseTo(1.15);
+    expect(service.calculateTowerBuffs([bard]).has(bard.id)).toBe(false);
+    expect(service.calculateTowerBuffs([bard, weaker]).get(weaker.id)?.speedMult).toBeCloseTo(1.35);
+  });
+
+  it('uses the Bard hymn radius independently of bow reach and layers it with a Paladin aura', () => {
+    const bard = tower('bard', 'bard');
+    const paladin = tower('paladin', 'paladin', 1, 1);
+    const edge = tower('edge', 'ranger', 1, 2.2);
+    const outside = tower('outside', 'ranger', 1, 2.21);
+    const buffs = service.calculateTowerBuffs([bard, paladin, edge, outside]);
+    expect(buffs.get(edge.id)?.speedMult).toBeCloseTo(1.15);
+    expect(buffs.get(edge.id)?.damageMult).toBeCloseTo(1.1);
+    expect(buffs.get(outside.id)?.speedMult).toBe(1);
+    expect(buffs.get(outside.id)?.damageMult).toBeCloseTo(1.1);
+  });
+
   it('pays only the strongest Rogue or Ninja loot aura and credits its source', () => {
     const mob = createDummyMob({ goldReward: 20 });
     const rogue = tower('rogue', 'rogue', 2);

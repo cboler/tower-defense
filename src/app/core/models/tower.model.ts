@@ -12,7 +12,8 @@ export type TowerClassId =
   | 'ninja'
   | 'samurai'
   | 'paladin'
-  | 'astrologian';
+  | 'astrologian'
+  | 'bard';
 
 export type TargetPriority = 'first' | 'last' | 'strongest' | 'weakest' | 'closest' | 'flying';
 
@@ -1020,6 +1021,83 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
       },
     ],
   },
+
+  bard: {
+    id: 'bard',
+    name: 'Bard',
+    fantasyRole: 'Battle Hymn Tempo Support',
+    icon: '🎶',
+    badge: 'Battle Hymn',
+    color: '#f472b6',
+    cost: 240,
+    damageType: 'physical',
+    targetsAir: true,
+    targetsGround: true,
+    description:
+      'Archer-minstrel who looses song-strung arrows at ground and air foes while a battle hymn quickens nearby allies. The strongest Bard hymn adds to Oracle haste; it does not affect its own source.',
+    levels: [
+      {
+        level: 1,
+        title: 'Wandering Minstrel',
+        upgradeCost: 0,
+        damage: 34,
+        range: 3.0,
+        cadence: 0.8,
+        auraRange: 2.2,
+        buffSpeedPercent: 0.15,
+        specialDescription:
+          'Song arrows strike ground and air. Allies within 2.2 tiles gain +15% attack speed.',
+      },
+      {
+        level: 2,
+        title: 'Troubadour',
+        upgradeCost: 280,
+        damage: 62,
+        range: 3.2,
+        cadence: 0.75,
+        auraRange: 2.4,
+        buffSpeedPercent: 0.2,
+        specialDescription:
+          'Livelier tempo and longer volleys. Allies within 2.4 tiles gain +20% attack speed.',
+      },
+      {
+        level: 3,
+        title: 'Skald of the Vale',
+        upgradeCost: 460,
+        damage: 108,
+        range: 3.4,
+        cadence: 0.7,
+        auraRange: 2.6,
+        buffSpeedPercent: 0.25,
+        specialDescription:
+          'Rousing war ballad carries across the lanes. Allies within 2.6 tiles gain +25% attack speed.',
+      },
+      {
+        level: 4,
+        title: 'Hymnmaster',
+        upgradeCost: 720,
+        damage: 180,
+        range: 3.6,
+        cadence: 0.65,
+        auraRange: 2.8,
+        buffSpeedPercent: 0.3,
+        specialDescription:
+          'Thundering anthem drives the whole line into a frenzy. Allies within 2.8 tiles gain +30% attack speed.',
+      },
+      {
+        level: 5,
+        title: 'Maestro of the Spheres',
+        upgradeCost: 1080,
+        damage: 300,
+        range: 3.8,
+        cadence: 0.6,
+        auraRange: 3,
+        buffSpeedPercent: 0.35,
+        specialDescription:
+          'Legendary symphony that sets the tempo of battle. Allies within 3 tiles gain +35% attack speed.',
+      },
+    ],
+  },
 };
 
 export interface JobUnlockRule {
@@ -1099,6 +1177,19 @@ export const JOB_UNLOCK_RULES: Record<string, JobUnlockRule> = {
     hint: 'Upgrade an Elementalist (Black Mage) to Lv. 2 and a Chronomancer (Time Mage) to Lv. 2',
     lore: 'Channels the celestial sphere to summon gravitational wells and catastrophic star meteors.',
   },
+  bard: {
+    targetClassId: 'bard',
+    name: 'Bard',
+    badge: 'Battle Hymn Minstrel',
+    color: '#f472b6',
+    icon: '🎶',
+    prerequisites: [
+      { classId: 'ranger', minLevel: 2 },
+      { classId: 'oracle', minLevel: 2 },
+    ],
+    hint: 'Upgrade a Ranger (Archer) to Lv. 2 and an Oracle (White Mage) to Lv. 2',
+    lore: 'Wandering archer-minstrel whose battle hymns quicken every ally within earshot while song-strung arrows find their mark.',
+  },
 };
 
 export const BASE_TOWER_CLASSES: TowerClassDefinition[] = [
@@ -1119,4 +1210,5 @@ export const ADVANCED_TOWER_CLASSES: TowerClassDefinition[] = [
   TOWER_CLASSES.samurai,
   TOWER_CLASSES.paladin,
   TOWER_CLASSES.astrologian,
+  TOWER_CLASSES.bard,
 ];

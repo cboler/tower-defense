@@ -21,6 +21,7 @@ const ATTACK_STYLE: Record<TowerClassId, AttackStyle> = {
   paladin: 'lunge',
   ranger: 'recoil',
   ninja: 'recoil',
+  bard: 'recoil',
   elementalist: 'cast',
   chronomancer: 'cast',
   'red-mage': 'cast',
@@ -35,6 +36,7 @@ const ATTACK_STYLE: Record<TowerClassId, AttackStyle> = {
 /** Arc height per tile of flight distance. */
 const PROJECTILE_ARC: Record<Projectile['visualType'], number> = {
   arrow: 0.12,
+  'song-arrow': 0.14,
   fireball: 0.28,
   'magic-spark': 0.1,
   'time-orb': 0.12,
@@ -2419,11 +2421,12 @@ export class ThreeBattlefieldService {
       body.add(ring);
       trailColor = 0xa855f7;
       impactColor = 0xc084fc;
-    } else if (type === 'arrow') {
-      // Built along +Z so lookAt() aims it down the flight path
+    } else if (type === 'arrow' || type === 'song-arrow') {
+      // Built along +Z so lookAt() aims it down the flight path; Bard song arrows glow pink
+      const song = type === 'song-arrow';
       const shaft = new THREE.Mesh(
         new THREE.CylinderGeometry(0.015, 0.015, 0.42, 5),
-        new THREE.MeshBasicMaterial({ color: 0xfef08a }),
+        new THREE.MeshBasicMaterial({ color: song ? 0xfbcfe8 : 0xfef08a }),
       );
       shaft.rotation.x = Math.PI / 2;
       const head = new THREE.Mesh(
@@ -2433,8 +2436,8 @@ export class ThreeBattlefieldService {
       head.rotation.x = Math.PI / 2;
       head.position.z = 0.24;
       body.add(shaft, head);
-      trailColor = 0xfef9c3;
-      impactColor = 0xfde68a;
+      trailColor = song ? 0xf472b6 : 0xfef9c3;
+      impactColor = song ? 0xf9a8d4 : 0xfde68a;
     } else if (type === 'dagger') {
       const star = new THREE.Mesh(
         new THREE.OctahedronGeometry(0.12, 0),

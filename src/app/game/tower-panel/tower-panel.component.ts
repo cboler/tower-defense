@@ -159,6 +159,16 @@ import { IconComponent } from '../icon/icon.component';
                     <dd>{{ getCurLevel(tower).auraRange }}</dd>
                   </div>
                 }
+                @if (tower.classId === 'bard') {
+                  <div class="stat-cell">
+                    <dt>Ally haste</dt>
+                    <dd>+{{ round((getCurLevel(tower).buffSpeedPercent ?? 0) * 100) }}%</dd>
+                  </div>
+                  <div class="stat-cell">
+                    <dt>Aura radius</dt>
+                    <dd>{{ getCurLevel(tower).auraRange }}</dd>
+                  </div>
+                }
                 @if (tower.classId === 'ninja') {
                   <div class="stat-cell">
                     <dt>Loot aura</dt>
@@ -272,6 +282,15 @@ import { IconComponent } from '../icon/icon.component';
                         >{{ getCurLevel(tower).cadence }}s <b>→ {{ nextLvl.cadence }}s</b></span
                       >
                     </li>
+                    @if (tower.classId === 'bard') {
+                      <li>
+                        <span>Ally haste</span>
+                        <span
+                          >+{{ round((getCurLevel(tower).buffSpeedPercent ?? 0) * 100) }}%
+                          <b>→ +{{ round((nextLvl.buffSpeedPercent ?? 0) * 100) }}%</b></span
+                        >
+                      </li>
+                    }
                   }
                 </ul>
                 <p class="forecast-perk">{{ nextLvl.specialDescription }}</p>

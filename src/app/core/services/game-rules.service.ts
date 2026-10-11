@@ -138,7 +138,8 @@ export class GameRulesService {
   }
 
   /**
-   * Oracle bonuses retain their stacking rules; only the strongest allied Paladin aura applies.
+   * Oracle bonuses retain their stacking rules; only the strongest allied Paladin damage aura
+   * and the strongest allied Bard haste aura apply on top of them.
    */
   public calculateTowerBuffs(towers: TowerInstance[]): Map<string, TowerBuff> {
     const buffs = new Map<string, TowerBuff>();
@@ -164,18 +165,26 @@ export class GameRulesService {
     for (const target of towers) {
       if (target.classId === 'barricade') continue;
       let paladinBonus = 0;
+      let bardBonus = 0;
       for (const source of towers) {
-        if (source.classId !== 'paladin' || source.id === target.id) continue;
-        const level = TOWER_CLASSES.paladin.levels[source.level - 1];
+        if (source.id === target.id) continue;
+        if (source.classId !== 'paladin' && source.classId !== 'bard') continue;
+        const level = TOWER_CLASSES[source.classId].levels[source.level - 1];
         if (
-          Math.hypot(target.x - source.x, target.y - source.y) <= (level.auraRange ?? level.range)
+          Math.hypot(target.x - source.x, target.y - source.y) > (level.auraRange ?? level.range)
         ) {
+          continue;
+        }
+        if (source.classId === 'paladin') {
           paladinBonus = Math.max(paladinBonus, level.buffDamagePercent ?? 0);
+        } else {
+          bardBonus = Math.max(bardBonus, level.buffSpeedPercent ?? 0);
         }
       }
-      if (paladinBonus > 0) {
+      if (paladinBonus > 0 || bardBonus > 0) {
         const current = buffs.get(target.id) ?? { speedMult: 1, damageMult: 1 };
         current.damageMult += paladinBonus;
+        current.speedMult += bardBonus;
         buffs.set(target.id, current);
       }
     }

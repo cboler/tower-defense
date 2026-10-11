@@ -93,6 +93,28 @@ describe('GameService', () => {
     expect(ninja.xp).toBe(100);
   });
 
+  it('lets a Bard loose song arrows at flyers while its hymn hastens nearby allies', () => {
+    service.gold.set(5000);
+    service.unlockedJobIds.set(new Set(['bard']));
+    service.placeTower(0, 0, 'bard');
+    service.placeTower(1, 0, 'blade-warden');
+    const [bard, ally] = service.towers();
+    const buffs = service['calculateTowerBuffs']();
+    expect(buffs.get(ally.id)?.speedMult).toBeCloseTo(1.15);
+    service['spawnMob']('dread-gaze', 1);
+    const mob = service.mobs()[0];
+    Object.assign(mob, { x: 0, y: 1 });
+    service['gameTimeMs'] = 10000;
+    service['updateTowers'](buffs);
+    expect(service.projectiles()).toContainEqual(
+      expect.objectContaining({
+        sourceTowerId: bard.id,
+        targetMobId: mob.id,
+        visualType: 'song-arrow',
+      }),
+    );
+  });
+
   it('places a Blade Warden on a build tile when sufficient gold is available', () => {
     // Coordinate (0, 0) is 'B' (Build)
     const success = service.placeTower(0, 0, 'blade-warden');
@@ -384,6 +406,24 @@ describe('GameService', () => {
     const placedRedMage = service.placeTower(0, 3, 'red-mage');
     expect(placedRedMage).toBe(true);
     expect(service.towers().some((t) => t.classId === 'red-mage')).toBe(true);
+  });
+
+  it('enforces FFT job unlock progression: Bard unlocks when Ranger and Oracle reach Lv 2', () => {
+    expect(service.isClassUnlocked('bard')).toBe(false);
+    service.gold.set(5000);
+    expect(service.placeTower(0, 0, 'bard')).toBe(false);
+
+    service.placeTower(0, 0, 'ranger');
+    service.placeTower(0, 2, 'oracle');
+    const ranger = service.towers().find((t) => t.classId === 'ranger')!;
+    const oracle = service.towers().find((t) => t.classId === 'oracle')!;
+
+    service.upgradeTower(ranger.id);
+    expect(service.isClassUnlocked('bard')).toBe(false);
+
+    service.upgradeTower(oracle.id);
+    expect(service.isClassUnlocked('bard')).toBe(true);
+    expect(service.placeTower(0, 3, 'bard')).toBe(true);
   });
 
   it('enforces FFT job unlock progression: Ninja unlocks when Ranger and Rogue reach Lv 2', () => {

@@ -1205,6 +1205,67 @@ function astrologian(root: THREE.Group, p: Palette): void {
   put(rig.offhand, tube(0.022, 0.022, 0.16), p.paint(0xeee2c4), [0, 0, 0.02], [0, 0, Math.PI / 2]);
 }
 
+function bard(root: THREE.Group, p: Palette): void {
+  const rose = 0xd04a7a;
+  const wine = 0x8e2a57;
+  const rig = humanoid(root, p, {
+    skin: SKIN,
+    top: 0xf3e6cf,
+    legs: 0x4a3a5c,
+    boots: 0x6b4226,
+    belt: LEATHER,
+    buckle: GOLD,
+  });
+  // Rose doublet laced in gold over a cream shirt, puffed shoulders and a short wine cape
+  put(rig.torso, tube(0.118, 0.138, 0.2), p.paint(rose), [0, 0.15, 0]);
+  put(rig.torso, tube(0.14, 0.18, 0.1), p.paint(rose), [0, -0.02, 0]);
+  for (const y of [0.11, 0.17, 0.23]) {
+    put(rig.torso, block(0.06, 0.012, 0.02, 0.004), p.paint(GOLD), [0, y, 0.13]);
+  }
+  for (const arm of [rig.armL, rig.armR]) {
+    put(arm, ball(0.068), p.paint(rose), [0, 0, 0], undefined, [1, 0.85, 1]);
+  }
+  cape(rig, p.paint(wine, true), 0.36, 0.2);
+  // Lyre slung across the back, peeking over the right shoulder: golden frame, glowing strings
+  const lyre = joint(rig.torso, 'lyre', [0.1, 0.3, -0.16]);
+  lyre.rotation.set(0, 0, -0.45);
+  put(lyre, hoop(0.085, 0.014, Math.PI * 1.2), p.paint(GOLD), [0, 0, 0], [0, 0, Math.PI * 0.9]);
+  put(lyre, block(0.16, 0.018, 0.018, 0.006), p.paint(GOLD), [0, 0.07, 0]);
+  for (const x of [-0.03, 0, 0.03]) {
+    put(lyre, tube(0.003, 0.003, 0.14, 4), p.glow(0xf9a8d4, 0.6), [x, 0, 0]);
+  }
+  // Auburn hair under a cocked, wide-brimmed hat with a long pink plume
+  const hair = p.paint(0xa4532c);
+  eyes(rig.head, p, 0x5a3a6e);
+  hairCap(rig.head, hair, 0.5);
+  for (const side of [-1, 1]) {
+    put(rig.head, ball(0.06), hair, [side * 0.14, -0.07, 0.03], undefined, [0.7, 1.3, 0.9]);
+  }
+  const hat = p.paint(wine);
+  const tilt: Vec = [-0.15, 0, 0.12];
+  put(rig.head, tube(0.3, 0.3, 0.02, 20), hat, [0, 0.11, -0.01], tilt);
+  put(rig.head, tube(0.13, 0.17, 0.13, 16), hat, [0.008, 0.18, -0.02], tilt);
+  put(rig.head, tube(0.168, 0.172, 0.03, 16), p.paint(GOLD), [0.004, 0.135, -0.014], tilt);
+  for (const [color, from, dir, length] of [
+    [0xfbcfe8, [0.12, 0.2, -0.04], [0.55, 0.4, -1], 0.42],
+    [0xffffff, [0.1, 0.19, -0.06], [0.3, 0.25, -1], 0.3],
+  ] as [number, Vec, Vec, number][]) {
+    aim(rig.head, spike(0.045, length, 6), p.paint(color), from, dir, length).scale.set(1, 1, 0.3);
+  }
+  // Recurve bow held out in the left hand, strung with a singing pink string
+  rest(rig.armL, -0.7);
+  const bow = joint(rig.offhand, 'bow', [0, 0, 0.02]);
+  bow.rotation.set(0.7, 0, 0);
+  put(
+    bow,
+    hoop(0.24, 0.016, Math.PI * 0.95),
+    p.paint(0xb07040),
+    [0, 0, 0],
+    [0, Math.PI / 2, Math.PI / 2 + 0.08],
+  );
+  put(bow, tube(0.004, 0.004, 0.46, 4), p.glow(0xf9a8d4), [0, 0, -0.01]);
+}
+
 const HEROES: Record<
   Exclude<TowerClassId, 'barricade'>,
   (root: THREE.Group, p: Palette) => void
@@ -1222,6 +1283,7 @@ const HEROES: Record<
   samurai,
   paladin,
   astrologian,
+  bard,
 };
 
 /** Every hero class is sculpted from its own sprite; feet at y=0, facing +z. */

@@ -23,7 +23,7 @@ export interface Projectile {
   stunChance?: number;
   goldPerHit?: number;
   isAirBonus?: boolean;
-  visualType: 'arrow' | 'fireball' | 'magic-spark' | 'time-orb' | 'spear' | 'dagger';
+  visualType: 'arrow' | 'song-arrow' | 'fireball' | 'magic-spark' | 'time-orb' | 'spear' | 'dagger';
 }
 
 export interface FloatingText {
