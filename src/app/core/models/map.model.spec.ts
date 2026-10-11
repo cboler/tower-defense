@@ -47,6 +47,25 @@ describe.each(ALL_MAPS.map((map) => [map.name, map] as const))('%s layout', (_, 
     expect(pathfinding.findGroundPath(map, new Set())).not.toBeNull();
   });
 
+  it('flies airborne monsters across the board rather than along its rim', () => {
+    const air = pathfinding.findAirPath(map);
+    const [spawn] = tilesOf(map, 'S');
+    const [crystal] = tilesOf(map, 'C');
+    expect(`${air[0].x},${air[0].y}`).toBe(spawn);
+    expect(`${air.at(-1)!.x},${air.at(-1)!.y}`).toBe(crystal);
+    for (const p of air) {
+      expect(p.x).toBeGreaterThanOrEqual(0);
+      expect(p.x).toBeLessThanOrEqual(map.width - 1);
+      expect(p.y).toBeGreaterThanOrEqual(0);
+      expect(p.y).toBeLessThanOrEqual(map.height - 1);
+    }
+    // Somewhere along the flight, flyers are well inside the board where towers can reach
+    const deepest = Math.max(
+      ...air.map((p) => Math.min(p.x, p.y, map.width - 1 - p.x, map.height - 1 - p.y)),
+    );
+    expect(deepest).toBeGreaterThanOrEqual(2);
+  });
+
   it('has no dead road that monsters can never walk', () => {
     const reachable = reachableBeforeCrystal(map);
     const walkable = [...tilesOf(map, 'P'), ...tilesOf(map, 'M')];

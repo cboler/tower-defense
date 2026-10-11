@@ -3,6 +3,9 @@ import { MapDefinition, Point } from '../models/map.model';
 
 @Injectable({ providedIn: 'root' })
 export class PathfindingService {
+  /** Smallest sideways bow, in tiles, of a flight path that already crosses the centre. */
+  private static readonly MIN_AIR_BOW = 1.2;
+
   /**
    * Finds the shortest walkable path for ground units using Breadth-First Search.
    * Considers path tiles, spawn, sanctuary, and maze slots that do not have barricades.
@@ -67,24 +70,56 @@ export class PathfindingService {
   }
 
   /**
-   * Generates a direct or semi-direct air corridor for flying mobs.
-   * Flying mobs can bypass ground barricades and chasms directly.
+   * Generates the air corridor for flying mobs, which bypass ground barricades and chasms.
+   * The route runs from spawn to sanctuary, bowed sideways toward the board centre and at
+   * least deep enough to reach it, so flyers always cross the courtyard. A straight or
+   * along-the-line arc would skim the board's rim whenever spawn and sanctuary share an edge.
    */
   public findAirPath(map: MapDefinition): Point[] {
     const spawn = this.findTile(map, 'S') ?? { x: 0, y: 1 };
     const sanctuary = this.findTile(map, 'C') ?? { x: map.width - 2, y: map.height - 2 };
 
-    // Linear interpolation path for flying units
-    const steps = Math.max(Math.abs(sanctuary.x - spawn.x), Math.abs(sanctuary.y - spawn.y)) * 2;
-    const path: Point[] = [];
+    const dx = sanctuary.x - spawn.x;
+    const dy = sanctuary.y - spawn.y;
+    const span = Math.hypot(dx, dy) || 1;
+    const mid = { x: (spawn.x + sanctuary.x) / 2, y: (spawn.y + sanctuary.y) / 2 };
+    // Unit normal to the flight line, turned to face the board centre
+    let nx = dy / span;
+    let ny = -dx / span;
+    const toCentre = ((map.width - 1) / 2 - mid.x) * nx + ((map.height - 1) / 2 - mid.y) * ny;
+    if (toCentre < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    const bow = Math.max(PathfindingService.MIN_AIR_BOW, Math.abs(toCentre));
 
+    // Quadratic Bézier whose apex (t = 0.5) sits `bow` tiles off the straight line
+    const control = { x: mid.x + nx * bow * 2, y: mid.y + ny * bow * 2 };
+    const at = (t: number): Point => {
+      const a = (1 - t) * (1 - t);
+      const b = 2 * t * (1 - t);
+      const c = t * t;
+      return {
+        x: a * spawn.x + b * control.x + c * sanctuary.x,
+        y: a * spawn.y + b * control.y + c * sanctuary.y,
+      };
+    };
+
+    // Two waypoints per tile of flight keeps the curve smooth
+    let length = 0;
+    for (let i = 1; i <= 32; i++) {
+      const p = at((i - 1) / 32);
+      const q = at(i / 32);
+      length += Math.hypot(q.x - p.x, q.y - p.y);
+    }
+    const steps = Math.max(2, Math.ceil(length * 2));
+
+    const path: Point[] = [];
     for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      // Slight arc for aesthetic flying trajectory
-      const arc = Math.sin(t * Math.PI) * -1.2;
+      const p = at(i / steps);
       path.push({
-        x: Number((spawn.x + (sanctuary.x - spawn.x) * t).toFixed(2)),
-        y: Number((spawn.y + (sanctuary.y - spawn.y) * t + arc).toFixed(2)),
+        x: Number(Math.min(map.width - 1, Math.max(0, p.x)).toFixed(2)),
+        y: Number(Math.min(map.height - 1, Math.max(0, p.y)).toFixed(2)),
       });
     }
 
