@@ -1,3 +1,5 @@
+import { Point } from './map.model';
+
 export type MobTypeId =
   | 'skulker'
   | 'swiftbeak'
@@ -50,6 +52,8 @@ export interface MobInstance {
   x: number; // current float coordinates in grid units
   y: number;
   waypointIndex: number;
+  /** Personal ground route, set when barricades reroute the road while this mob is marching. */
+  route?: Point[];
   pathLengthWalked: number;
   statusEffects: StatusEffect[];
   isDead: boolean;

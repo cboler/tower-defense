@@ -6,9 +6,10 @@ export class PathfindingService {
   /**
    * Finds the shortest walkable path for ground units using Breadth-First Search.
    * Considers path tiles, spawn, sanctuary, and maze slots that do not have barricades.
+   * Starts at the spawn unless `from` is given (used to reroute monsters already marching).
    */
-  public findGroundPath(map: MapDefinition, barricades: Set<string>): Point[] | null {
-    const spawn = this.findTile(map, 'S');
+  public findGroundPath(map: MapDefinition, barricades: Set<string>, from?: Point): Point[] | null {
+    const spawn = from ?? this.findTile(map, 'S');
     const sanctuary = this.findTile(map, 'C');
 
     if (!spawn || !sanctuary) return null;

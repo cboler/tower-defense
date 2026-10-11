@@ -59,10 +59,58 @@ describe('GameService', () => {
   });
 
   it('places an Aether Barricade on a maze slot and recalculates paths', () => {
-    // Maze slot at (5, 3) on Verdant Crossroads
-    const success = service.placeTower(5, 3, 'barricade');
+    // Maze slot at (9, 2) on Verdant Crossroads
+    const openLength = service.groundPath().length;
+    const success = service.placeTower(9, 2, 'barricade');
     expect(success).toBe(true);
-    expect(service.barricades().has('5,3')).toBe(true);
+    expect(service.barricades().has('9,2')).toBe(true);
+    expect(service.groundPath().length).toBeGreaterThan(openLength);
+  });
+
+  it('reroutes marching monsters from where they stand when a barricade goes up', () => {
+    const mob: MobInstance = {
+      id: 'marcher',
+      typeId: 'skulker',
+      name: 'Skulker',
+      icon: '👺',
+      color: '#10b981',
+      hp: 1000,
+      maxHp: 1000,
+      baseSpeed: 1,
+      effectiveSpeed: 1,
+      armor: 0,
+      magicResist: 0,
+      isFlying: false,
+      crystalLoss: 1,
+      goldReward: 0,
+      // Halfway between waypoints (7, 1) and (8, 1) on the open road
+      x: 7.5,
+      y: 1,
+      waypointIndex: 7,
+      pathLengthWalked: 7.5,
+      statusEffects: [],
+      isDead: false,
+      hasEscaped: false,
+      spawnTimeMs: 0,
+    };
+    service.mobs.set([mob]);
+
+    service.placeTower(9, 2, 'barricade');
+
+    const route = mob.route!;
+    expect(route[0]).toEqual({ x: 7.5, y: 1 });
+    expect(route[route.length - 1]).toEqual({ x: 11, y: 7 });
+    expect(route.some((p) => p.x === 9 && p.y === 2)).toBe(false);
+
+    // March it home: every step stays on walkable ground, never phasing through walls
+    const walkable = new Set(['P', 'S', 'C', 'M']);
+    for (let i = 0; i < 400 && !mob.hasEscaped; i++) {
+      service['updateMobs'](0.1);
+      const tile = MAP_VERDANT_CROSSROADS.tiles[Math.round(mob.y)][Math.round(mob.x)];
+      expect(walkable.has(tile)).toBe(true);
+      expect(`${Math.round(mob.x)},${Math.round(mob.y)}`).not.toBe('9,2');
+    }
+    expect(mob.hasEscaped).toBe(true);
   });
 
   it('cycles game speed between 1x, 2x, and 4x', () => {

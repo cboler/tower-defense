@@ -25,8 +25,8 @@ describe('PathfindingService', () => {
 
   it('validates barricade placement on maze slots when a path remains open', () => {
     const barricades = new Set<string>();
-    // Maze slot at (5, 3)
-    const canPlace = service.canPlaceBarricade(MAP_VERDANT_CROSSROADS, barricades, 5, 3);
+    // Maze slot at (9, 2)
+    const canPlace = service.canPlaceBarricade(MAP_VERDANT_CROSSROADS, barricades, 9, 2);
     expect(typeof canPlace).toBe('boolean');
   });
 

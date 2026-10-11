@@ -291,8 +291,45 @@ export class GameService implements OnDestroy {
     const barricades = this.barricades();
     const ground = this.pathfinding.findGroundPath(map, barricades) ?? [];
     const air = this.pathfinding.findAirPath(map);
+    const previousGround = this.groundPath();
     this.groundPath.set(ground);
     this.airPath.set(air);
+    this.rerouteGroundMobs(previousGround);
+  }
+
+  /**
+   * Barricades change the road mid-wave. Monsters already marching keep their own route
+   * from where they stand, rather than indexing into the new path and cutting through walls.
+   */
+  private rerouteGroundMobs(previousGround: Point[]): void {
+    const map = this.activeMap();
+    const barricades = this.barricades();
+
+    for (const mob of this.mobs()) {
+      if (mob.isFlying || mob.isDead || mob.hasEscaped) continue;
+      const path = mob.route ?? previousGround;
+      const behind = path[mob.waypointIndex];
+      const ahead = path[mob.waypointIndex + 1] ?? behind;
+      if (!behind) continue;
+
+      // Continue to the tile ahead or turn back, whichever reaches the crystal sooner
+      let best: Point[] | null = null;
+      let bestCost = Infinity;
+      for (const tile of [ahead, behind]) {
+        if (barricades.has(`${tile.x},${tile.y}`)) continue;
+        const tail = this.pathfinding.findGroundPath(map, barricades, tile);
+        if (!tail) continue;
+        const cost = Math.hypot(tile.x - mob.x, tile.y - mob.y) + tail.length;
+        if (cost < bestCost) {
+          best = tail;
+          bestCost = cost;
+        }
+      }
+      if (!best) continue;
+
+      mob.route = [{ x: mob.x, y: mob.y }, ...best];
+      mob.waypointIndex = 0;
+    }
   }
 
   public startNextWave(): void {
@@ -739,7 +776,7 @@ export class GameService implements OnDestroy {
         continue;
       }
 
-      const path = mob.isFlying ? this.airPath() : this.groundPath();
+      const path = mob.isFlying ? this.airPath() : (mob.route ?? this.groundPath());
       if (path.length === 0) continue;
 
       const stepDistance = moveResult.stepDistance;
