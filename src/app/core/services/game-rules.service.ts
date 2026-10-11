@@ -24,11 +24,11 @@ export interface MobMovementResult {
 export interface KillBountyResult {
   earnedGold: number;
   bonusGold: number;
-  plunderRogue: TowerInstance | null;
+  plunderTower: TowerInstance | null;
   multiplier: number;
 }
 
-export interface OracleBuff {
+export interface TowerBuff {
   speedMult: number;
   damageMult: number;
 }
@@ -138,10 +138,10 @@ export class GameRulesService {
   }
 
   /**
-   * Calculates aura haste and damage empowerments from Oracle towers.
+   * Oracle bonuses retain their stacking rules; only the strongest allied Paladin aura applies.
    */
-  public calculateOracleBuffs(towers: TowerInstance[]): Map<string, OracleBuff> {
-    const buffs = new Map<string, OracleBuff>();
+  public calculateTowerBuffs(towers: TowerInstance[]): Map<string, TowerBuff> {
+    const buffs = new Map<string, TowerBuff>();
 
     for (const oracle of towers) {
       if (oracle.classId !== 'oracle') continue;
@@ -161,11 +161,30 @@ export class GameRulesService {
       }
     }
 
+    for (const target of towers) {
+      if (target.classId === 'barricade') continue;
+      let paladinBonus = 0;
+      for (const source of towers) {
+        if (source.classId !== 'paladin' || source.id === target.id) continue;
+        const level = TOWER_CLASSES.paladin.levels[source.level - 1];
+        if (
+          Math.hypot(target.x - source.x, target.y - source.y) <= (level.auraRange ?? level.range)
+        ) {
+          paladinBonus = Math.max(paladinBonus, level.buffDamagePercent ?? 0);
+        }
+      }
+      if (paladinBonus > 0) {
+        const current = buffs.get(target.id) ?? { speedMult: 1, damageMult: 1 };
+        current.damageMult += paladinBonus;
+        buffs.set(target.id, current);
+      }
+    }
+
     return buffs;
   }
 
   /**
-   * Calculates kill bounty and Rogue Plunder Aura bonuses.
+   * Rogue and Ninja share one loot aura: only the strongest multiplier pays out.
    */
   public calculateKillBounty(
     mob: MobInstance,
@@ -173,18 +192,18 @@ export class GameRulesService {
     modifiers: StageModifier[] = [],
   ): KillBountyResult {
     let bestMultiplier = 1.0;
-    let plunderRogue: TowerInstance | null = null;
+    let plunderTower: TowerInstance | null = null;
 
     for (const rogue of allTowers) {
-      if (rogue.classId !== 'rogue') continue;
-      const def = TOWER_CLASSES.rogue;
+      if (rogue.classId !== 'rogue' && rogue.classId !== 'ninja') continue;
+      const def = TOWER_CLASSES[rogue.classId];
       const lvl = def.levels[rogue.level - 1];
       const dist = Math.hypot(mob.x - rogue.x, mob.y - rogue.y);
       if (dist <= lvl.range) {
         const mult = lvl.killGoldMultiplier ?? 1.5;
         if (mult > bestMultiplier) {
           bestMultiplier = mult;
-          plunderRogue = rogue;
+          plunderTower = rogue;
         }
       }
     }
@@ -202,7 +221,7 @@ export class GameRulesService {
     return {
       earnedGold,
       bonusGold,
-      plunderRogue,
+      plunderTower,
       multiplier: bestMultiplier,
     };
   }

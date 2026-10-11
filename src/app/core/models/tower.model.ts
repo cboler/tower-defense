@@ -28,6 +28,7 @@ export interface TowerLevelConfig {
   splashRadius?: number; // in grid cells
   slowPercent?: number; // 0 to 1
   slowDuration?: number; // in seconds
+  auraRange?: number; // optional support radius, separate from attack range
   buffSpeedPercent?: number;
   buffDamagePercent?: number;
   goldPerHit?: number;
@@ -419,16 +420,16 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
   rogue: {
     id: 'rogue',
     name: 'Rogue',
-    fantasyRole: 'Passive Plunder Aura & Economy Catalyst',
+    fantasyRole: 'Plunder Aura, Pickpocket & Mug',
     icon: '💰',
     badge: 'Thief',
     color: '#facc15',
     cost: 110,
-    damageType: 'utility',
+    damageType: 'physical',
     targetsAir: false,
-    targetsGround: false,
+    targetsGround: true,
     description:
-      'Does not attack directly. Projects an economic plunder aura that multiplies all Gold dropped by enemies slain in its radius, and passively pickpockets passing monsters.',
+      'Projects a loot aura and pickpockets passing ground monsters. From level 3, Mug adds a weak physical hit to each pickpocket. Overlapping loot auras use the strongest multiplier.',
     levels: [
       {
         level: 1,
@@ -457,36 +458,37 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         level: 3,
         title: 'Shadow Bandit',
         upgradeCost: 260,
-        damage: 0,
+        damage: 12,
         range: 2.8,
         cadence: 1.4,
         killGoldMultiplier: 2.0,
         pickpocketGold: 5,
         specialDescription:
-          'DOUBLES all Gold earned in aura (2.0x!). Siphons +5G from passing creeps.',
+          'DOUBLES all Gold earned in aura (2.0x!). Siphons +5G and deals 12 physical damage with Mug.',
       },
       {
         level: 4,
         title: 'Guildmaster',
         upgradeCost: 440,
-        damage: 0,
+        damage: 20,
         range: 3.2,
         cadence: 1.2,
         killGoldMultiplier: 2.5,
         pickpocketGold: 8,
-        specialDescription: '+150% Gold earned in aura (2.5x!). Siphons +8G from passing creeps.',
+        specialDescription:
+          '+150% Gold earned in aura (2.5x!). Siphons +8G and deals 20 physical damage with Mug.',
       },
       {
         level: 5,
         title: 'King of Shadows',
         upgradeCost: 750,
-        damage: 0,
+        damage: 32,
         range: 3.6,
         cadence: 1.0,
         killGoldMultiplier: 3.0,
         pickpocketGold: 14,
         specialDescription:
-          'TRIPLES all Gold earned in aura (3.0x!). Rapid +14G pickpocket flurry.',
+          'TRIPLES all Gold earned in aura (3.0x!). Mug steals +14G and deals 32 physical damage.',
       },
     ],
   },
@@ -730,7 +732,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
     targetsAir: true,
     targetsGround: true,
     description:
-      'Lethal shadow operative. Hurls dual razor shurikens simultaneously with blazing cadence and critical chance.',
+      'Lethal shadow operative with the same loot aura as Rogue. Hurls dual razor shurikens simultaneously with blazing cadence and critical chance.',
     levels: [
       {
         level: 1,
@@ -739,7 +741,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 38,
         range: 2.6,
         cadence: 0.48,
-        specialDescription: 'Dual-Throw: flings two shurikens per volley with 20% crit chance.',
+        killGoldMultiplier: 1.5,
+        specialDescription:
+          'Dual-Throw: flings two shurikens per volley with 20% crit chance. Loot aura: ×1.5 kill Gold; strongest aura wins.',
       },
       {
         level: 2,
@@ -748,7 +752,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 64,
         range: 2.8,
         cadence: 0.44,
-        specialDescription: 'Swifter throws with 25% critical strike multiplier.',
+        killGoldMultiplier: 1.75,
+        specialDescription:
+          'Swifter throws with 25% critical strike multiplier. Loot aura: ×1.75 kill Gold; strongest aura wins.',
       },
       {
         level: 3,
@@ -757,7 +763,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 106,
         range: 3.0,
         cadence: 0.4,
-        specialDescription: 'Dual heavy shadow stars with 30% critical strike chance.',
+        killGoldMultiplier: 2,
+        specialDescription:
+          'Dual heavy shadow stars with 30% critical strike chance. Loot aura: ×2 kill Gold; strongest aura wins.',
       },
       {
         level: 4,
@@ -766,7 +774,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 172,
         range: 3.2,
         cadence: 0.36,
-        specialDescription: 'Hyper-speed shuriken barrage tearing through fast targets.',
+        killGoldMultiplier: 2.5,
+        specialDescription:
+          'Hyper-speed shuriken barrage tearing through fast targets. Loot aura: ×2.5 kill Gold; strongest aura wins.',
       },
       {
         level: 5,
@@ -775,7 +785,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 275,
         range: 3.4,
         cadence: 0.32,
-        specialDescription: 'Supreme assassination arts; unrivaled single-target physical DPS.',
+        killGoldMultiplier: 3,
+        specialDescription:
+          'Supreme assassination arts; unrivaled single-target physical DPS. Loot aura: ×3 kill Gold; strongest aura wins.',
       },
     ],
   },
@@ -860,7 +872,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
     targetsAir: false,
     targetsGround: true,
     description:
-      'Holy vanguard sentinel wielding the Stasis Sword. Deals righteous physical damage and inflicts holy stuns.',
+      'Holy vanguard sentinel wielding the Stasis Sword. Deals physical damage, inflicts holy stuns, and empowers nearby allies. The strongest Paladin damage aura adds to Oracle buffs; it does not affect its own source.',
     levels: [
       {
         level: 1,
@@ -870,7 +882,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 1.6,
         cadence: 1.15,
         stunChance: 0.35,
-        specialDescription: 'Stasis Sword: heavy radiant slash with 35% chance to stun for 1.4s.',
+        auraRange: 2.2,
+        buffDamagePercent: 0.1,
+        specialDescription:
+          'Stasis Sword: heavy radiant slash with 35% chance to stun for 1.4s. Allies within 2.2 tiles gain +10% damage.',
       },
       {
         level: 2,
@@ -880,7 +895,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 1.7,
         cadence: 1.1,
         stunChance: 0.4,
-        specialDescription: 'Increased holy impact with 40% stun chance.',
+        auraRange: 2.4,
+        buffDamagePercent: 0.15,
+        specialDescription:
+          'Increased holy impact with 40% stun chance. Allies within 2.4 tiles gain +15% damage.',
       },
       {
         level: 3,
@@ -890,7 +908,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 1.8,
         cadence: 1.05,
         stunChance: 0.45,
-        specialDescription: 'Judgment Blade: celestial shockwave with 45% stun chance.',
+        auraRange: 2.6,
+        buffDamagePercent: 0.2,
+        specialDescription:
+          'Judgment Blade: celestial shockwave with 45% stun chance. Allies within 2.6 tiles gain +20% damage.',
       },
       {
         level: 4,
@@ -900,7 +921,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 1.9,
         cadence: 1.0,
         stunChance: 0.5,
-        specialDescription: 'Cleansing smite locking tough enemies in stasis.',
+        auraRange: 2.8,
+        buffDamagePercent: 0.25,
+        specialDescription:
+          'Cleansing smite locking tough enemies in stasis. Allies within 2.8 tiles gain +25% damage.',
       },
       {
         level: 5,
@@ -910,7 +934,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 2.0,
         cadence: 0.95,
         stunChance: 0.6,
-        specialDescription: 'Divine stasis judgment; immovable fortress against boss waves.',
+        auraRange: 3,
+        buffDamagePercent: 0.3,
+        specialDescription:
+          'Divine stasis judgment; immovable fortress against boss waves. Allies within 3 tiles gain +30% damage.',
       },
     ],
   },
@@ -1040,10 +1067,10 @@ export const JOB_UNLOCK_RULES: Record<string, JobUnlockRule> = {
     color: '#f43f5e',
     icon: '⚔️',
     prerequisites: [
-      { classId: 'blade-warden', minLevel: 2 },
+      { classId: 'lancer', minLevel: 2 },
       { classId: 'juggernaut', minLevel: 2 },
     ],
-    hint: 'Upgrade a Blade Warden (Warrior) to Lv. 2 and a Juggernaut (Berserker) to Lv. 2',
+    hint: 'Upgrade a Lancer (Dragoon) to Lv. 2 and a Juggernaut (Berserker) to Lv. 2',
     lore: 'Wields ancestral katanas through Iaido draw-out spirit arts, sundering enemy defenses in a flashing circle.',
   },
   paladin: {

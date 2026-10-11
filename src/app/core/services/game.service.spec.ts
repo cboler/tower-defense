@@ -21,6 +21,78 @@ describe('GameService', () => {
     expect(service.airPath().length).toBeGreaterThan(0);
   });
 
+  it('keeps Samurai locked with the old Warrior and Berserker pairing', () => {
+    service.gold.set(5000);
+    service.placeTower(0, 0, 'blade-warden');
+    service.placeTower(1, 0, 'juggernaut');
+    for (const tower of service.towers()) service.upgradeTower(tower.id);
+    expect(service.isClassUnlocked('samurai')).toBe(false);
+  });
+
+  it.each([
+    [2, 0, 3],
+    [3, 6, 5],
+    [4, 10, 8],
+    [5, 16, 14],
+  ])(
+    'Rogue level %i mugs for %i damage through 50%% armor while stealing %i gold',
+    (level, damage, stolen) => {
+      service.placeTower(0, 0, 'rogue');
+      const rogue = service.towers()[0];
+      rogue.level = level;
+      service['spawnMob']('skulker', 1);
+      const mob = service.mobs()[0];
+      Object.assign(mob, { x: 0, y: 1, hp: 1000, maxHp: 1000, armor: 0.5 });
+      const gold = service.gold();
+      service['gameTimeMs'] = 10000;
+      service['updateTowers'](new Map());
+      expect(mob.hp).toBe(1000 - damage);
+      expect(rogue.damageDealt).toBe(damage);
+      expect(service.gold()).toBe(gold + stolen);
+      expect(rogue.goldGenerated).toBe(stolen);
+      service['updateTowers'](new Map());
+      expect(mob.hp).toBe(1000 - damage);
+      expect(service.gold()).toBe(gold + stolen);
+    },
+  );
+
+  it('does not Mug dead, escaped, flying, or out-of-range monsters', () => {
+    service.placeTower(0, 0, 'rogue');
+    service.towers()[0].level = 5;
+    for (let i = 0; i < 4; i++) service['spawnMob']('skulker', 1);
+    service.mobs().forEach((mob, i) =>
+      Object.assign(mob, {
+        x: i === 3 ? 10 : 0,
+        y: 1,
+        isDead: i === 0,
+        hasEscaped: i === 1,
+        isFlying: i === 2,
+      }),
+    );
+    const gold = service.gold();
+    const health = service.mobs().map((mob) => mob.hp);
+    service['gameTimeMs'] = 10000;
+    service['updateTowers'](new Map());
+    expect(service.gold()).toBe(gold);
+    expect(service.mobs().map((mob) => mob.hp)).toEqual(health);
+  });
+
+  it('credits Ninja with loot-aura gold and support experience when an ally kills', () => {
+    service.gold.set(5000);
+    service.unlockedJobIds.set(new Set(['ninja']));
+    service.placeTower(0, 0, 'ninja');
+    service.placeTower(1, 0, 'blade-warden');
+    const [ninja, ally] = service.towers();
+    service['spawnMob']('skulker', 1);
+    const mob = service.mobs()[0];
+    Object.assign(mob, { x: 0, y: 1, hp: 1, goldReward: 20 });
+    const gold = service.gold();
+    service.dealDamage(mob, 100, 'pure', ally);
+    expect(service.gold()).toBe(gold + 30);
+    expect(ninja.goldGenerated).toBe(10);
+    expect(ninja.xp).toBe(100);
+  });
+
   it('places a Blade Warden on a build tile when sufficient gold is available', () => {
     // Coordinate (0, 0) is 'B' (Build)
     const success = service.placeTower(0, 0, 'blade-warden');
@@ -330,17 +402,17 @@ describe('GameService', () => {
     expect(service.isClassUnlocked('ninja')).toBe(true);
   });
 
-  it('enforces FFT job unlock progression: Samurai unlocks when Blade Warden and Juggernaut reach Lv 2', () => {
+  it('enforces FFT job unlock progression: Samurai unlocks when Lancer and Juggernaut reach Lv 2', () => {
     expect(service.isClassUnlocked('samurai')).toBe(false);
     service.gold.set(5000);
 
-    service.placeTower(0, 0, 'blade-warden');
+    service.placeTower(0, 0, 'lancer');
     service.placeTower(0, 2, 'juggernaut');
 
-    const warden = service.towers().find((t) => t.classId === 'blade-warden')!;
+    const lancer = service.towers().find((t) => t.classId === 'lancer')!;
     const jugg = service.towers().find((t) => t.classId === 'juggernaut')!;
 
-    service.upgradeTower(warden.id);
+    service.upgradeTower(lancer.id);
     service.upgradeTower(jugg.id);
 
     expect(service.isClassUnlocked('samurai')).toBe(true);
@@ -406,14 +478,14 @@ describe('GameService', () => {
 
     it('free promotions count toward job unlocks', () => {
       service.gold.set(5000);
-      service.placeTower(0, 0, 'blade-warden');
+      service.placeTower(0, 0, 'lancer');
       service.placeTower(0, 2, 'juggernaut');
-      const warden = service.towers().find((t) => t.classId === 'blade-warden')!;
+      const lancer = service.towers().find((t) => t.classId === 'lancer')!;
       const jugg = service.towers().find((t) => t.classId === 'juggernaut')!;
 
-      warden.xp = service.rules.xpToNextLevel(warden)! - 1;
+      lancer.xp = service.rules.xpToNextLevel(lancer)! - 1;
       jugg.xp = service.rules.xpToNextLevel(jugg)! - 1;
-      service.dealDamage(makeMob(100), 1, 'pure', warden);
+      service.dealDamage(makeMob(100), 1, 'pure', lancer);
       service.dealDamage(makeMob(100), 1, 'pure', jugg);
       flush();
 

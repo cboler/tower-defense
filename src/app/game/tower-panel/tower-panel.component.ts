@@ -110,6 +110,10 @@ import { IconComponent } from '../icon/icon.component';
                     <dt>Earned</dt>
                     <dd class="gold">{{ tower.goldGenerated }}G</dd>
                   </div>
+                  <div class="stat-cell">
+                    <dt>Mug damage</dt>
+                    <dd>{{ getCurLevel(tower).damage || 'Lv. 3' }}</dd>
+                  </div>
                 } @else if (tower.classId === 'oracle') {
                   <div class="stat-cell">
                     <dt>Haste</dt>
@@ -143,6 +147,26 @@ import { IconComponent } from '../icon/icon.component';
                   <div class="stat-cell">
                     <dt>Kills</dt>
                     <dd>{{ tower.kills }}</dd>
+                  </div>
+                }
+                @if (tower.classId === 'paladin') {
+                  <div class="stat-cell">
+                    <dt>Ally damage</dt>
+                    <dd>+{{ round((getCurLevel(tower).buffDamagePercent ?? 0) * 100) }}%</dd>
+                  </div>
+                  <div class="stat-cell">
+                    <dt>Aura radius</dt>
+                    <dd>{{ getCurLevel(tower).auraRange }}</dd>
+                  </div>
+                }
+                @if (tower.classId === 'ninja') {
+                  <div class="stat-cell">
+                    <dt>Loot aura</dt>
+                    <dd class="gold">×{{ getCurLevel(tower).killGoldMultiplier }}</dd>
+                  </div>
+                  <div class="stat-cell">
+                    <dt>Earned</dt>
+                    <dd class="gold">{{ tower.goldGenerated }}G</dd>
                   </div>
                 }
               </dl>
@@ -182,6 +206,12 @@ import { IconComponent } from '../icon/icon.component';
                 <span class="section-label">Next: level {{ tower.level + 1 }}</span>
                 <ul class="diff-list">
                   @if (tower.classId === 'rogue') {
+                    <li>
+                      <span>Mug damage</span>
+                      <span
+                        >{{ getCurLevel(tower).damage }} <b>→ {{ nextLvl.damage }}</b></span
+                      >
+                    </li>
                     <li>
                       <span>Plunder</span>
                       <span

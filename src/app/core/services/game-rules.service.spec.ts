@@ -37,6 +37,61 @@ describe('GameRulesService', () => {
     ...overrides,
   });
 
+  const tower = (
+    id: string,
+    classId: TowerInstance['classId'],
+    level = 1,
+    x = 0,
+  ): TowerInstance => ({
+    id,
+    classId,
+    level,
+    x,
+    y: 0,
+    totalInvested: 0,
+    targetPriority: 'first',
+    lastActionTime: 0,
+    kills: 0,
+    damageDealt: 0,
+    goldGenerated: 0,
+    xp: 0,
+  });
+
+  it('adds the strongest allied Paladin aura to Oracle buffs, without self-buffing', () => {
+    const ally = tower('ally', 'ranger');
+    const paladin = tower('paladin', 'paladin', 5, 1);
+    const weaker = tower('weaker', 'paladin', 1, 2);
+    const oracle = tower('oracle', 'oracle', 1, 1);
+    const buffs = service.calculateTowerBuffs([ally, paladin, weaker, oracle]);
+    expect(buffs.get(ally.id)?.damageMult).toBeCloseTo(1.45);
+    expect(buffs.get(ally.id)?.speedMult).toBeCloseTo(1.25);
+    expect(service.calculateTowerBuffs([paladin]).has(paladin.id)).toBe(false);
+    expect(service.calculateTowerBuffs([ally, oracle]).get(ally.id)?.damageMult).toBeCloseTo(1.15);
+  });
+
+  it('uses the Paladin support radius independently of sword reach and respects its boundary', () => {
+    const paladin = tower('paladin', 'paladin');
+    const edge = tower('edge', 'ranger', 1, 2.2);
+    const outside = tower('outside', 'ranger', 1, 2.21);
+    const buffs = service.calculateTowerBuffs([paladin, edge, outside]);
+    expect(buffs.get(edge.id)?.damageMult).toBeCloseTo(1.1);
+    expect(buffs.has(outside.id)).toBe(false);
+  });
+
+  it('pays only the strongest Rogue or Ninja loot aura and credits its source', () => {
+    const mob = createDummyMob({ goldReward: 20 });
+    const rogue = tower('rogue', 'rogue', 2);
+    const ninja = tower('ninja', 'ninja', 3);
+    const result = service.calculateKillBounty(mob, [rogue, ninja]);
+    expect(result.earnedGold).toBe(40);
+    expect(result.plunderTower?.id).toBe('ninja');
+    expect(service.calculateKillBounty(mob, [ninja, { ...rogue, level: 5 }]).earnedGold).toBe(60);
+    expect(service.calculateKillBounty(mob, [{ ...ninja, x: 3.01 }]).earnedGold).toBe(20);
+    expect(service.calculateKillBounty(mob, [ninja, { ...ninja, id: 'second' }]).earnedGold).toBe(
+      40,
+    );
+  });
+
   describe('calculateEffectiveDamage', () => {
     it('should reduce physical damage according to armor', () => {
       const mob = createDummyMob({ armor: 0.5 }); // 50% armor
@@ -144,7 +199,7 @@ describe('GameRulesService', () => {
       const result = service.calculateKillBounty(mob, []);
       expect(result.earnedGold).toBe(20);
       expect(result.bonusGold).toBe(0);
-      expect(result.plunderRogue).toBeNull();
+      expect(result.plunderTower).toBeNull();
     });
 
     it('should apply Rogue Plunder Aura when mob is in range', () => {
@@ -166,7 +221,7 @@ describe('GameRulesService', () => {
       const result = service.calculateKillBounty(mob, [rogue]);
       expect(result.earnedGold).toBe(30);
       expect(result.bonusGold).toBe(10);
-      expect(result.plunderRogue?.id).toBe('rogue-1');
+      expect(result.plunderTower?.id).toBe('rogue-1');
     });
   });
 

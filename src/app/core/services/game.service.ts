@@ -691,13 +691,13 @@ export class GameService implements OnDestroy {
     }
 
     // 2. Oracle tower buff calculation (pre-pass)
-    const oracleBuffs = this.calculateOracleBuffs();
+    const towerBuffs = this.calculateTowerBuffs();
 
     // 3. Move mobs
     this.updateMobs(deltaSeconds);
 
     // 4. Update towers (attacks & abilities)
-    this.updateTowers(oracleBuffs);
+    this.updateTowers(towerBuffs);
 
     // 5. Update projectiles
     this.updateProjectiles(deltaSeconds);
@@ -712,8 +712,8 @@ export class GameService implements OnDestroy {
     this.flushTowerExperience();
   }
 
-  private calculateOracleBuffs(): Map<string, { speedMult: number; damageMult: number }> {
-    return this.rules.calculateOracleBuffs(this.towers());
+  private calculateTowerBuffs(): Map<string, { speedMult: number; damageMult: number }> {
+    return this.rules.calculateTowerBuffs(this.towers());
   }
 
   private spawnMob(typeId: MobTypeId, hpMultiplier: number): void {
@@ -830,7 +830,7 @@ export class GameService implements OnDestroy {
     this.mobs.set(survivingMobs);
   }
 
-  private updateTowers(oracleBuffs: Map<string, { speedMult: number; damageMult: number }>): void {
+  private updateTowers(towerBuffs: Map<string, { speedMult: number; damageMult: number }>): void {
     const towers = this.towers();
     const mobs = this.mobs();
     if (towers.length === 0 || mobs.length === 0) return;
@@ -842,7 +842,7 @@ export class GameService implements OnDestroy {
         // Rogue / Thief: Passive economy catalyst and periodic pickpocketing
         const def = TOWER_CLASSES.rogue;
         const lvl = def.levels[tower.level - 1];
-        const buff = oracleBuffs.get(tower.id) ?? { speedMult: 1.0, damageMult: 1.0 };
+        const buff = towerBuffs.get(tower.id) ?? { speedMult: 1.0, damageMult: 1.0 };
         const effectiveCadence = lvl.cadence / buff.speedMult;
 
         if (this.gameTimeMs - tower.lastActionTime >= effectiveCadence * 1000) {
@@ -856,6 +856,7 @@ export class GameService implements OnDestroy {
           );
           if (target) {
             tower.lastActionTime = this.gameTimeMs;
+            tower.attackAngleRad = Math.atan2(target.y - tower.y, target.x - tower.x);
             const stolen = lvl.pickpocketGold ?? 2;
             this.gold.update((g) => g + stolen);
             tower.goldGenerated += stolen;
@@ -863,6 +864,11 @@ export class GameService implements OnDestroy {
             this.audio.playCoin();
             this.addFloatingText(`+${stolen}G`, target.x, target.y - 0.2, '#facc15', 'gold');
             this.addParticle(target.x, target.y, '#facc15', 0.6, 'aura');
+            if (lvl.damage > 0) {
+              this.audio.playSlash();
+              this.addParticle(target.x, target.y, '#facc15', 0.5, 'slash');
+              this.dealDamage(target, Math.round(lvl.damage * buff.damageMult), 'physical', tower);
+            }
           }
         }
         continue;
@@ -870,7 +876,7 @@ export class GameService implements OnDestroy {
 
       const def = TOWER_CLASSES[tower.classId];
       const lvl = def.levels[tower.level - 1];
-      const buff = oracleBuffs.get(tower.id) ?? { speedMult: 1.0, damageMult: 1.0 };
+      const buff = towerBuffs.get(tower.id) ?? { speedMult: 1.0, damageMult: 1.0 };
 
       const effectiveCadence = lvl.cadence / buff.speedMult;
       const effectiveDamage = Math.round(lvl.damage * buff.damageMult);
@@ -1293,7 +1299,7 @@ export class GameService implements OnDestroy {
     );
     const earnedGold = bounty.earnedGold;
     const bonusGold = bounty.bonusGold;
-    const plunderRogue = bounty.plunderRogue;
+    const plunderTower = bounty.plunderTower;
     const bestMultiplier = bounty.multiplier;
 
     this.gold.update((g) => g + earnedGold);
@@ -1305,9 +1311,9 @@ export class GameService implements OnDestroy {
       this.grantXp(tower, this.rules.calculateKillXp(mob));
     }
 
-    if (plunderRogue && bonusGold > 0) {
-      plunderRogue.goldGenerated += bonusGold;
-      this.grantXp(plunderRogue, bonusGold * XP_PER_SUPPORT_GOLD);
+    if (plunderTower && bonusGold > 0) {
+      plunderTower.goldGenerated += bonusGold;
+      this.grantXp(plunderTower, bonusGold * XP_PER_SUPPORT_GOLD);
       this.addFloatingText(
         `+${earnedGold}G (x${bestMultiplier} Plunder!)`,
         mob.x,
@@ -1315,7 +1321,7 @@ export class GameService implements OnDestroy {
         '#facc15',
         'gold',
       );
-      this.addParticle(plunderRogue.x, plunderRogue.y, '#facc15', 1.2, 'aura');
+      this.addParticle(plunderTower.x, plunderTower.y, '#facc15', 1.2, 'aura');
     } else {
       this.addFloatingText(`+${mob.goldReward}G`, mob.x, mob.y, '#fbbf24', 'gold');
     }

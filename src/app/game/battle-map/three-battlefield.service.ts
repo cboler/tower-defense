@@ -1,15 +1,17 @@
 import { Injectable, signal } from '@angular/core';
 import * as THREE from 'three';
+import { animateModel, createHeroModel, createMonsterModel } from './battlefield-models';
 import { GameService } from '../../core/services/game.service';
 import { TOWER_CLASSES, TowerClassId } from '../../core/models/tower.model';
 import { MobInstance } from '../../core/models/mob.model';
 import { ParticleFx, Projectile } from '../../core/models/game-state.model';
+import { TileCode } from '../../core/models/map.model';
 
 export type CameraPreset = 'tactics' | 'isometric' | 'topdown';
 
 type AttackStyle = 'lunge' | 'recoil' | 'cast' | 'slam' | 'hop' | 'none';
 
-/** How each hero's billboard moves when it acts. */
+/** How each hero moves when it acts. */
 const ATTACK_STYLE: Record<TowerClassId, AttackStyle> = {
   'blade-warden': 'lunge',
   samurai: 'lunge',
@@ -76,8 +78,8 @@ interface TowerVisual {
 
 interface MobVisual {
   group: THREE.Group;
-  sprite: THREE.Mesh;
-  spriteMat: THREE.MeshBasicMaterial;
+  sprite: THREE.Group;
+  materials: THREE.MeshStandardMaterial[];
   shadow: THREE.Mesh;
   hpGroup: THREE.Group;
   hpFill: THREE.Mesh;
@@ -92,6 +94,7 @@ interface MobVisual {
   lastX: number;
   lastZ: number;
   lean: number;
+  facing: number;
   color: THREE.Color;
 }
 
@@ -140,6 +143,7 @@ export class ThreeBattlefieldService {
   private environmentGroup: THREE.Group | null = null;
   private reticleMesh: THREE.Group | null = null;
   private rangeMesh: THREE.Mesh | null = null;
+  private supportRangeMesh: THREE.Mesh | null = null;
 
   // Key Feature Meshes
   private crystalAltarMesh: THREE.Group | null = null;
@@ -170,11 +174,6 @@ export class ThreeBattlefieldService {
   private activeParticles: ParticleInstance[] = [];
   private mobHeights = new Map<string, number>();
   private readonly tmpVec = new THREE.Vector3();
-  /** Camera-facing orientation for character sprites, with the backward lean capped. */
-  private readonly billboardQuat = new THREE.Quaternion();
-  private readonly billboardEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-  // Past this lean, sprites lie low enough to sink into the walls flanking the road
-  private readonly MAX_BILLBOARD_TILT = THREE.MathUtils.degToRad(58);
 
   // Shared geometry (never disposed per-entity)
   private readonly burstGeo = new THREE.BoxGeometry(0.06, 0.06, 0.06);
@@ -223,6 +222,8 @@ export class ThreeBattlefieldService {
   // Textures Cache
   private textureLoader = new THREE.TextureLoader();
   private textures = new Map<string, THREE.Texture>();
+  private sceneryTime = 0;
+  private breezeObjects: THREE.Object3D[] = [];
 
   // Camera Animation Targets
   private cameraTargetPos = new THREE.Vector3(0, 14, 12);
@@ -270,13 +271,12 @@ export class ThreeBattlefieldService {
     this.renderer.setSize(width, height, false);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
 
     // 3. Cinematic Atmospheric Lighting
     this.setupLighting();
-
-    // 4. Preload Character & Monster Textures
-    this.preloadTextures();
 
     // 5. Build Environment & Battlefield
     this.buildAtmosphericEnvironment();
@@ -297,11 +297,11 @@ export class ThreeBattlefieldService {
     if (!this.scene) return;
 
     // Soft celestial ambient skylight
-    const ambientLight = new THREE.AmbientLight(0xdbeafe, 1.25);
+    const ambientLight = new THREE.HemisphereLight(0xc7e6ff, 0x394b47, 2.0);
     this.scene.add(ambientLight);
 
     // Warm golden sunlight casting diagonal shadows
-    const sunLight = new THREE.DirectionalLight(0xfffaed, 2.8);
+    const sunLight = new THREE.DirectionalLight(0xffe4b5, 3.2);
     sunLight.position.set(-9, 19, 11);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.width = 2048;
@@ -324,52 +324,6 @@ export class ThreeBattlefieldService {
     const rimLight = new THREE.DirectionalLight(0xa855f7, 0.75);
     rimLight.position.set(0, -6, -10);
     this.scene.add(rimLight);
-  }
-
-  private preloadTextures(): void {
-    const classIds: TowerClassId[] = [
-      'blade-warden',
-      'ranger',
-      'elementalist',
-      'chronomancer',
-      'oracle',
-      'rogue',
-      'lancer',
-      'juggernaut',
-      'red-mage',
-      'ninja',
-      'samurai',
-      'paladin',
-      'astrologian',
-    ];
-
-    for (const id of classIds) {
-      this.textures.set(id, this.loadSpriteTexture(`assets/sprites/${id}.png`));
-    }
-
-    const mobIds = [
-      'skulker',
-      'swiftbeak',
-      'prismatic-ooze',
-      'pyre-core',
-      'dread-gaze',
-      'bonewalker',
-      'bramble-golem',
-      'sky-sovereign',
-    ];
-
-    for (const id of mobIds) {
-      this.textures.set(id, this.loadSpriteTexture(`assets/monsters/${id}-sprite.png`));
-    }
-  }
-
-  /** Character art is authored in sRGB; tagging it keeps colors from washing out. */
-  private loadSpriteTexture(url: string): THREE.Texture {
-    const tex = this.textureLoader.load(url);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    // Billboards tilt back with the camera, so filter anisotropically to keep them crisp
-    tex.anisotropy = this.renderer?.capabilities.getMaxAnisotropy() ?? 1;
-    return tex;
   }
 
   public setCameraPreset(preset: CameraPreset, animate = true): void {
@@ -446,12 +400,44 @@ export class ThreeBattlefieldService {
 
     this.environmentGroup = new THREE.Group();
 
+    // A procedural sky stays available offline and needs no large panorama download.
+    const skyCanvas = document.createElement('canvas');
+    skyCanvas.width = 1024;
+    skyCanvas.height = 1024;
+    const sky = skyCanvas.getContext('2d');
+    if (sky) {
+      const gradient = sky.createLinearGradient(0, 0, 0, 1024);
+      gradient.addColorStop(0, '#09182d');
+      gradient.addColorStop(0.5, '#24475e');
+      gradient.addColorStop(1, '#667d89');
+      sky.fillStyle = gradient;
+      sky.fillRect(0, 0, 1024, 1024);
+      for (let i = 0; i < 18; i++) {
+        const x = ((i * 347) % 1200) - 100;
+        const y = 300 + ((i * 193) % 750);
+        const glow = sky.createRadialGradient(x, y, 0, x, y, 280);
+        glow.addColorStop(0, 'rgba(130, 179, 187, 0.09)');
+        glow.addColorStop(1, 'rgba(130, 179, 187, 0)');
+        sky.fillStyle = glow;
+        sky.fillRect(0, 0, 1024, 1024);
+      }
+      for (let i = 0; i < 130; i++) {
+        sky.fillStyle = `rgba(214,237,255,${0.15 + (i % 5) * 0.1})`;
+        sky.fillRect((i * 337) % 1024, (i * 157) % 620, i % 7 === 0 ? 2 : 1, 1);
+      }
+      const skyTexture = new THREE.CanvasTexture(skyCanvas);
+      skyTexture.colorSpace = THREE.SRGBColorSpace;
+      this.textures.set('sky', skyTexture);
+      this.scene.background = skyTexture;
+      this.scene.fog = new THREE.FogExp2(0x24475e, 0.012);
+    }
+
     // 1. Distant Floating Mini-Islands in the Sky (Adds immense cinematic depth)
     const islandConfigs = [
-      { x: -24, y: 5, z: -18, scale: 2.2, color: 0x1e293b },
-      { x: 22, y: 8, z: -16, scale: 1.8, color: 0x1e293b },
-      { x: -16, y: -4, z: 20, scale: 1.4, color: 0x0f172a },
-      { x: 26, y: -2, z: 18, scale: 1.6, color: 0x0f172a },
+      { x: -10, y: -3, z: -12, scale: 1.6, color: 0x334656 },
+      { x: 9, y: -2, z: -11, scale: 1.4, color: 0x334656 },
+      { x: -13, y: -4, z: 5, scale: 1.2, color: 0x263d4b },
+      { x: 12, y: -5, z: 6, scale: 1.3, color: 0x263d4b },
     ];
 
     for (const cfg of islandConfigs) {
@@ -487,6 +473,32 @@ export class ThreeBattlefieldService {
       crystal.position.y = 0.8;
       miniIsland.add(crystal);
 
+      // Broken watchtowers and aqueduct arches give the distant islands a history.
+      const ruinMat = new THREE.MeshStandardMaterial({ color: 0x81939b, roughness: 0.95 });
+      for (let i = 0; i < 3; i++) {
+        const column = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.16, 0.23, 1.4 + i * 0.3, 7),
+          ruinMat,
+        );
+        column.position.set((i - 1) * 0.75, 0.9 + i * 0.15, -0.45);
+        miniIsland.add(column);
+      }
+      const arch = new THREE.Mesh(new THREE.TorusGeometry(0.75, 0.13, 6, 16, Math.PI), ruinMat);
+      arch.position.set(0, 1.55, -0.45);
+      miniIsland.add(arch);
+      const waterfall = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.35, cfg.scale * 3),
+        new THREE.MeshBasicMaterial({
+          color: 0x8edee4,
+          transparent: true,
+          opacity: 0.25,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        }),
+      );
+      waterfall.position.set(cfg.scale, -cfg.scale * 1.3, 0.4);
+      miniIsland.add(waterfall);
+
       this.environmentGroup.add(miniIsland);
     }
 
@@ -521,20 +533,23 @@ export class ThreeBattlefieldService {
     this.aetherMotes = new THREE.Points(moteGeo, moteMat);
     this.environmentGroup.add(this.aetherMotes);
 
-    // 3. Circling Cloud Rings beneath the main island
+    // 3. Broad, translucent mist banks beneath the island, instead of solid torus bands.
     this.cloudRings = new THREE.Group();
     const cloudMat = new THREE.MeshBasicMaterial({
-      color: 0x334155,
+      color: 0x91b6c5,
       transparent: true,
-      opacity: 0.22,
+      opacity: 0.035,
       depthWrite: false,
     });
 
     for (let i = 0; i < 6; i++) {
-      const ringGeo = new THREE.TorusGeometry(10 + i * 1.5, 0.45, 8, 36);
+      const ringGeo = new THREE.SphereGeometry(1, 16, 8);
       const ring = new THREE.Mesh(ringGeo, cloudMat);
       ring.rotation.x = Math.PI / 2 + (Math.random() - 0.5) * 0.1;
       ring.position.y = -2.2 - i * 0.3;
+      ring.position.x = (i - 2.5) * 4;
+      ring.position.z = -8 + (i % 3) * 7;
+      ring.scale.set(7, 0.3, 3);
       this.cloudRings.add(ring);
     }
     this.environmentGroup.add(this.cloudRings);
@@ -542,23 +557,130 @@ export class ThreeBattlefieldService {
     this.scene.add(this.environmentGroup);
   }
 
+  private terrainTexture(url: string): THREE.Texture {
+    const cached = this.textures.get(url);
+    if (cached) return cached;
+    const texture = this.textureLoader.load(url);
+    texture.anisotropy = Math.min(8, this.renderer?.capabilities.getMaxAnisotropy() ?? 1);
+    this.textures.set(url, texture);
+    return texture;
+  }
+
+  /** Instancing keeps hundreds of meadow details to three draw calls, independent of map size. */
+  private buildGardenDetails(tiles: TileCode[][], halfW: number, halfH: number): void {
+    if (!this.terrainGroup) return;
+    const grass: THREE.Matrix4[] = [];
+    const flowers: THREE.Matrix4[] = [];
+    const stones: THREE.Matrix4[] = [];
+    const dummy = new THREE.Object3D();
+    const random = (seed: number) => {
+      const n = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
+      return n - Math.floor(n);
+    };
+    for (let r = 0; r < tiles.length; r++) {
+      for (let c = 0; c < tiles[r].length; c++) {
+        if (tiles[r][c] !== 'B') continue;
+        // Dress the edges; the center of every build square remains clear for deployment.
+        for (let i = 0; i < 10; i++) {
+          const seed = r * 431 + c * 37 + i;
+          const angle = random(seed) * Math.PI * 2;
+          const radius = 0.35 + random(seed + 1000) * 0.1;
+          dummy.position.set(
+            c - halfW + Math.cos(angle) * radius,
+            0.29,
+            r - halfH + Math.sin(angle) * radius,
+          );
+          dummy.rotation.set(0, angle, (random(seed + 300) - 0.5) * 0.4);
+          dummy.scale.set(0.7, 0.6 + random(seed + 200) * 1.1, 0.7);
+          dummy.updateMatrix();
+          grass.push(dummy.matrix.clone());
+          if (i < 2) {
+            dummy.position.y += 0.085;
+            dummy.scale.setScalar(0.5 + random(seed + 50) * 0.5);
+            dummy.updateMatrix();
+            flowers.push(dummy.matrix.clone());
+          }
+          if (i === 3) {
+            dummy.position.y = 0.27;
+            dummy.scale.set(1, 0.45, 0.7);
+            dummy.updateMatrix();
+            stones.push(dummy.matrix.clone());
+          }
+        }
+      }
+    }
+    const batches = [
+      {
+        matrices: grass,
+        geometry: new THREE.ConeGeometry(0.035, 0.17, 3).translate(0, 0.065, 0),
+        color: 0x73a97c,
+      },
+      { matrices: flowers, geometry: new THREE.IcosahedronGeometry(0.04), color: 0xe7cc8d },
+      { matrices: stones, geometry: new THREE.DodecahedronGeometry(0.065), color: 0x96a59e },
+    ];
+    for (const batch of batches) {
+      const mesh = new THREE.InstancedMesh(
+        batch.geometry,
+        new THREE.MeshStandardMaterial({ color: batch.color, roughness: 0.9 }),
+        batch.matrices.length,
+      );
+      batch.matrices.forEach((matrix, i) => {
+        mesh.setMatrixAt(i, matrix);
+        mesh.setColorAt(i, new THREE.Color(batch.color).multiplyScalar(0.75 + random(i) * 0.5));
+      });
+      mesh.receiveShadow = true;
+      this.terrainGroup.add(mesh);
+    }
+
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x80929b, roughness: 0.85 });
+    const brass = new THREE.MeshStandardMaterial({
+      color: 0xc7a76d,
+      metalness: 0.65,
+      roughness: 0.35,
+    });
+    for (const side of [-1, 1]) {
+      for (const x of [-halfW + 1, halfW - 1]) {
+        const z = side * (halfH + 0.55);
+        const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.31, 0.2, 6), stoneMat);
+        pedestal.position.set(x, 0.22, z);
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.04, 1.3, 6), brass);
+        pole.position.set(x, 0.95, z);
+        const finial = new THREE.Mesh(new THREE.OctahedronGeometry(0.08), brass);
+        finial.position.set(x, 1.66, z);
+        const flag = new THREE.Group();
+        flag.position.set(x, 1.5, z);
+        const cloth = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.35, 0.58, 3, 5),
+          new THREE.MeshStandardMaterial({
+            color: side < 0 ? 0x216d82 : 0x71578f,
+            side: THREE.DoubleSide,
+            roughness: 0.9,
+          }),
+        );
+        cloth.position.set(0.18, -0.27, 0);
+        const positions = cloth.geometry.attributes['position'];
+        for (let i = 0; i < positions.count; i++)
+          positions.setZ(i, Math.sin(positions.getY(i) * 12) * 0.035);
+        cloth.geometry.computeVertexNormals();
+        flag.add(cloth);
+        const sigil = new THREE.Mesh(new THREE.OctahedronGeometry(0.07), brass);
+        sigil.scale.z = 0.2;
+        sigil.position.set(0.18, -0.22, 0.045);
+        flag.add(sigil);
+        this.breezeObjects.push(flag);
+        this.terrainGroup.add(pedestal, pole, finial, flag);
+      }
+    }
+  }
+
   public rebuildTerrain(game: GameService): void {
     if (!this.scene) return;
 
     if (this.terrainGroup) {
-      this.scene.remove(this.terrainGroup);
-      this.terrainGroup.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          obj.geometry.dispose();
-          if (Array.isArray(obj.material)) {
-            obj.material.forEach((m) => m.dispose());
-          } else {
-            obj.material.dispose();
-          }
-        }
-      });
+      this.disposeObject(this.terrainGroup);
     }
 
+    this.breezeObjects = [];
     this.terrainGroup = new THREE.Group();
     this.tileMeshes = [];
 
@@ -573,22 +695,22 @@ export class ThreeBattlefieldService {
     this.buildSculptedIslandBase(map.width, map.height);
 
     // 2. High-Resolution Seamless Terrain Textures
-    const cobblestoneTex = this.textureLoader.load('assets/tile-cobblestone.png');
+    const cobblestoneTex = this.terrainTexture('assets/tile-cobblestone.png');
     cobblestoneTex.wrapS = THREE.RepeatWrapping;
     cobblestoneTex.wrapT = THREE.RepeatWrapping;
     cobblestoneTex.colorSpace = THREE.SRGBColorSpace;
 
-    const grassTex = this.textureLoader.load('assets/tile-grass.png');
+    const grassTex = this.terrainTexture('assets/tile-grass.png');
     grassTex.wrapS = THREE.RepeatWrapping;
     grassTex.wrapT = THREE.RepeatWrapping;
     grassTex.colorSpace = THREE.SRGBColorSpace;
 
-    const mazeTex = this.textureLoader.load('assets/tile-runic-barricade.png');
+    const mazeTex = this.terrainTexture('assets/tile-runic-barricade.png');
     mazeTex.wrapS = THREE.RepeatWrapping;
     mazeTex.wrapT = THREE.RepeatWrapping;
     mazeTex.colorSpace = THREE.SRGBColorSpace;
 
-    const volcanicTex = this.textureLoader.load('assets/tile-volcanic.png');
+    const volcanicTex = this.terrainTexture('assets/tile-volcanic.png');
     volcanicTex.wrapS = THREE.RepeatWrapping;
     volcanicTex.wrapT = THREE.RepeatWrapping;
     volcanicTex.colorSpace = THREE.SRGBColorSpace;
@@ -603,12 +725,18 @@ export class ThreeBattlefieldService {
     // Top face materials
     const pathMat = new THREE.MeshStandardMaterial({
       map: cobblestoneTex,
+      bumpMap: cobblestoneTex,
+      bumpScale: 0.045,
+      color: 0xb2bcb8,
       roughness: 0.8,
       metalness: 0.1,
     });
 
     const buildMat = new THREE.MeshStandardMaterial({
       map: grassTex,
+      color: 0x719b85,
+      bumpMap: grassTex,
+      bumpScale: 0.025,
       roughness: 0.72,
       metalness: 0.05,
     });
@@ -740,6 +868,7 @@ export class ThreeBattlefieldService {
 
     // 5. Scenic Perimeter Environment (Trees, Monoliths, Floating Crystals on island rim)
     this.buildPerimeterScenery(map.width, map.height);
+    this.buildGardenDetails(map.tiles, halfW, halfH);
 
     this.scene.add(this.terrainGroup);
   }
@@ -915,6 +1044,18 @@ export class ThreeBattlefieldService {
         cone.castShadow = true;
         propGroup.add(cone);
       }
+      // Layered boughs break up the cones and add a broad, organic silhouette.
+      for (let i = 0; i < 7; i++) {
+        const angle = i * 2.4 + seed;
+        const bough = new THREE.Mesh(
+          new THREE.IcosahedronGeometry(0.21, 0),
+          new THREE.MeshStandardMaterial({ color: i % 2 ? 0x397b65 : 0x25604e, roughness: 0.95 }),
+        );
+        bough.position.set(Math.cos(angle) * 0.24, 0.53 + (i % 3) * 0.16, Math.sin(angle) * 0.24);
+        bough.scale.set(1.2, 0.7, 1);
+        bough.castShadow = true;
+        propGroup.add(bough);
+      }
     } else if (propType === 1) {
       // 2. Ancient Carved Runic Monolith
       const pillarGeo = new THREE.BoxGeometry(0.36, 0.95, 0.36);
@@ -938,6 +1079,17 @@ export class ThreeBattlefieldService {
       const runeRing = new THREE.Mesh(runeRingGeo, runeRingMat);
       runeRing.position.y = 0.52;
       propGroup.add(runeRing);
+      for (const y of [0.07, 0.93]) {
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.46), pillarMat);
+        cap.position.y = y;
+        propGroup.add(cap);
+      }
+      for (let i = 0; i < 3; i++) {
+        const rune = new THREE.Mesh(new THREE.OctahedronGeometry(0.045), runeRingMat);
+        rune.position.set(0, 0.25 + i * 0.2, 0.19);
+        rune.scale.z = 0.25;
+        propGroup.add(rune);
+      }
     } else {
       // 3. Cluster of Radiant Aether Quartz Crystals
       const crystalColors = [0x38bdf8, 0x818cf8, 0x06b6d4];
@@ -1263,6 +1415,19 @@ export class ThreeBattlefieldService {
     this.rangeMesh.position.y = 0.22;
     this.rangeMesh.visible = false;
     this.scene.add(this.rangeMesh);
+    this.supportRangeMesh = new THREE.Mesh(
+      new THREE.RingGeometry(0.98, 1, 64),
+      new THREE.MeshBasicMaterial({
+        color: 0xfbbf24,
+        transparent: true,
+        opacity: 0.65,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    this.supportRangeMesh.rotation.x = -Math.PI / 2;
+    this.supportRangeMesh.visible = false;
+    this.scene.add(this.supportRangeMesh);
   }
 
   private setupPointerEvents(canvas: HTMLCanvasElement, game: GameService): void {
@@ -1330,6 +1495,10 @@ export class ThreeBattlefieldService {
     // Simulation-time delta: creature and attack motion freezes on pause and speeds up at 2x/4x
     const simRunning = !game.isPaused() && !game.isGameOver() && !game.isVictory();
     const simDt = simRunning ? dt * game.gameSpeed() : 0;
+    if (!this.reducedMotion) this.sceneryTime += simDt;
+    for (let i = 0; i < this.breezeObjects.length; i++) {
+      this.breezeObjects[i].rotation.z = Math.sin(this.sceneryTime * 1.6 + i * 0.7) * 0.07;
+    }
 
     // 1. Smooth Camera Interpolation with decaying impact shake
     this.cameraBasePos.lerp(this.cameraTargetPos, 1 - Math.exp(-dt * 6.0));
@@ -1344,10 +1513,6 @@ export class ThreeBattlefieldService {
     } else {
       this.shakeIntensity = 0;
     }
-    this.billboardEuler.setFromQuaternion(this.camera.quaternion, 'YXZ');
-    this.billboardEuler.x = Math.max(this.billboardEuler.x, -this.MAX_BILLBOARD_TILT);
-    this.billboardEuler.z = 0;
-    this.billboardQuat.setFromEuler(this.billboardEuler);
 
     // 2. Animate Crystal Altar, Satellites & Light Pillar (flares red when monsters break through)
     this.crystalHitAge += dt;
@@ -1424,6 +1589,24 @@ export class ThreeBattlefieldService {
 
     // 7. Range Overlay Update (geometry rebuilt only when the radius changes)
     const selTower = game.selectedTower();
+    if (this.supportRangeMesh) {
+      const classId = selTower?.classId ?? game.selectedClassId();
+      const level = TOWER_CLASSES[classId].levels[(selTower?.level ?? 1) - 1];
+      const radius = level.auraRange;
+      this.supportRangeMesh.visible = !!(
+        sel &&
+        radius &&
+        (selTower || map.tiles[sel.y]?.[sel.x] === 'B')
+      );
+      if (sel && radius) {
+        this.supportRangeMesh.scale.setScalar(radius * this.TILE_SIZE);
+        this.supportRangeMesh.position.set(
+          (sel.x - halfW) * this.TILE_SIZE,
+          0.27,
+          (sel.y - halfH) * this.TILE_SIZE,
+        );
+      }
+    }
     if (this.rangeMesh) {
       let rangeRadius = 0;
       if (selTower && selTower.classId !== 'barricade') {
@@ -1582,19 +1765,25 @@ export class ThreeBattlefieldService {
       const pose = this.attackPose(ATTACK_STYLE[t.classId], vis.attackAge);
 
       // Idle breathing, attack pose, spawn drop and level-up hop layered together
-      const billboard = group.getObjectByName('billboard') as THREE.Mesh | undefined;
+      const billboard = group.getObjectByName('hero-model') as THREE.Group | undefined;
       if (billboard && this.camera) {
-        const breathe = Math.sin(elapsed * 2.4 + vis.phase);
+        const breathe = this.reducedMotion ? 0 : Math.sin(this.sceneryTime * 2.4 + vis.phase);
         const levelP = vis.levelUpAge < 0.9 ? vis.levelUpAge / 0.9 : 1;
         const levelHop = levelP < 1 ? Math.sin(levelP * Math.PI) * 0.35 : 0;
         const levelSpin = levelP < 1 ? Math.sin(levelP * Math.PI * 4) * 0.25 * (1 - levelP) : 0;
         const dropIn = (1 - this.easeOutCubic(spawnP)) * 0.9;
 
-        billboard.quaternion.copy(this.billboardQuat);
-        if (levelSpin !== 0) billboard.rotateZ(levelSpin);
+        if (t.attackAngleRad !== undefined) billboard.rotation.y = Math.PI / 2 - t.attackAngleRad;
+        billboard.rotation.z = this.reducedMotion ? 0 : levelSpin;
+        animateModel(
+          billboard,
+          this.reducedMotion ? 0 : this.sceneryTime * 2.4 + vis.phase,
+          0,
+          this.reducedMotion ? 0 : pose.flash,
+        );
         billboard.position.set(
           vis.attackDirX * pose.forward,
-          -0.06 + breathe * 0.025 + pose.lift + levelHop + dropIn,
+          0.08 + breathe * 0.015 + pose.lift + levelHop + dropIn,
           vis.attackDirZ * pose.forward,
         );
         const levelPop = levelP < 1 ? Math.sin(levelP * Math.PI) * 0.18 : 0;
@@ -1720,19 +1909,46 @@ export class ThreeBattlefieldService {
     const group = new THREE.Group();
 
     if (tower.classId === 'barricade') {
-      // 3D Glowing Runic Barricade Monolith
-      const monolithGeo = new THREE.BoxGeometry(0.85, 0.75, 0.85);
-      const monolithMat = new THREE.MeshStandardMaterial({
-        color: 0x06b6d4,
-        emissive: 0x0891b2,
-        emissiveIntensity: 0.9,
-        roughness: 0.2,
-        metalness: 0.4,
+      const stone = new THREE.MeshStandardMaterial({
+        color: 0x435666,
+        roughness: 0.7,
+        metalness: 0.3,
       });
-      const monolith = new THREE.Mesh(monolithGeo, monolithMat);
-      monolith.position.set(0, 0.38, 0);
-      monolith.castShadow = true;
-      group.add(monolith);
+      const brass = new THREE.MeshStandardMaterial({
+        color: 0xc2a678,
+        roughness: 0.4,
+        metalness: 0.7,
+      });
+      const core = new THREE.MeshStandardMaterial({
+        color: 0x71dbe4,
+        emissive: 0x0891b2,
+        emissiveIntensity: 1.1,
+      });
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.14, 0.85), stone);
+      base.position.y = 0.05;
+      group.add(base);
+      for (const x of [-0.3, 0.3]) {
+        for (const z of [-0.3, 0.3]) {
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 0.65, 6), stone);
+          post.position.set(x, 0.38, z);
+          const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.11), brass);
+          cap.position.set(x, 0.74, z);
+          group.add(post, cap);
+        }
+      }
+      for (const y of [0.22, 0.55]) {
+        const band = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.035, 5, 4), brass);
+        band.rotation.set(Math.PI / 2, 0, Math.PI / 4);
+        band.position.y = y;
+        group.add(band);
+      }
+      const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.27), core);
+      crystal.scale.set(0.8, 1.4, 0.8);
+      crystal.position.y = 0.4;
+      group.add(crystal);
+      group.traverse((object) => {
+        if (object instanceof THREE.Mesh) object.castShadow = true;
+      });
       return group;
     }
 
@@ -1783,23 +1999,9 @@ export class ThreeBattlefieldService {
     xpRing.visible = false;
     group.add(xpRing);
 
-    // High-Res Heroic Character Billboard Sprite
-    const texture = this.textures.get(tower.classId);
-    const spriteMat = new THREE.MeshBasicMaterial({
-      map: texture || null,
-      transparent: true,
-      alphaTest: 0.15,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-
-    // Pivot the sprite at its feet so squash & stretch reads as weight, not scaling
-    const spriteGeo = new THREE.PlaneGeometry(1.05, 1.05);
-    spriteGeo.translate(0, 0.525, 0);
-    const spriteMesh = new THREE.Mesh(spriteGeo, spriteMat);
-    spriteMesh.name = 'billboard';
-    spriteMesh.position.set(0, 0.0, 0);
-    group.add(spriteMesh);
+    const model = createHeroModel(tower.classId);
+    model.name = 'hero-model';
+    group.add(model);
 
     return group;
   }
@@ -1869,7 +2071,12 @@ export class ThreeBattlefieldService {
         vis.lean += (targetLean - vis.lean) * Math.min(1, dt * 8);
 
         const sprite = vis.sprite;
-        sprite.quaternion.copy(this.billboardQuat);
+        if (moved > 1e-5) vis.facing = Math.atan2(moveX, moveZ);
+        const turn = Math.atan2(
+          Math.sin(vis.facing - sprite.rotation.y),
+          Math.cos(vis.facing - sprite.rotation.y),
+        );
+        sprite.rotation.y += turn * Math.min(1, simDt * 12);
 
         let bob: number;
         let rock: number;
@@ -1897,7 +2104,12 @@ export class ThreeBattlefieldService {
         const spawnP = Math.min(1, vis.spawnAge / 0.4);
         const emerge = this.easeOutBack(spawnP);
 
-        sprite.rotateZ(rock + vis.lean);
+        sprite.rotation.z = this.reducedMotion ? 0 : rock * 0.4 + vis.lean;
+        animateModel(
+          sprite,
+          this.reducedMotion ? 0 : vis.stride,
+          stunned || this.reducedMotion ? 0 : 0.55,
+        );
         sprite.position.set(jitter, bob - (1 - spawnP) * 0.3, 0);
         sprite.scale.set(
           Math.max(0.001, emerge * (1 + hitP * 0.12 - squashY * 0.5)),
@@ -1906,10 +2118,12 @@ export class ThreeBattlefieldService {
         );
 
         // Tint: hit flash > stun gold > slow frost
-        const c = vis.spriteMat.color;
-        if (hitP > 0) c.setRGB(1 + hitP * 2.5, 1 + hitP * 2.2, 1 + hitP * 2.2);
-        else if (slowed) c.setRGB(0.62, 0.82, 1.35);
-        else c.setRGB(1, 1, 1);
+        for (const mat of vis.materials) {
+          const original = mat.userData['baseEmissive'] as THREE.Color;
+          mat.emissive.copy(original);
+          if (hitP > 0) mat.emissive.lerp(new THREE.Color(0xffffff), hitP);
+          else if (slowed) mat.emissive.lerp(new THREE.Color(0x216bbb), 0.5);
+        }
 
         vis.shadow.scale.setScalar(Math.max(0.001, emerge * (1 - bob * 1.5)));
 
@@ -1975,18 +2189,20 @@ export class ThreeBattlefieldService {
     const isBoss = mob.typeId === 'sky-sovereign' || mob.typeId === 'bramble-golem';
     const sprSize = isBoss ? 1.35 : 0.95;
 
-    const spriteMat = new THREE.MeshBasicMaterial({
-      map: this.textures.get(mob.typeId) || null,
-      transparent: true,
-      alphaTest: 0.15,
-      side: THREE.DoubleSide,
-      depthWrite: false,
+    const sprite = createMonsterModel(mob.typeId);
+    sprite.name = 'mob-model';
+    // Boss scale is baked into geometry so hit/spawn squash can remain relative to 1.
+    sprite.traverse((object) => {
+      if (object instanceof THREE.Mesh) object.geometry.scale(sprSize, sprSize, sprSize);
+      if (object !== sprite) object.position.multiplyScalar(sprSize);
     });
-    // Feet-anchored pivot so bobbing and squashing stay planted on the road
-    const spriteGeo = new THREE.PlaneGeometry(sprSize, sprSize);
-    spriteGeo.translate(0, sprSize * 0.5, 0);
-    const sprite = new THREE.Mesh(spriteGeo, spriteMat);
-    sprite.name = 'mob-sprite';
+    const materials = new Set<THREE.MeshStandardMaterial>();
+    sprite.traverse((object) => {
+      if (object instanceof THREE.Mesh && object.material instanceof THREE.MeshStandardMaterial) {
+        materials.add(object.material);
+        object.material.userData['baseEmissive'] = object.material.emissive.clone();
+      }
+    });
     group.add(sprite);
 
     // Camera-facing health bar with a trailing "recent damage" segment
@@ -2026,7 +2242,7 @@ export class ThreeBattlefieldService {
     return {
       group,
       sprite,
-      spriteMat,
+      materials: [...materials],
       shadow,
       hpGroup,
       hpFill,
@@ -2041,6 +2257,7 @@ export class ThreeBattlefieldService {
       lastX: wx,
       lastZ: wz,
       lean: 0,
+      facing: 0,
       color: new THREE.Color(mob.color),
     };
   }
@@ -2055,12 +2272,14 @@ export class ThreeBattlefieldService {
       if (f.kind === 'mob-death' && f.mob) {
         // Flash white, flatten and float up as the spirit leaves
         const sprite = f.mob.sprite;
-        sprite.quaternion.copy(this.billboardQuat);
-        sprite.rotateZ(p * 0.6);
+        sprite.rotation.z = p * 0.6;
         sprite.position.y = p * 0.35;
         sprite.scale.set(1 + p * 0.5, Math.max(0.001, 1 - p * 0.85), 1);
-        f.mob.spriteMat.color.setRGB(3, 3, 3);
-        f.mob.spriteMat.opacity = 1 - p;
+        for (const mat of f.mob.materials) {
+          mat.emissive.setRGB(1, 1, 1);
+          mat.transparent = true;
+          mat.opacity = 1 - p;
+        }
         (f.mob.shadow.material as THREE.MeshBasicMaterial).opacity = 0.42 * (1 - p);
       } else if (f.kind === 'mob-escape') {
         f.group.scale.setScalar(Math.max(0.001, 1 - this.easeInOutSine(p)));
@@ -2528,8 +2747,13 @@ export class ThreeBattlefieldService {
   private disposeObject(root: THREE.Object3D): void {
     this.scene?.remove(root);
     root.traverse((obj) => {
-      if (obj instanceof THREE.Mesh) {
+      if (
+        obj instanceof THREE.Mesh ||
+        obj instanceof THREE.Points ||
+        obj instanceof THREE.LineSegments
+      ) {
         if (!this.sharedGeometries.has(obj.geometry)) obj.geometry.dispose();
+        if (obj instanceof THREE.InstancedMesh) obj.dispose();
         const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
         mats.forEach((m) => m.dispose()); // textures are shared and stay cached
       }
@@ -2566,6 +2790,10 @@ export class ThreeBattlefieldService {
       this.renderer = null;
     }
 
+    if (this.scene) this.disposeObject(this.scene);
+    for (const texture of this.textures.values()) texture.dispose();
+    this.textures.clear();
+    this.breezeObjects = [];
     this.scene = null;
     this.camera = null;
     this.towerVisuals.clear();
