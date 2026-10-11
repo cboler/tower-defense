@@ -14,6 +14,12 @@ export const routes: Routes = [
     title: 'Diagnostics • Crystal Wardens PWA',
   },
   {
+    path: 'models',
+    loadComponent: () =>
+      import('./model-gallery/model-gallery.component').then((m) => m.ModelGalleryComponent),
+    title: 'Miniature Gallery • Crystal Wardens',
+  },
+  {
     path: '**',
     redirectTo: '',
   },

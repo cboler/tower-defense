@@ -11,6 +11,9 @@ export type CameraPreset = 'tactics' | 'isometric' | 'topdown';
 
 type AttackStyle = 'lunge' | 'recoil' | 'cast' | 'slam' | 'hop' | 'none';
 
+/** Miniature materials whose emissive channel carries hit, slow and death tints. */
+type TintableMaterial = THREE.MeshStandardMaterial | THREE.MeshToonMaterial;
+
 /** How each hero moves when it acts. */
 const ATTACK_STYLE: Record<TowerClassId, AttackStyle> = {
   'blade-warden': 'lunge',
@@ -79,7 +82,7 @@ interface TowerVisual {
 interface MobVisual {
   group: THREE.Group;
   sprite: THREE.Group;
-  materials: THREE.MeshStandardMaterial[];
+  materials: TintableMaterial[];
   shadow: THREE.Mesh;
   hpGroup: THREE.Group;
   hpFill: THREE.Mesh;
@@ -2012,7 +2015,7 @@ export class ThreeBattlefieldService {
     xpRing.visible = false;
     group.add(xpRing);
 
-    const model = createHeroModel(tower.classId);
+    const model = createHeroModel(tower.classId, { outline: !this.softwareRenderer });
     model.name = 'hero-model';
     group.add(model);
 
@@ -2202,16 +2205,20 @@ export class ThreeBattlefieldService {
     const isBoss = mob.typeId === 'sky-sovereign' || mob.typeId === 'bramble-golem';
     const sprSize = isBoss ? 1.35 : 0.95;
 
-    const sprite = createMonsterModel(mob.typeId);
+    const sprite = createMonsterModel(mob.typeId, { outline: !this.softwareRenderer });
     sprite.name = 'mob-model';
     // Boss scale is baked into geometry so hit/spawn squash can remain relative to 1.
     sprite.traverse((object) => {
       if (object instanceof THREE.Mesh) object.geometry.scale(sprSize, sprSize, sprSize);
       if (object !== sprite) object.position.multiplyScalar(sprSize);
     });
-    const materials = new Set<THREE.MeshStandardMaterial>();
+    const materials = new Set<TintableMaterial>();
     sprite.traverse((object) => {
-      if (object instanceof THREE.Mesh && object.material instanceof THREE.MeshStandardMaterial) {
+      if (
+        object instanceof THREE.Mesh &&
+        (object.material instanceof THREE.MeshStandardMaterial ||
+          object.material instanceof THREE.MeshToonMaterial)
+      ) {
         materials.add(object.material);
         object.material.userData['baseEmissive'] = object.material.emissive.clone();
       }
