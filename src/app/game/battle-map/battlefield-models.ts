@@ -12,7 +12,7 @@ import { MobTypeId } from '../../core/models/mob.model';
 
 const TAU = Math.PI * 2;
 /** World-space thickness of the ink line drawn around every miniature. */
-const INK_WIDTH = 0.016;
+export const INK_WIDTH = 0.016;
 const INK_COLOR = 0x1a1424;
 
 export interface MiniatureOptions {
@@ -32,7 +32,7 @@ let toonRamp: THREE.DataTexture | null = null;
  * Three hard light bands give the cel-shaded look of the character art. Calibrated with the
  * battlefield lights so the lit band lands on the sprite palette itself (see toneMapped below).
  */
-function ramp(): THREE.DataTexture {
+export function ramp(): THREE.DataTexture {
   if (!toonRamp) {
     toonRamp = new THREE.DataTexture(new Uint8Array([40, 105, 165]), 3, 1, THREE.RedFormat);
     toonRamp.minFilter = THREE.NearestFilter;
@@ -41,6 +41,18 @@ function ramp(): THREE.DataTexture {
     toonRamp.needsUpdate = true;
   }
   return toonRamp;
+}
+
+/** Black base with an emissive ink colour, so hit flashes tint the outline too. */
+export function inkMaterial(): THREE.MeshToonMaterial {
+  const mat = new THREE.MeshToonMaterial({
+    color: 0x000000,
+    emissive: INK_COLOR,
+    side: THREE.BackSide,
+  });
+  mat.userData['ink'] = true;
+  mat.toneMapped = false;
+  return mat;
 }
 
 /** One material per colour within a model, so parts can be batched; never shared across models. */
@@ -86,17 +98,8 @@ class Palette {
     });
   }
 
-  /** Black base with an emissive ink colour, so hit flashes tint the outline too. */
   ink(): THREE.MeshToonMaterial {
-    return this.get('ink', () => {
-      const mat = new THREE.MeshToonMaterial({
-        color: 0x000000,
-        emissive: INK_COLOR,
-        side: THREE.BackSide,
-      });
-      mat.userData['ink'] = true;
-      return mat;
-    });
+    return this.get('ink', inkMaterial);
   }
 
   private get(key: string, make: () => THREE.MeshToonMaterial): THREE.MeshToonMaterial {
@@ -1286,12 +1289,15 @@ const HEROES: Record<
   bard,
 };
 
+/** Heroes stand turned three-quarters toward the camera, like their sprites. */
+export const HERO_TURN = 0.35;
+
 /** Every hero class is sculpted from its own sprite; feet at y=0, facing +z. */
 export function createHeroModel(id: TowerClassId, options: MiniatureOptions = {}): THREE.Group {
   const root = new THREE.Group();
   const palette = new Palette();
   HEROES[id === 'barricade' ? 'blade-warden' : id](root, palette);
-  root.rotation.y = 0.35;
+  root.rotation.y = HERO_TURN;
   return finish(root, palette, options);
 }
 

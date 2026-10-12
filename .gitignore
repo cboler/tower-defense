@@ -47,3 +47,8 @@ test-results/
 .DS_Store
 Thumbs.db
 
+
+# Model pipeline: raw exports (Blender, Meshy, Tripo) and generated blockouts stay local;
+# only the optimized models in public/assets/models are committed
+/art/models/source/
+/art/models/blockouts/

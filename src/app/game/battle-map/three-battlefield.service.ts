@@ -1,6 +1,8 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import * as THREE from 'three';
-import { animateModel, createHeroModel, createMonsterModel } from './battlefield-models';
+import { animateModel } from './battlefield-models';
+import { MiniatureRig } from './miniature-rig';
+import { ModelLibraryService } from './model-library.service';
 import { GameService } from '../../core/services/game.service';
 import { TOWER_CLASSES, TowerClassId } from '../../core/models/tower.model';
 import { MobInstance } from '../../core/models/mob.model';
@@ -79,11 +81,16 @@ interface TowerVisual {
   levelUpAge: number;
   xpRatio: number;
   phase: number;
+  rig: MiniatureRig | null;
+  /** Model library revision this miniature was built from. */
+  modelRevision: number;
 }
 
 interface MobVisual {
   group: THREE.Group;
   sprite: THREE.Group;
+  rig: MiniatureRig;
+  modelRevision: number;
   materials: TintableMaterial[];
   shadow: THREE.Mesh;
   hpGroup: THREE.Group;
@@ -132,6 +139,7 @@ interface EffectVisual {
 
 @Injectable({ providedIn: 'root' })
 export class ThreeBattlefieldService {
+  private readonly models = inject(ModelLibraryService);
   private renderer: THREE.WebGLRenderer | null = null;
   private scene: THREE.Scene | null = null;
   private camera: THREE.PerspectiveCamera | null = null;
@@ -264,6 +272,8 @@ export class ThreeBattlefieldService {
     }
 
     this.isWebGLSupported.set(true);
+    // Authored models swap in for the sculpted ones as they arrive
+    void this.models.load();
 
     // 2. Initialize Three.js Scene, Camera, Renderer
     const width = canvas.clientWidth || 800;
@@ -1740,6 +1750,8 @@ export class ThreeBattlefieldService {
           levelUpAge: Infinity,
           xpRatio: -1,
           phase: Math.random() * Math.PI * 2,
+          rig: null,
+          modelRevision: -1,
         };
         this.towerVisuals.set(t.id, vis);
         this.scene?.add(group);
@@ -1762,6 +1774,15 @@ export class ThreeBattlefieldService {
 
       if (t.classId === 'barricade') continue;
 
+      // (Re)build the miniature when it is new or its authored model changed
+      const revision = this.models.revision('heroes', t.classId);
+      if (vis.modelRevision !== revision) {
+        vis.modelRevision = revision;
+        const rig = this.models.hero(t.classId, { outline: !this.softwareRenderer });
+        this.mountRig(group.getObjectByName('hero-model') as THREE.Group, rig, vis.rig);
+        vis.rig = rig;
+      }
+
       // Promotion: rebuild level gems and play the level-up pose
       if (t.level !== vis.level) {
         if (t.level > vis.level) vis.levelUpAge = 0;
@@ -1777,6 +1798,7 @@ export class ThreeBattlefieldService {
         const angle = t.attackAngleRad;
         vis.attackDirX = angle === undefined ? 0 : Math.cos(angle);
         vis.attackDirZ = angle === undefined ? 0 : Math.sin(angle);
+        if (!this.reducedMotion) vis.rig?.attack();
       }
       vis.attackAge += simDt;
 
@@ -1793,12 +1815,16 @@ export class ThreeBattlefieldService {
 
         if (t.attackAngleRad !== undefined) billboard.rotation.y = Math.PI / 2 - t.attackAngleRad;
         billboard.rotation.z = this.reducedMotion ? 0 : levelSpin;
-        animateModel(
-          billboard,
-          this.reducedMotion ? 0 : this.sceneryTime * 2.4 + vis.phase,
-          0,
-          this.reducedMotion ? 0 : pose.flash,
-        );
+        // Authored models with their own clips animate themselves
+        if (!vis.rig?.animated) {
+          animateModel(
+            billboard,
+            this.reducedMotion ? 0 : this.sceneryTime * 2.4 + vis.phase,
+            0,
+            this.reducedMotion ? 0 : pose.flash,
+          );
+        }
+        vis.rig?.update(this.reducedMotion ? 0 : simDt);
         billboard.position.set(
           vis.attackDirX * pose.forward,
           0.08 + breathe * 0.015 + pose.lift + levelHop + dropIn,
@@ -2017,11 +2043,53 @@ export class ThreeBattlefieldService {
     xpRing.visible = false;
     group.add(xpRing);
 
-    const model = createHeroModel(tower.classId, { outline: !this.softwareRenderer });
+    // The miniature itself is mounted (and swapped when its model changes) in syncTowers
+    const model = new THREE.Group();
     model.name = 'hero-model';
     group.add(model);
 
     return group;
+  }
+
+  /**
+   * Puts a fresh miniature inside a hero or monster holder, replacing any older one. The
+   * holder carries all battlefield motion, so a swap never interrupts it.
+   */
+  private mountRig(
+    holder: THREE.Group,
+    rig: MiniatureRig,
+    previous: MiniatureRig | null,
+    scale = 1,
+  ): void {
+    if (previous) {
+      previous.dispose();
+      holder.remove(previous.root);
+      this.disposeObject(previous.root);
+    } else {
+      // The holder takes over the miniature's resting turn; attacks then aim it outright
+      holder.rotation.y = rig.root.rotation.y;
+    }
+    rig.root.rotation.y = 0;
+    rig.root.scale.setScalar(scale);
+    holder.add(rig.root);
+  }
+
+  /** Materials whose emissive channel carries hit, slow and death tints. */
+  private tintMaterials(model: THREE.Object3D): TintableMaterial[] {
+    const materials = new Set<TintableMaterial>();
+    model.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+        if (
+          material instanceof THREE.MeshStandardMaterial ||
+          material instanceof THREE.MeshToonMaterial
+        ) {
+          materials.add(material);
+          material.userData['baseEmissive'] = material.emissive.clone();
+        }
+      }
+    });
+    return [...materials];
   }
 
   // ---------------------------------------------------------------------------
@@ -2059,6 +2127,15 @@ export class ThreeBattlefieldService {
         this.scene?.add(vis.group);
         this.portalPulseAge = 0;
       }
+      const revision = this.models.revision('monsters', mob.typeId);
+      if (vis.modelRevision !== revision) {
+        vis.modelRevision = revision;
+        const rig = this.models.monster(mob.typeId, { outline: !this.softwareRenderer });
+        this.mountRig(vis.sprite, rig, vis.rig, vis.spriteSize);
+        vis.rig = rig;
+        vis.materials = this.tintMaterials(vis.sprite);
+      }
+
       const yAlt = mob.isFlying ? 0.95 : 0.2;
       vis.group.position.set(wx, yAlt, wz);
       this.mobHeights.set(mob.id, yAlt + vis.spriteSize * 0.45);
@@ -2123,11 +2200,16 @@ export class ThreeBattlefieldService {
         const emerge = this.easeOutBack(spawnP);
 
         sprite.rotation.z = this.reducedMotion ? 0 : rock * 0.4 + vis.lean;
-        animateModel(
-          sprite,
-          this.reducedMotion ? 0 : vis.stride,
-          stunned || this.reducedMotion ? 0 : 0.55,
-        );
+        if (vis.rig.has('walk')) {
+          if (!this.reducedMotion) vis.rig.stride(vis.stride);
+        } else {
+          animateModel(
+            sprite,
+            this.reducedMotion ? 0 : vis.stride,
+            stunned || this.reducedMotion ? 0 : 0.55,
+          );
+        }
+        vis.rig.update(this.reducedMotion ? 0 : simDt);
         sprite.position.set(jitter, bob - (1 - spawnP) * 0.3, 0);
         sprite.scale.set(
           Math.max(0.001, emerge * (1 + hitP * 0.12 - squashY * 0.5)),
@@ -2207,24 +2289,11 @@ export class ThreeBattlefieldService {
     const isBoss = mob.typeId === 'sky-sovereign' || mob.typeId === 'bramble-golem';
     const sprSize = isBoss ? 1.35 : 0.95;
 
-    const sprite = createMonsterModel(mob.typeId, { outline: !this.softwareRenderer });
+    // Boss scale sits on the miniature inside the holder, so hit/spawn squash stays relative to 1
+    const sprite = new THREE.Group();
     sprite.name = 'mob-model';
-    // Boss scale is baked into geometry so hit/spawn squash can remain relative to 1.
-    sprite.traverse((object) => {
-      if (object instanceof THREE.Mesh) object.geometry.scale(sprSize, sprSize, sprSize);
-      if (object !== sprite) object.position.multiplyScalar(sprSize);
-    });
-    const materials = new Set<TintableMaterial>();
-    sprite.traverse((object) => {
-      if (
-        object instanceof THREE.Mesh &&
-        (object.material instanceof THREE.MeshStandardMaterial ||
-          object.material instanceof THREE.MeshToonMaterial)
-      ) {
-        materials.add(object.material);
-        object.material.userData['baseEmissive'] = object.material.emissive.clone();
-      }
-    });
+    const rig = this.models.monster(mob.typeId, { outline: !this.softwareRenderer });
+    this.mountRig(sprite, rig, null, sprSize);
     group.add(sprite);
 
     // Camera-facing health bar with a trailing "recent damage" segment
@@ -2264,7 +2333,9 @@ export class ThreeBattlefieldService {
     return {
       group,
       sprite,
-      materials: [...materials],
+      rig,
+      modelRevision: this.models.revision('monsters', mob.typeId),
+      materials: this.tintMaterials(sprite),
       shadow,
       hpGroup,
       hpFill,
@@ -2775,7 +2846,10 @@ export class ThreeBattlefieldService {
         obj instanceof THREE.Points ||
         obj instanceof THREE.LineSegments
       ) {
-        if (!this.sharedGeometries.has(obj.geometry)) obj.geometry.dispose();
+        // Authored models share geometry across every instance of the piece
+        if (!this.sharedGeometries.has(obj.geometry) && !obj.geometry.userData['shared']) {
+          obj.geometry.dispose();
+        }
         if (obj instanceof THREE.InstancedMesh) obj.dispose();
         const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
         mats.forEach((m) => m.dispose()); // textures are shared and stay cached
