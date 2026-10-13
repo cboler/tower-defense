@@ -220,6 +220,11 @@ import { StoryDialogueOverlayComponent } from './story-dialogue-overlay/story-di
                   <span>Camera: {{ cameraLabel() }}</span>
                   <span class="btn-kbd">View</span>
                 </button>
+                <button type="button" class="option-tile" (click)="three.toggleLook()">
+                  <app-icon name="sparkle" />
+                  <span>Look: {{ three.look() === 'hd2d' ? 'HD-2D' : 'Miniatures' }}</span>
+                  <span class="btn-kbd">V</span>
+                </button>
                 <button type="button" class="option-tile" (click)="audio.toggleMute()">
                   <app-icon [name]="audio.muted() ? 'mute' : 'volume'" />
                   <span>{{ audio.muted() ? 'Sound off' : 'Sound on' }}</span>
@@ -828,6 +833,11 @@ export class GameComponent implements OnInit, OnDestroy {
 
     if (e.key === 'c' || e.key === 'C') {
       this.cycleCameraPreset();
+      return;
+    }
+
+    if (e.key === 'v' || e.key === 'V') {
+      this.three.toggleLook();
       return;
     }
 

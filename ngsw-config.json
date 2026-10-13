@@ -29,7 +29,7 @@
       "installMode": "lazy",
       "updateMode": "prefetch",
       "resources": {
-        "files": ["/assets/models/**"]
+        "files": ["/assets/models/**", "/assets/actors/**"]
       }
     }
   ]

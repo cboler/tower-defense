@@ -1,8 +1,22 @@
 import { Injectable, inject, signal } from '@angular/core';
 import * as THREE from 'three';
 import { animateModel } from './battlefield-models';
-import { MiniatureRig } from './miniature-rig';
-import { ModelLibraryService } from './model-library.service';
+import { PieceRig } from './miniature-rig';
+import { ModelKind, ModelLibraryService } from './model-library.service';
+import { CLASS_ATTACK, attackDuration, leadArm, poseAttack } from './motions';
+import { SpriteActor } from './sprite-actors';
+import { SpriteLibraryService } from './sprite-library.service';
+import {
+  SIDE_ATLAS_ROWS,
+  SIDE_ROWS,
+  TERRAIN_TEXELS,
+  TILE_SHAPES,
+  paintBoard,
+  paintSides,
+  rasterTexture,
+  sideBand,
+} from './pixel-terrain';
+import type { Hd2dPost } from './hd2d-post';
 import { GameService } from '../../core/services/game.service';
 import { TOWER_CLASSES, TowerClassId } from '../../core/models/tower.model';
 import { MobInstance } from '../../core/models/mob.model';
@@ -10,6 +24,11 @@ import { ParticleFx, Projectile } from '../../core/models/game-state.model';
 import { TileCode } from '../../core/models/map.model';
 
 export type CameraPreset = 'tactics' | 'isometric' | 'topdown';
+
+/** Miniatures: cel-shaded 3D pieces. HD-2D: pixel sprites on the diorama with lens effects. */
+export type BoardLook = 'miniatures' | 'hd2d';
+
+const LOOK_STORAGE_KEY = 'crystal-wardens.look';
 
 type AttackStyle = 'lunge' | 'recoil' | 'cast' | 'slam' | 'hop' | 'none';
 
@@ -81,16 +100,16 @@ interface TowerVisual {
   levelUpAge: number;
   xpRatio: number;
   phase: number;
-  rig: MiniatureRig | null;
-  /** Model library revision this miniature was built from. */
-  modelRevision: number;
+  rig: PieceRig | null;
+  /** Look and model revision this piece was built for. */
+  modelKey: string;
 }
 
 interface MobVisual {
   group: THREE.Group;
   sprite: THREE.Group;
-  rig: MiniatureRig;
-  modelRevision: number;
+  rig: PieceRig;
+  modelKey: string;
   materials: TintableMaterial[];
   shadow: THREE.Mesh;
   hpGroup: THREE.Group;
@@ -140,6 +159,20 @@ interface EffectVisual {
 @Injectable({ providedIn: 'root' })
 export class ThreeBattlefieldService {
   private readonly models = inject(ModelLibraryService);
+  private readonly sprites = inject(SpriteLibraryService);
+  /** Board look, remembered between visits. */
+  public readonly look = signal<BoardLook>(storedLook());
+  private post: Hd2dPost | null = null;
+  private postLoading = false;
+  private game: GameService | null = null;
+  private ambientLight: THREE.HemisphereLight | null = null;
+  private sunLight: THREE.DirectionalLight | null = null;
+  private fillLight: THREE.DirectionalLight | null = null;
+  private rimLight: THREE.DirectionalLight | null = null;
+  /** Direction of the sun around the board, for sprite shadows. */
+  private sunYaw = 0;
+  /** The HD-2D board painting, regenerated per map. */
+  private pixelTextures: THREE.Texture[] = [];
   private renderer: THREE.WebGLRenderer | null = null;
   private scene: THREE.Scene | null = null;
   private camera: THREE.PerspectiveCamera | null = null;
@@ -254,6 +287,7 @@ export class ThreeBattlefieldService {
 
   public init(canvas: HTMLCanvasElement, game: GameService): boolean {
     this.canvas = canvas;
+    this.game = game;
 
     // 1. WebGL Support Verification
     // Probe on a throwaway canvas so the real one keeps the context attributes we pick below
@@ -313,7 +347,10 @@ export class ThreeBattlefieldService {
     // 6. Setup Pointer Events
     this.setupPointerEvents(canvas, game);
 
-    // 7. Start Render Loop
+    // 7. The HD-2D look loads its sprites and lens effects on demand
+    this.applyLook();
+
+    // 8. Start Render Loop
     this.startLoop(game);
 
     return true;
@@ -325,9 +362,11 @@ export class ThreeBattlefieldService {
     // Soft celestial ambient skylight
     const ambientLight = new THREE.HemisphereLight(0xc7e6ff, 0x394b47, 2.0);
     this.scene.add(ambientLight);
+    this.ambientLight = ambientLight;
 
     // Warm golden sunlight casting diagonal shadows
     const sunLight = new THREE.DirectionalLight(0xffe4b5, 3.2);
+    this.sunLight = sunLight;
     sunLight.position.set(-9, 19, 11);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.width = 2048;
@@ -345,11 +384,34 @@ export class ThreeBattlefieldService {
     const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.9);
     fillLight.position.set(10, 8, -8);
     this.scene.add(fillLight);
+    this.fillLight = fillLight;
 
     // Twilight violet rim light highlighting character contours
     const rimLight = new THREE.DirectionalLight(0xa855f7, 0.75);
     rimLight.position.set(0, -6, -10);
     this.scene.add(rimLight);
+    this.rimLight = rimLight;
+  }
+
+  /**
+   * HD-2D lights the diorama like a stage: a warm, strong key and a cool, dim ambient for
+   * contrast. Miniatures keep the even twilight their cel shading was tuned under.
+   */
+  private applyLookLighting(): void {
+    const hd2d = this.look() === 'hd2d';
+    this.ambientLight?.color.setHex(hd2d ? 0x9fb4e0 : 0xc7e6ff);
+    this.ambientLight?.groundColor.setHex(hd2d ? 0x3a2d48 : 0x394b47);
+    if (this.ambientLight) this.ambientLight.intensity = hd2d ? 1.35 : 2.0;
+    this.sunLight?.color.setHex(hd2d ? 0xffcf94 : 0xffe4b5);
+    // From the side in HD-2D, so shadows fall where the camera can see them
+    if (hd2d) this.sunLight?.position.set(-15, 15, 5);
+    else this.sunLight?.position.set(-9, 19, 11);
+    const sun = this.sunLight?.position;
+    this.sunYaw = sun ? Math.atan2(sun.x, sun.z) : 0;
+    if (this.sunLight) this.sunLight.intensity = hd2d ? 4.2 : 3.2;
+    this.fillLight?.color.setHex(hd2d ? 0x5b7fd6 : 0x38bdf8);
+    if (this.fillLight) this.fillLight.intensity = hd2d ? 0.55 : 0.9;
+    if (this.rimLight) this.rimLight.intensity = hd2d ? 1.0 : 0.75;
   }
 
   public setCameraPreset(preset: CameraPreset, animate = true): void {
@@ -720,6 +782,11 @@ export class ThreeBattlefieldService {
     // 1. Build Sculpted Floating Sky Island Base
     this.buildSculptedIslandBase(map.width, map.height);
 
+    // HD-2D paints the board as one pixel-art picture; the last map's painting is let go
+    for (const texture of this.pixelTextures) texture.dispose();
+    this.pixelTextures = [];
+    const pixel = this.look() === 'hd2d' ? this.pixelTerrainMaterials(map.tiles) : null;
+
     // 2. High-Resolution Seamless Terrain Textures
     const cobblestoneTex = this.terrainTexture('assets/tile-cobblestone.png');
     cobblestoneTex.wrapS = THREE.RepeatWrapping;
@@ -797,31 +864,12 @@ export class ThreeBattlefieldService {
         const wx = (c - halfW) * this.TILE_SIZE;
         const wz = (r - halfH) * this.TILE_SIZE;
 
+        // Elevated vantage meadows, a sunken cobblestone road, slabs and basalt between
+        const { height: tileHeight, y: yOffset } = TILE_SHAPES[tile];
         let topMat = buildMat;
-        let tileHeight = 0.36;
-        let yOffset = 0.07; // Elevated vantage meadows
-
-        if (tile === 'P') {
-          topMat = pathMat;
-          tileHeight = 0.24;
-          yOffset = -0.05; // Sunken cobblestone road
-        } else if (tile === 'M') {
-          topMat = mazeMat;
-          tileHeight = 0.28;
-          yOffset = -0.02;
-        } else if (tile === 'O') {
-          topMat = obstacleMat;
-          tileHeight = 0.42;
-          yOffset = 0.1;
-        } else if (tile === 'S') {
-          topMat = mazeMat;
-          tileHeight = 0.26;
-          yOffset = -0.04;
-        } else if (tile === 'C') {
-          topMat = pathMat;
-          tileHeight = 0.3;
-          yOffset = -0.02;
-        }
+        if (tile === 'P' || tile === 'C') topMat = pathMat;
+        else if (tile === 'M' || tile === 'S') topMat = mazeMat;
+        else if (tile === 'O') topMat = obstacleMat;
 
         const boxGeo = new THREE.BoxGeometry(this.TILE_SIZE, tileHeight, this.TILE_SIZE);
 
@@ -849,15 +897,11 @@ export class ThreeBattlefieldService {
           uvAttr.needsUpdate = true;
         }
 
+        if (pixel) this.pixelTileUVs(boxGeo, c, r, tile, map.width, map.height);
+
         // Multi-material: top face gets topMat, all sides get dark bedrock cliffSideMat
-        const materials = [
-          cliffSideMat,
-          cliffSideMat,
-          topMat,
-          cliffSideMat,
-          cliffSideMat,
-          cliffSideMat,
-        ];
+        const side = pixel?.side ?? cliffSideMat;
+        const materials = [side, side, pixel?.top ?? topMat, side, side, side];
 
         const mesh = new THREE.Mesh(boxGeo, materials);
         mesh.position.set(wx, yOffset, wz);
@@ -867,8 +911,8 @@ export class ThreeBattlefieldService {
         this.terrainGroup.add(mesh);
         this.tileMeshes.push({ mesh, x: c, y: r });
 
-        // Add 3D Road Curbs between sunken Path and elevated Grass
-        if (tile === 'P') {
+        // Add 3D Road Curbs between sunken Path and elevated Grass (painted in HD-2D)
+        if (tile === 'P' && !pixel) {
           this.buildRoadCurbs(c, r, wx, wz, map, curbMat);
         }
 
@@ -889,14 +933,71 @@ export class ThreeBattlefieldService {
       }
     }
 
-    // 4. Delicate Tactical Grid Line Overlay for tactical precision
-    this.buildTacticalGridOverlay(map.width, map.height);
+    // 4. Delicate Tactical Grid Line Overlay for tactical precision (painted in HD-2D)
+    if (!pixel) this.buildTacticalGridOverlay(map.width, map.height);
 
     // 5. Scenic Perimeter Environment (Trees, Monoliths, Floating Crystals on island rim)
     this.buildPerimeterScenery(map.width, map.height);
-    this.buildGardenDetails(map.tiles, halfW, halfH);
+    if (!pixel) this.buildGardenDetails(map.tiles, halfW, halfH);
 
     this.scene.add(this.terrainGroup);
+  }
+
+  /** Materials for the HD-2D board: one painting for every top face, a wall atlas for sides. */
+  private pixelTerrainMaterials(tiles: TileCode[][]): {
+    top: THREE.Material;
+    side: THREE.Material;
+  } {
+    const { color, glow } = paintBoard(tiles);
+    const board = rasterTexture(color);
+    const runes = rasterTexture(glow);
+    const walls = rasterTexture(paintSides());
+    board.anisotropy = Math.min(8, this.renderer?.capabilities.getMaxAnisotropy() ?? 1);
+    this.pixelTextures.push(board, runes, walls);
+    return {
+      // Runes and lava light up through the emissive painting and catch the bloom
+      top: new THREE.MeshStandardMaterial({
+        map: board,
+        emissiveMap: runes,
+        emissive: 0xffffff,
+        emissiveIntensity: 1.6,
+        roughness: 0.92,
+        metalness: 0,
+      }),
+      side: new THREE.MeshStandardMaterial({ map: walls, roughness: 0.95, metalness: 0 }),
+    };
+  }
+
+  /** Points a tile box at its cell of the board painting and its kind's band of the wall atlas. */
+  private pixelTileUVs(
+    geometry: THREE.BoxGeometry,
+    c: number,
+    r: number,
+    tile: TileCode,
+    mapW: number,
+    mapH: number,
+  ): void {
+    const uv = geometry.attributes['uv'] as THREE.BufferAttribute;
+    const position = geometry.attributes['position'] as THREE.BufferAttribute;
+    const T = TERRAIN_TEXELS;
+    // Half a texel in from the cell edge so magnified pixels never pick up a neighbour
+    const u0 = (c * T + 0.5) / (mapW * T);
+    const u1 = ((c + 1) * T - 0.5) / (mapW * T);
+    const v0 = (r * T + 0.5) / (mapH * T);
+    const v1 = ((r + 1) * T - 0.5) / (mapH * T);
+    // Top face: north-west, north-east, south-west, south-east
+    uv.setXY(8, u0, v0);
+    uv.setXY(9, u1, v0);
+    uv.setXY(10, u0, v1);
+    uv.setXY(11, u1, v1);
+    // Walls: the band's top row at the rim, as many rows down as the wall is tall
+    const top = sideBand(tile) * SIDE_ROWS + 0.01;
+    const bottom = top + TILE_SHAPES[tile].height * T;
+    for (const i of [0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20, 21, 22, 23]) {
+      const along = i < 8 ? position.getZ(i) : position.getX(i);
+      uv.setXY(i, along + 0.5, (position.getY(i) > 0 ? top : bottom) / SIDE_ATLAS_ROWS);
+    }
+    uv.needsUpdate = true;
   }
 
   /**
@@ -1489,6 +1590,7 @@ export class ThreeBattlefieldService {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
+    this.post?.setSize(width, height);
     this.fitCameraToBoard();
     // Snap instead of sweeping when the board flips orientation
     if (wasPortrait !== this.portraitBoard()) {
@@ -1751,7 +1853,7 @@ export class ThreeBattlefieldService {
           xpRatio: -1,
           phase: Math.random() * Math.PI * 2,
           rig: null,
-          modelRevision: -1,
+          modelKey: '',
         };
         this.towerVisuals.set(t.id, vis);
         this.scene?.add(group);
@@ -1774,11 +1876,11 @@ export class ThreeBattlefieldService {
 
       if (t.classId === 'barricade') continue;
 
-      // (Re)build the miniature when it is new or its authored model changed
-      const revision = this.models.revision('heroes', t.classId);
-      if (vis.modelRevision !== revision) {
-        vis.modelRevision = revision;
-        const rig = this.models.hero(t.classId, { outline: !this.softwareRenderer });
+      // (Re)build the piece when it is new, its authored model changed or the look switched
+      const key = this.pieceKey('heroes', t.classId);
+      if (vis.modelKey !== key) {
+        vis.modelKey = key;
+        const rig = this.buildPiece('heroes', t.classId);
         this.mountRig(group.getObjectByName('hero-model') as THREE.Group, rig, vis.rig);
         vis.rig = rig;
       }
@@ -1803,39 +1905,54 @@ export class ThreeBattlefieldService {
       vis.attackAge += simDt;
 
       const pose = this.attackPose(ATTACK_STYLE[t.classId], vis.attackAge);
+      const sprite = vis.rig instanceof SpriteActor ? vis.rig : null;
+      // Sprites and clip-less miniatures act out the shared motions, step and all, so the
+      // holder only adds the clip-driven models' whole-body lunge
+      const body =
+        sprite || !vis.rig?.animated ? { forward: 0, lift: 0, scaleX: 0, scaleY: 0 } : pose;
 
       // Idle breathing, attack pose, spawn drop and level-up hop layered together
       const billboard = group.getObjectByName('hero-model') as THREE.Group | undefined;
       if (billboard && this.camera) {
-        const breathe = this.reducedMotion ? 0 : Math.sin(this.sceneryTime * 2.4 + vis.phase);
+        const breathe =
+          this.reducedMotion || sprite ? 0 : Math.sin(this.sceneryTime * 2.4 + vis.phase);
         const levelP = vis.levelUpAge < 0.9 ? vis.levelUpAge / 0.9 : 1;
         const levelHop = levelP < 1 ? Math.sin(levelP * Math.PI) * 0.35 : 0;
         const levelSpin = levelP < 1 ? Math.sin(levelP * Math.PI * 4) * 0.25 * (1 - levelP) : 0;
         const dropIn = (1 - this.easeOutCubic(spawnP)) * 0.9;
 
         if (t.attackAngleRad !== undefined) billboard.rotation.y = Math.PI / 2 - t.attackAngleRad;
-        billboard.rotation.z = this.reducedMotion ? 0 : levelSpin;
-        // Authored models with their own clips animate themselves
-        if (!vis.rig?.animated) {
+        billboard.rotation.z = this.reducedMotion || sprite ? 0 : levelSpin;
+        if (vis.rig && !vis.rig.animated) {
+          // Capes and charms keep their procedural sway; the attack comes from the motions
           animateModel(
             billboard,
             this.reducedMotion ? 0 : this.sceneryTime * 2.4 + vis.phase,
             0,
-            this.reducedMotion ? 0 : pose.flash,
+            0,
           );
+          const motion = CLASS_ATTACK[t.classId];
+          const swing = this.reducedMotion ? 1 : vis.attackAge / attackDuration(motion);
+          poseAttack(vis.rig.root, motion, Math.min(1, swing), leadArm(t.classId));
         }
         vis.rig?.update(this.reducedMotion ? 0 : simDt);
         billboard.position.set(
-          vis.attackDirX * pose.forward,
-          0.08 + breathe * 0.015 + pose.lift + levelHop + dropIn,
-          vis.attackDirZ * pose.forward,
+          vis.attackDirX * body.forward,
+          0.08 + breathe * 0.015 + body.lift + levelHop + dropIn,
+          vis.attackDirZ * body.forward,
         );
         const levelPop = levelP < 1 ? Math.sin(levelP * Math.PI) * 0.18 : 0;
-        billboard.scale.set(
-          1 + breathe * 0.012 + pose.scaleX + levelPop,
-          1 - breathe * 0.012 + pose.scaleY + levelPop,
-          1,
-        );
+        if (sprite) {
+          billboard.scale.setScalar(1);
+          sprite.squash(1 + levelPop, 1 + levelPop);
+          sprite.faceCamera(this.camera, this.sunYaw);
+        } else {
+          billboard.scale.set(
+            1 + breathe * 0.012 + body.scaleX + levelPop,
+            1 - breathe * 0.012 + body.scaleY + levelPop,
+            1,
+          );
+        }
       }
 
       // Aura ring spins steadily and flares on every action
@@ -2055,12 +2172,7 @@ export class ThreeBattlefieldService {
    * Puts a fresh miniature inside a hero or monster holder, replacing any older one. The
    * holder carries all battlefield motion, so a swap never interrupts it.
    */
-  private mountRig(
-    holder: THREE.Group,
-    rig: MiniatureRig,
-    previous: MiniatureRig | null,
-    scale = 1,
-  ): void {
+  private mountRig(holder: THREE.Group, rig: PieceRig, previous: PieceRig | null, scale = 1): void {
     if (previous) {
       previous.dispose();
       holder.remove(previous.root);
@@ -2127,11 +2239,12 @@ export class ThreeBattlefieldService {
         this.scene?.add(vis.group);
         this.portalPulseAge = 0;
       }
-      const revision = this.models.revision('monsters', mob.typeId);
-      if (vis.modelRevision !== revision) {
-        vis.modelRevision = revision;
-        const rig = this.models.monster(mob.typeId, { outline: !this.softwareRenderer });
-        this.mountRig(vis.sprite, rig, vis.rig, vis.spriteSize);
+      const key = this.pieceKey('monsters', mob.typeId);
+      if (vis.modelKey !== key) {
+        vis.modelKey = key;
+        const rig = this.buildPiece('monsters', mob.typeId);
+        // Sprites are baked at board size; miniatures take the boss scale here
+        this.mountRig(vis.sprite, rig, vis.rig, rig instanceof SpriteActor ? 1 : vis.spriteSize);
         vis.rig = rig;
         vis.materials = this.tintMaterials(vis.sprite);
       }
@@ -2199,7 +2312,8 @@ export class ThreeBattlefieldService {
         const spawnP = Math.min(1, vis.spawnAge / 0.4);
         const emerge = this.easeOutBack(spawnP);
 
-        sprite.rotation.z = this.reducedMotion ? 0 : rock * 0.4 + vis.lean;
+        const actor = vis.rig instanceof SpriteActor ? vis.rig : null;
+        sprite.rotation.z = this.reducedMotion || actor ? 0 : rock * 0.4 + vis.lean;
         if (vis.rig.has('walk')) {
           if (!this.reducedMotion) vis.rig.stride(vis.stride);
         } else {
@@ -2210,12 +2324,18 @@ export class ThreeBattlefieldService {
           );
         }
         vis.rig.update(this.reducedMotion ? 0 : simDt);
-        sprite.position.set(jitter, bob - (1 - spawnP) * 0.3, 0);
-        sprite.scale.set(
-          Math.max(0.001, emerge * (1 + hitP * 0.12 - squashY * 0.5)),
-          Math.max(0.001, emerge * (1 - hitP * 0.1 + squashY)),
-          1,
-        );
+        // Pixel sprites bob by a pixel or so; their walk frames carry the rest
+        sprite.position.set(jitter, (actor ? bob * 0.4 : bob) - (1 - spawnP) * 0.3, 0);
+        const scaleX = Math.max(0.001, emerge * (1 + hitP * 0.12 - squashY * 0.5));
+        const scaleY = Math.max(0.001, emerge * (1 - hitP * 0.1 + squashY));
+        if (actor) {
+          sprite.scale.setScalar(1);
+          actor.squash(scaleX, scaleY);
+          actor.tint(hitP, slowed);
+          actor.faceCamera(this.camera, this.sunYaw);
+        } else {
+          sprite.scale.set(scaleX, scaleY, 1);
+        }
 
         // Tint: hit flash > stun gold > slow frost
         for (const mat of vis.materials) {
@@ -2292,8 +2412,8 @@ export class ThreeBattlefieldService {
     // Boss scale sits on the miniature inside the holder, so hit/spawn squash stays relative to 1
     const sprite = new THREE.Group();
     sprite.name = 'mob-model';
-    const rig = this.models.monster(mob.typeId, { outline: !this.softwareRenderer });
-    this.mountRig(sprite, rig, null, sprSize);
+    const rig = this.buildPiece('monsters', mob.typeId);
+    this.mountRig(sprite, rig, null, rig instanceof SpriteActor ? 1 : sprSize);
     group.add(sprite);
 
     // Camera-facing health bar with a trailing "recent damage" segment
@@ -2334,7 +2454,7 @@ export class ThreeBattlefieldService {
       group,
       sprite,
       rig,
-      modelRevision: this.models.revision('monsters', mob.typeId),
+      modelKey: this.pieceKey('monsters', mob.typeId),
       materials: this.tintMaterials(sprite),
       shadow,
       hpGroup,
@@ -2365,9 +2485,16 @@ export class ThreeBattlefieldService {
       if (f.kind === 'mob-death' && f.mob) {
         // Flash white, flatten and float up as the spirit leaves
         const sprite = f.mob.sprite;
-        sprite.rotation.z = p * 0.6;
         sprite.position.y = p * 0.35;
-        sprite.scale.set(1 + p * 0.5, Math.max(0.001, 1 - p * 0.85), 1);
+        const actor = f.mob.rig instanceof SpriteActor ? f.mob.rig : null;
+        if (actor && this.camera) {
+          actor.squash(1 + p * 0.5, Math.max(0.001, 1 - p * 0.85));
+          actor.fade(p);
+          actor.faceCamera(this.camera, this.sunYaw);
+        } else {
+          sprite.rotation.z = p * 0.6;
+          sprite.scale.set(1 + p * 0.5, Math.max(0.001, 1 - p * 0.85), 1);
+        }
         for (const mat of f.mob.materials) {
           mat.emissive.setRGB(1, 1, 1);
           mat.transparent = true;
@@ -2873,7 +3000,57 @@ export class ThreeBattlefieldService {
 
   private render(): void {
     if (!this.renderer || !this.scene || !this.camera) return;
-    this.renderer.render(this.scene, this.camera);
+    if (this.post && this.look() === 'hd2d') this.post.render();
+    else this.renderer.render(this.scene, this.camera);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Board look
+  // ---------------------------------------------------------------------------
+
+  public setLook(look: BoardLook): void {
+    if (look === this.look()) return;
+    this.look.set(look);
+    if (this.game) this.rebuildTerrain(this.game);
+    try {
+      localStorage.setItem(LOOK_STORAGE_KEY, look);
+    } catch {
+      // Private windows may refuse storage; the look still applies for this visit
+    }
+    this.applyLook();
+  }
+
+  public toggleLook(): void {
+    this.setLook(this.look() === 'hd2d' ? 'miniatures' : 'hd2d');
+  }
+
+  /** Loads what the HD-2D look needs: sprite sheets, and the lens effects unless CPU-rendered. */
+  private applyLook(): void {
+    this.applyLookLighting();
+    if (this.look() !== 'hd2d') return;
+    void this.sprites.load();
+    if (this.softwareRenderer || this.post || this.postLoading) return;
+    this.postLoading = true;
+    void import('./hd2d-post').then(({ Hd2dPost }) => {
+      this.postLoading = false;
+      if (this.renderer && this.scene && this.camera) {
+        this.post = new Hd2dPost(this.renderer, this.scene, this.camera);
+      }
+    });
+  }
+
+  /** Changes whenever a piece should be rebuilt: new authored model, look switch, sprites ready. */
+  private pieceKey(kind: ModelKind, id: string): string {
+    const sprites = this.look() === 'hd2d' && this.sprites.ready();
+    return `${sprites ? 'sprite' : 'miniature'}:${this.models.revision(kind, id)}`;
+  }
+
+  private buildPiece(kind: ModelKind, id: string): PieceRig {
+    if (this.look() === 'hd2d' && this.sprites.ready()) {
+      const actor = this.sprites.actor(kind, id);
+      if (actor) return actor;
+    }
+    return this.models.piece(kind, id, { outline: !this.softwareRenderer });
   }
 
   public destroy(): void {
@@ -2882,6 +3059,10 @@ export class ThreeBattlefieldService {
       this.animFrameId = null;
     }
 
+    this.post?.dispose();
+    this.post = null;
+    for (const texture of this.pixelTextures) texture.dispose();
+    this.pixelTextures = [];
     if (this.renderer) {
       this.renderer.dispose();
       this.renderer = null;
@@ -2910,4 +3091,13 @@ export function isSoftwareRenderer(gl: WebGLRenderingContext | WebGL2RenderingCo
   const info = gl.getExtension('WEBGL_debug_renderer_info');
   const renderer = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? '');
   return SOFTWARE_RENDERER_PATTERN.test(renderer);
+}
+
+/** The look chosen on a previous visit; storage can be unavailable in private windows. */
+function storedLook(): BoardLook {
+  try {
+    return localStorage.getItem(LOOK_STORAGE_KEY) === 'hd2d' ? 'hd2d' : 'miniatures';
+  } catch {
+    return 'miniatures';
+  }
 }

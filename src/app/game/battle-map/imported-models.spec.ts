@@ -115,6 +115,17 @@ describe('authored miniatures', () => {
     expect(meshes(instantiateModel(asset, {}, 1, { outline: false }).root).some(isInk)).toBe(false);
   });
 
+  it('leaves fine details flagged `ink: false` unoutlined', () => {
+    const asset = statue();
+    const detail = new THREE.Mesh(new THREE.SphereGeometry(0.1), new THREE.MeshStandardMaterial());
+    detail.userData['ink'] = false;
+    asset.scene.add(detail);
+    const parts = meshes(instantiateModel(asset, {}, 1).root);
+    const shells = parts.filter(isInk);
+    expect(shells.length).toBe(1);
+    expect(shells[0].parent?.userData['ink']).not.toBe(false);
+  });
+
   it('matches clips to roles by name unless told which to use', () => {
     const clips = puppet().animations;
     const found = resolveClips(clips);

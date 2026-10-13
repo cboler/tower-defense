@@ -77,6 +77,22 @@ describe('battlefield miniatures', () => {
     expect(bowArm.rotation.x).toBeCloseTo(restAngle);
   });
 
+  it('holds the leading weapon in the hand the art does: screen left when facing the camera', () => {
+    const screenX = (model: THREE.Group, name: string) => {
+      model.rotation.y = 0;
+      model.updateMatrixWorld(true);
+      return model.getObjectByName(name)!.getWorldPosition(new THREE.Vector3()).x;
+    };
+    for (const id of ['blade-warden', 'paladin', 'samurai', 'lancer', 'oracle'] as const) {
+      expect(screenX(createHeroModel(id), 'weapon')).toBeLessThan(0);
+    }
+    // Archers lead with the bow in the off hand
+    expect(screenX(createHeroModel('ranger'), 'bow')).toBeLessThan(0);
+    expect(screenX(createHeroModel('blade-warden'), 'shield')).toBeGreaterThan(0);
+    expect(screenX(createMonsterModel('skulker'), 'weapon')).toBeLessThan(0);
+    expect(screenX(createMonsterModel('bonewalker'), 'weapon')).toBeLessThan(0);
+  });
+
   it('wraps miniatures in an ink outline that CPU-rasterized renderers can skip', () => {
     for (const model of [createHeroModel('paladin'), createMonsterModel('dread-gaze')]) {
       expect(meshes(model).some(isInk)).toBe(true);

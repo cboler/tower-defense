@@ -169,6 +169,8 @@ export function instantiateModel(
     const ink = inkMaterial();
     asset.inkCache ??= new Map();
     for (const mesh of meshes) {
+      // Fine details (irises, brows, rivets) opt out via `ink: false` extras on their node
+      if (mesh.userData['ink'] === false || mesh.parent?.userData['ink'] === false) continue;
       const width = INK_WIDTH / boardScale(mesh);
       const key = `${mesh.geometry.uuid}:${width.toPrecision(4)}`;
       let geometry = asset.inkCache.get(key);

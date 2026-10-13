@@ -1,1 +1,11 @@
-{ "heroes": {}, "monsters": {} }
+{
+  "heroes": {
+    "blade-warden": {
+      "file": "heroes/blade-warden.glb",
+      "triangles": 13016,
+      "bytes": 110936,
+      "clipNames": []
+    }
+  },
+  "monsters": {}
+}

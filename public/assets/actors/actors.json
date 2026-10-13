@@ -1,0 +1,203 @@
+{
+  "pixelsPerTile": 36,
+  "heroes": {
+    "blade-warden": {
+      "file": "heroes/blade-warden.png",
+      "cell": [56, 64],
+      "anchor": [28, 51],
+      "directions": 8,
+      "animations": {
+        "idle": { "row": 0, "frames": 4 },
+        "attack": { "row": 8, "frames": 8, "duration": 0.5, "impact": 3 }
+      }
+    },
+    "ranger": {
+      "file": "heroes/ranger.png",
+      "cell": [56, 64],
+      "anchor": [28, 51],
+      "directions": 8,
+      "animations": {
+        "idle": { "row": 0, "frames": 4 },
+        "attack": { "row": 8, "frames": 8, "duration": 0.45, "impact": 4 }
+      }
+    },
+    "elementalist": {
+      "file": "heroes/elementalist.png",
+      "cell": [48, 68],
+      "anchor": [24, 57],
+      "directions": 8,
+      "animations": {
+        "idle": { "row": 0, "frames": 4 },
+        "attack": { "row": 8, "frames": 8, "duration": 0.6, "impact": 4 }
+      }
+    },
+    "chronomancer": {
+      "file": "heroes/chronomancer.png",
+      "cell": [56, 64],
+      "anchor": [28, 51],
+      "directions": 8,
+      "animations": {
+        "idle": { "row": 0, "frames": 4 },
+        "attack": { "row": 8, "frames": 8, "duration": 0.6, "impact": 4 }
+      }
+    },
+    "oracle": {
+      "file": "heroes/oracle.png",
+      "cell": [52, 60],
+      "anchor": [26, 48],
+      "directions": 8,
+      "animations": {
+        "idle": { "row": 0, "frames": 4 },
+        "attack": { "row": 8, "frames": 8, "duration": 0.6, "impact": 4 }
+      }
+    },
+    "rogue": {
+      "file": "heroes/rogue.png",
+      "cell": [36, 52],
+      "anchor": [18, 43],
+      "directions": 8,
+      "animations": {
+        "idle": { "row": 0, "frames": 4 },
+        "attack": { "row": 8, "frames": 8, "duration": 0.4, "impact": 3 }
+      }
+    },
+    "lancer": {
+      "file": "heroes/lancer.png",
+      "cell": [56, 76],
+      "anchor": [28, 58],
+      "directions": 8,
+      "animations": {
+        "idle": { "row": 0, "frames": 4 },
+        "attack": { "row": 8, "frames": 8, "duration": 0.6, "impact": 4 }
+      }
+    },
+    "juggernaut": {
+      "file": "heroes/juggernaut.png",
+      "cell": [48, 56],
+      "anchor": [24, 45],
+      "directions": 8,
+      "animations": {
+        "idle": { "row": 0, "frames": 4 },
+        "attack": { "row": 8, "frames": 8, "duration": 0.6, "impact": 4 }
+      }
+    },
+    "red-mage": {
+      "file": "heroes/red-mage.png",
+      "cell": [52, 64],
+      "anchor": [26, 52],
+      "directions": 8,
+      "animations": {
+        "idle": { "row": 0, "frames": 4 },
+        "attack": { "row": 8, "frames": 8, "duration": 0.6, "impact": 4 }
+      }
+    },
+    "ninja": {
+      "file": "heroes/ninja.png",
+      "cell": [44, 56],
+      "anchor": [22, 45],
+      "directions": 8,
+      "animations": {
+        "idle": { "row": 0, "frames": 4 },
+        "attack": { "row": 8, "frames": 8, "duration": 0.4, "impact": 3 }
+      }
+    },
+    "samurai": {
+      "file": "heroes/samurai.png",
+      "cell": [48, 56],
+      "anchor": [24, 45],
+      "directions": 8,
+      "animations": {
+        "idle": { "row": 0, "frames": 4 },
+        "attack": { "row": 8, "frames": 8, "duration": 0.5, "impact": 3 }
+      }
+    },
+    "paladin": {
+      "file": "heroes/paladin.png",
+      "cell": [44, 60],
+      "anchor": [22, 49],
+      "directions": 8,
+      "animations": {
+        "idle": { "row": 0, "frames": 4 },
+        "attack": { "row": 8, "frames": 8, "duration": 0.5, "impact": 3 }
+      }
+    },
+    "astrologian": {
+      "file": "heroes/astrologian.png",
+      "cell": [40, 52],
+      "anchor": [20, 43],
+      "directions": 8,
+      "animations": {
+        "idle": { "row": 0, "frames": 4 },
+        "attack": { "row": 8, "frames": 8, "duration": 0.6, "impact": 4 }
+      }
+    },
+    "bard": {
+      "file": "heroes/bard.png",
+      "cell": [52, 64],
+      "anchor": [26, 52],
+      "directions": 8,
+      "animations": {
+        "idle": { "row": 0, "frames": 4 },
+        "attack": { "row": 8, "frames": 8, "duration": 0.45, "impact": 4 }
+      }
+    }
+  },
+  "monsters": {
+    "skulker": {
+      "file": "monsters/skulker.png",
+      "cell": [40, 52],
+      "anchor": [20, 42],
+      "directions": 8,
+      "animations": { "walk": { "row": 0, "frames": 8 } }
+    },
+    "swiftbeak": {
+      "file": "monsters/swiftbeak.png",
+      "cell": [52, 56],
+      "anchor": [26, 44],
+      "directions": 8,
+      "animations": { "walk": { "row": 0, "frames": 8 } }
+    },
+    "prismatic-ooze": {
+      "file": "monsters/prismatic-ooze.png",
+      "cell": [44, 40],
+      "anchor": [22, 29],
+      "directions": 8,
+      "animations": { "walk": { "row": 0, "frames": 8 } }
+    },
+    "pyre-core": {
+      "file": "monsters/pyre-core.png",
+      "cell": [44, 48],
+      "anchor": [22, 43],
+      "directions": 8,
+      "animations": { "walk": { "row": 0, "frames": 8 } }
+    },
+    "dread-gaze": {
+      "file": "monsters/dread-gaze.png",
+      "cell": [56, 60],
+      "anchor": [28, 48],
+      "directions": 8,
+      "animations": { "walk": { "row": 0, "frames": 8 } }
+    },
+    "bonewalker": {
+      "file": "monsters/bonewalker.png",
+      "cell": [36, 48],
+      "anchor": [18, 39],
+      "directions": 8,
+      "animations": { "walk": { "row": 0, "frames": 8 } }
+    },
+    "bramble-golem": {
+      "file": "monsters/bramble-golem.png",
+      "cell": [68, 92],
+      "anchor": [34, 74],
+      "directions": 8,
+      "animations": { "walk": { "row": 0, "frames": 8 } }
+    },
+    "sky-sovereign": {
+      "file": "monsters/sky-sovereign.png",
+      "cell": [88, 92],
+      "anchor": [44, 73],
+      "directions": 8,
+      "animations": { "walk": { "row": 0, "frames": 8 } }
+    }
+  }
+}

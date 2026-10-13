@@ -15,7 +15,9 @@
     "e2e": "playwright test",
     "models:export": "node scripts/export-blockouts.mjs",
     "models:optimize": "node scripts/optimize-models.mjs",
-    "models:art": "node scripts/render-hero-art.mjs"
+    "models:blender": "node scripts/build-blender-models.mjs",
+    "models:art": "node scripts/render-hero-art.mjs",
+    "sprites:bake": "node scripts/bake-sprites.mjs"
   },
   "private": true,
   "packageManager": "npm@11.19.0",

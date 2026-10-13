@@ -641,18 +641,20 @@ function elementalist(root: THREE.Group, p: Palette): void {
   put(rig.torso, tube(0.142, 0.142, 0.04), p.paint(LEATHER), [0, 0.065, 0]);
   put(rig.torso, tube(0.13, 0.1, 0.07), p.paint(deep), [0, 0.27, 0]);
   bellSleeves(rig, p.paint(blue));
+  // Glowing eyes in the shadowed face, set out on its surface so they shine under the brim
   for (const side of [-1, 1]) {
     put(
       rig.head,
-      ball(0.03),
+      ball(0.034),
       p.glow(0xffd84a),
-      [side * 0.065, -0.035, 0.16],
+      [side * 0.066, -0.025, 0.172],
       undefined,
-      [0.8, 1.2, 0.5],
+      [0.95, 1.3, 0.5],
     );
   }
-  // The signature hat: broad drooping brim, tall crumpled crown, tan band
-  put(rig.head, tube(0.34, 0.34, 0.024, 24), p.paint(blue), [0, 0.07, 0.01], [0.12, 0, 0]);
+  // The signature hat: broad brim tipped up at the front so the glowing eyes show beneath it,
+  // tall crumpled crown, tan band
+  put(rig.head, tube(0.33, 0.33, 0.024, 24), p.paint(blue), [0, 0.07, 0.01], [-0.22, 0, 0]);
   put(rig.head, tube(0.16, 0.19, 0.07, 18), p.paint(0xc9a35a), [0, 0.12, 0]);
   put(rig.head, tube(0.15, 0.2, 0.18, 18), p.paint(blue), [0, 0.24, -0.01], [-0.12, 0, 0]);
   put(rig.head, spike(0.152, 0.3, 16), p.paint(blue), [0.06, 0.43, -0.06], [-0.4, 0, -0.6]);
@@ -1042,7 +1044,7 @@ function ninja(root: THREE.Group, p: Palette): void {
     put(root.getObjectByName(name)!, tube(0.058, 0.058, 0.07), p.paint(dark), [0, -0.15, 0]);
   }
   // Masked face: only a band of skin and the eyes show
-  put(rig.head, ball(0.07), p.paint(SKIN), [0, -0.025, 0.142], undefined, [2.1, 0.62, 0.65]);
+  put(rig.head, ball(0.075), p.paint(SKIN), [0, -0.025, 0.142], undefined, [2.05, 0.85, 0.7]);
   for (const side of [-1, 1]) {
     put(
       rig.head,
@@ -1292,11 +1294,35 @@ const HEROES: Record<
 /** Heroes stand turned three-quarters toward the camera, like their sprites. */
 export const HERO_TURN = 0.35;
 
+/** Archers lead with the bow in the off hand, which already sits on the art's side. */
+const OFF_HAND_LEADS = new Set<string>(['ranger', 'bard']);
+
+/**
+ * The rig was sculpted with `arm-right` on the character's left. The art holds weapons in the
+ * right hand (screen left when facing the camera), so both arms are mirrored across the body,
+ * along with everything they hold. Forward swings (rotation.x) are unchanged by the mirror.
+ */
+function swapArms(root: THREE.Group): void {
+  for (const name of ['arm-left', 'arm-right']) {
+    const arm = root.getObjectByName(name);
+    if (!arm) continue;
+    arm.position.x *= -1;
+    arm.rotation.y *= -1;
+    arm.rotation.z *= -1;
+    const mirror = new THREE.Group();
+    mirror.scale.x = -1;
+    for (const child of [...arm.children]) mirror.add(child);
+    arm.add(mirror);
+  }
+}
+
 /** Every hero class is sculpted from its own sprite; feet at y=0, facing +z. */
 export function createHeroModel(id: TowerClassId, options: MiniatureOptions = {}): THREE.Group {
   const root = new THREE.Group();
   const palette = new Palette();
-  HEROES[id === 'barricade' ? 'blade-warden' : id](root, palette);
+  const hero = id === 'barricade' ? 'blade-warden' : id;
+  HEROES[hero](root, palette);
+  if (!OFF_HAND_LEADS.has(hero)) swapArms(root);
   root.rotation.y = HERO_TURN;
   return finish(root, palette, options);
 }
@@ -1655,91 +1681,108 @@ function bonewalker(root: THREE.Group, p: Palette): void {
 }
 
 function brambleGolem(root: THREE.Group, p: Palette): void {
-  const bark = p.paint(0x6e4b2c);
-  const darkBark = p.paint(0x4a321c);
+  const bark = p.paint(0x5e4126);
+  const darkBark = p.paint(0x3e2a17);
+  const lightBark = p.paint(0x7c5835);
   const moss = p.paint(0x6f9a3a);
-  // Stumpy legs ending in spreading roots
+  const deepMoss = p.paint(0x4c7a2c);
+  const hips = 0.32;
+  // Root legs: thick thighs, gnarled flaring shins, toes splayed like roots
   for (const side of [-1, 1]) {
-    const leg = joint(root, side < 0 ? 'leg-left' : 'leg-right', [side * 0.14, 0.26, 0]);
-    put(leg, limb(0.085, 0.1), bark, [0, -0.11, 0]);
-    for (const a of [-0.7, 0, 0.7]) {
-      const dir: Vec = [Math.sin(a) + side * 0.3, -0.3, Math.cos(a)];
-      aim(leg, spike(0.045, 0.15, 5), darkBark, [0, -0.21, 0], dir, 0.15);
+    const leg = joint(root, side < 0 ? 'leg-left' : 'leg-right', [side * 0.13, hips, 0]);
+    put(leg, limb(0.075, 0.12), bark, [0, -0.09, 0]);
+    put(leg, tube(0.07, 0.095, 0.13, 7), darkBark, [0, -0.22, 0.01]);
+    for (const a of [-0.8, -0.1, 0.6]) {
+      const dir: Vec = [Math.sin(a) + side * 0.25, -0.35, Math.cos(a)];
+      aim(leg, spike(0.042, 0.15, 5), darkBark, [0, -0.29, 0.01], dir, 0.15);
     }
+    put(leg, ball(0.05), deepMoss, [side * 0.02, -0.03, 0.065], undefined, [1.3, 0.5, 0.9]);
   }
-  // Hulking trunk, broad at the shoulders, wrapped in moss and vines
-  const torso = joint(root, 'torso', [0, 0.26, 0]);
-  put(torso, tube(0.27, 0.19, 0.42, 9), bark, [0, 0.21, 0]);
-  for (let i = 0; i < 7; i++) {
-    const a = i * 0.9 + 0.3;
-    const knot = new THREE.DodecahedronGeometry(0.075);
-    put(torso, knot, darkBark, [Math.sin(a) * 0.22, 0.08 + (i % 3) * 0.12, Math.cos(a) * 0.22]);
+  // A hunched trunk: narrow at the waist, massive at the shoulders, plated with bark
+  const torso = joint(root, 'torso', [0, hips, 0]);
+  rest(torso, 0.2);
+  put(torso, tube(0.29, 0.16, 0.42, 9), bark, [0, 0.22, 0]);
+  for (let i = 0; i < 5; i++) {
+    const a = (i - 2) * 0.42;
+    const plate = block(0.07, 0.22 - Math.abs(i - 2) * 0.03, 0.04, 0.015);
+    put(
+      torso,
+      plate,
+      i % 2 ? lightBark : darkBark,
+      [Math.sin(a) * 0.235, 0.24, Math.cos(a) * 0.235],
+      [0, a, 0],
+    );
   }
-  put(torso, hoop(0.23, 0.02), moss, [0, 0.15, 0], [Math.PI / 2 + 0.3, 0, 0.15]);
-  put(torso, hoop(0.25, 0.016), moss, [0, 0.3, 0], [Math.PI / 2 - 0.25, 0, -0.1]);
-  // Head sunk between the shoulders: glowing eyes under a heavy brow, jagged maw
-  const head = joint(torso, 'head', [0, 0.47, 0.06]);
-  put(head, ball(0.16), bark, [0, 0, 0], undefined, [1.05, 0.95, 0.9]);
+  // Moss grows in clumps over the shoulders and down the back
+  for (const [x, y, z, r] of [
+    [-0.21, 0.41, 0.02, 0.085],
+    [0.22, 0.42, 0, 0.09],
+    [0.02, 0.43, -0.14, 0.12],
+    [-0.12, 0.2, -0.2, 0.08],
+    [0.14, 0.12, 0.19, 0.06],
+  ]) {
+    put(torso, ball(r), r > 0.09 ? moss : deepMoss, [x, y, z], undefined, [1.3, 0.55, 1.2]);
+  }
+  // Head thrust forward from between the shoulders: deep-set glowing eyes, a gaping maw
+  const head = joint(torso, 'head', [0, 0.5, 0.1]);
+  put(head, ball(0.165), bark, [0, 0, 0], undefined, [1.05, 1.05, 0.95]);
+  // A paler carved face sets the head apart from the trunk
+  put(head, ball(0.13), lightBark, [0, -0.01, 0.06], undefined, [1.05, 1.05, 0.75]);
+  put(head, block(0.26, 0.05, 0.08, 0.02), darkBark, [0, 0.065, 0.12], [0.25, 0, 0]);
   for (const side of [-1, 1]) {
     put(
       head,
-      ball(0.032),
-      p.glow(0xff8a1a),
-      [side * 0.065, 0.01, 0.135],
+      ball(0.036),
+      p.glow(0xffa21a),
+      [side * 0.065, 0.015, 0.152],
       undefined,
-      [1.2, 0.8, 0.5],
-    );
-    put(
-      head,
-      block(0.09, 0.025, 0.04, 0.008),
-      darkBark,
-      [side * 0.065, 0.055, 0.135],
-      [0, 0, side * -0.35],
+      [1.3, 0.8, 0.5],
     );
   }
-  put(head, block(0.12, 0.045, 0.03, 0.01), p.paint(0x1e140c), [0, -0.07, 0.13]);
-  for (let i = 0; i < 3; i++) {
+  put(head, block(0.14, 0.06, 0.03, 0.012), p.paint(0x1e140c), [0, -0.065, 0.152]);
+  for (let i = 0; i < 4; i++) {
     put(
       head,
-      spike(0.012, 0.035, 4),
+      spike(0.011, 0.034, 4),
       p.paint(0xd9c8a0),
-      [-0.035 + i * 0.035, -0.055, 0.145],
+      [-0.045 + i * 0.03, -0.042, 0.165],
       [Math.PI, 0, 0],
     );
   }
-  put(head, ball(0.09), moss, [0.02, 0.11, -0.03], undefined, [1.4, 0.45, 1.1]);
-  // Gnarled branches clawing upward from crown and shoulders
+  put(head, ball(0.08), moss, [0, 0.11, -0.02], undefined, [1.5, 0.45, 1.2]);
+  // Antler-like branches crowning the head and spurring from the shoulders
   tufts(
     head,
     darkBark,
     [
-      { dir: [0.45, 1, 0.05], length: 0.34, width: 0.05 },
-      { dir: [-0.5, 1, 0.1], length: 0.36, width: 0.05 },
-      { dir: [0.05, 1, -0.45], length: 0.28, width: 0.045 },
-      { dir: [0.95, 0.55, -0.2], length: 0.24, width: 0.04 },
-      { dir: [-0.95, 0.5, -0.2], length: 0.24, width: 0.04 },
-      { dir: [0.2, 0.9, 0.5], length: 0.18, width: 0.035 },
+      { dir: [0.5, 1, -0.05], length: 0.4, width: 0.05 },
+      { dir: [-0.55, 1, 0], length: 0.42, width: 0.05 },
+      { dir: [0.05, 1, -0.5], length: 0.32, width: 0.045 },
+      { dir: [1, 0.6, -0.25], length: 0.26, width: 0.04 },
+      { dir: [-1, 0.55, -0.25], length: 0.26, width: 0.04 },
+      { dir: [0.25, 0.8, 0.45], length: 0.18, width: 0.035 },
     ],
-    0.11,
+    0.1,
   );
-  // Long arms hanging nearly to the ground, ending in twig claws
+  // Long, heavy arms hanging past the knees, ending in root claws
   for (const side of [-1, 1]) {
-    const arm = joint(torso, side < 0 ? 'arm-left' : 'arm-right', [side * 0.3, 0.37, 0]);
-    arm.rotation.z = side * 0.18;
+    const arm = joint(torso, side < 0 ? 'arm-left' : 'arm-right', [side * 0.31, 0.36, 0.02]);
+    arm.rotation.z = side * 0.22;
     put(arm, ball(0.12), bark, [0, 0, 0]);
-    put(arm, ball(0.1), moss, [0, 0.07, 0], undefined, [1.15, 0.45, 1.1]);
     aim(arm, spike(0.03, 0.2, 5), darkBark, [side * 0.06, 0.06, -0.02], [side * 0.6, 1, -0.2], 0.2);
-    put(arm, limb(0.08, 0.26), bark, [0, -0.19, 0]);
-    put(arm, hoop(0.085, 0.014), moss, [0, -0.16, 0], [Math.PI / 2 + 0.4, 0, 0]);
-    put(arm, ball(0.075), darkBark, [0, -0.36, 0.02]);
+    put(arm, limb(0.08, 0.18), bark, [0, -0.15, 0]);
+    put(arm, tube(0.105, 0.08, 0.2, 8), darkBark, [0, -0.36, 0.02]);
+    put(arm, ball(0.06), deepMoss, [0, -0.3, 0.07], undefined, [1.2, 0.5, 0.8]);
+    aim(arm, spike(0.025, 0.14, 5), lightBark, [side * 0.07, -0.33, 0], [side, 0.35, 0.2], 0.14);
+    put(arm, ball(0.085), darkBark, [0, -0.49, 0.03]);
     for (const a of [-0.6, 0, 0.6]) {
       aim(
         arm,
-        spike(0.025, 0.13, 5),
+        spike(0.026, 0.15, 5),
         darkBark,
-        [0, -0.38, 0.03],
+        [0, -0.52, 0.04],
         [Math.sin(a) * 0.7, -1, 0.45],
-        0.13,
+        0.15,
       );
     }
   }
@@ -1827,8 +1870,12 @@ export function createMonsterModel(id: MobTypeId, options: MiniatureOptions = {}
   const root = new THREE.Group();
   const palette = new Palette();
   MONSTERS[id](root, palette);
+  if (ARMED_MONSTERS.has(id)) swapArms(root);
   return finish(root, palette, options);
 }
+
+/** Monsters whose art carries a weapon in the right hand, sculpted mirrored like the heroes. */
+const ARMED_MONSTERS = new Set<MobTypeId>(['skulker', 'bonewalker']);
 
 // ---------------------------------------------------------------------------
 // Animation

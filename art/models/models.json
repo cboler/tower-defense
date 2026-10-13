@@ -1,4 +1,6 @@
 {
-  "heroes": {},
+  "heroes": {
+    "blade-warden": { "maxTriangles": 14000 }
+  },
   "monsters": {}
 }

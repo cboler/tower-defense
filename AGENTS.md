@@ -31,7 +31,12 @@ src/
 │   │   │   ├── three-battlefield.service.ts # Three.js board, miniatures, effects, camera
 │   │   │   ├── battlefield-models.ts  # Sculpted (procedural) hero & monster miniatures
 │   │   │   ├── imported-models.ts     # Fits, cel-shades, outlines & animates glTF models
-│   │   │   └── model-library.service.ts # Authored model when published, else sculpted
+│   │   │   ├── model-library.service.ts # Authored model when published, else sculpted
+│   │   │   ├── motions.ts             # Keyframed attacks/idle shared by 3D heroes and sprites
+│   │   │   ├── sprite-actors.ts       # HD-2D billboard sprites (8 facings) from baked sheets
+│   │   │   ├── sprite-library.service.ts # Loads the baked sheets in public/assets/actors
+│   │   │   ├── pixel-terrain.ts       # HD-2D board painted as pixel art in code (no images)
+│   │   │   └── hd2d-post.ts           # HD-2D lens: bloom, tilt-shift, grade, vignette (lazy)
 │   │   ├── hud/                     # Crystals, Gold, Wave call, speed, gamepad pill
 │   │   ├── tower-panel/             # Class recruitment dock, priority, and upgrade dossier
 │   │   └── game.component.ts        # Main game coordinator and victory/defeat modals
@@ -41,6 +46,7 @@ src/
 │   └── app.ts                       # App root shell with PWA install prompts
 art/models/                          # Model pipeline inputs (see Authored Models)
 public/assets/models/                # Published .glb models + generated manifest.json
+public/assets/actors/                # Baked HD-2D sprite sheets + actors.json
 ```
 
 ## Commands & Quality Gates
@@ -73,8 +79,10 @@ npm run e2e
 
 # Model pipeline (see Authored Models)
 npm run models:export          # sculpted miniatures → art/models/blockouts/*.glb
+npm run models:blender         # art/models/blender/*.py → art/models/source/*.glb (headless)
 npm run models:optimize        # art/models/source/*.glb → public/assets/models + manifest
 npm run models:art -- <class>  # render a recruit portrait & sprite from a miniature
+npm run sprites:bake [-- <id>] # bake HD-2D sprite sheets from the miniatures
 ```
 
 ## Authored Models
@@ -96,10 +104,36 @@ height), `toon` / `outline` (default `true`), `clips` (`{ idle, attack, walk }` 
 otherwise matched by name: Idle, Attack/Slash/Cast..., Walk/Run/Fly), and the build budgets
 `maxTriangles` (default 10000) and `textureSize` (default 512).
 
+**Scripted Blender models**: `art/models/blender/<heroes|monsters>/<id>.py` build a model headless
+with the helpers in `art/models/blender/kit.py`. Scripts work in the game's space (metres, +Y up,
+facing +Z) on the same joints and pivots as the sculpted rig (`humanoid()` in
+`battlefield-models.ts`), so the game animates them like sculpted pieces. Parts smaller than 3 cm
+are left unoutlined, as on sculpted miniatures. Run `npm run models:blender -- <id>`, then
+`npm run models:optimize` (set `BLENDER` if Blender isn't found). The Blade Warden is the example.
+
 Models should face +Z; scale and position don't matter. Avoid Draco compression (meshopt is
 applied instead). Models without clips still animate if they keep the sculpted joint names
 (`arm-right`, `leg-left`, `cape`...), as exported blockouts do. Only feed your own artwork to
 image-to-3D tools.
+
+## Board Looks
+
+The board has two looks, switched with the map button, the pause menu or `V`, and remembered per
+browser: **Miniatures** (cel-shaded 3D pieces) and **HD-2D** (pixel-art sprites standing on the 3D
+diorama, with bloom, tilt-shift, a colour grade and a vignette; effects are skipped on CPU-rendered
+WebGL).
+
+HD-2D sprites are baked, not drawn: `npm run sprites:bake` renders each piece's miniature (authored
+model if published, else sculpted) through the motions in `motions.ts`, in 8 facings at 36 pixels
+per tile from a shallow 25° angle, with a 1px ink outline. Re-bake after changing a model, a motion
+or a hero's weapon hand. Weapons sit in the right hand (screen left), as in the art, and are
+drawn thicker in sprites (`WEAPON_EMPHASIS` in the baker) so they survive at sprite size.
+
+In HD-2D the board itself is pixel art painted in `pixel-terrain.ts` at 28 texels per tile (about a
+sprite pixel on screen): one continuous painting for the tile tops that reads each tile's
+neighbours (sunlit meadow lips, shade beside taller tiles, a faint tactics grid), a wall atlas for
+tile sides, and a glow map for runes and lava. The sun comes from the side so shadows show; sprites
+cast their silhouettes through an upright stand-in turned toward it.
 
 ## Guardrails
 

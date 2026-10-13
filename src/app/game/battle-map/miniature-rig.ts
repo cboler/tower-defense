@@ -2,11 +2,26 @@ import * as THREE from 'three';
 
 export type ClipRole = 'idle' | 'attack' | 'walk';
 
+/** What the battlefield needs from any piece on the board: a 3D miniature or a sprite. */
+export interface PieceRig {
+  /** What the battlefield moves around. */
+  readonly root: THREE.Group;
+  /** True when the piece animates itself, so procedural joint posing should stand down. */
+  readonly animated: boolean;
+  has(role: ClipRole): boolean;
+  /** Starts an attack; false when the piece has no attack of its own. */
+  attack(): boolean;
+  /** Poses the walk cycle by distance travelled. */
+  stride(phase: number): void;
+  update(dt: number): void;
+  dispose(): void;
+}
+
 /**
  * A miniature on the board: sculpted rigs pose their named joints procedurally, authored
  * rigs play their own clips. Either way `root` is what the battlefield moves around.
  */
-export class MiniatureRig {
+export class MiniatureRig implements PieceRig {
   private readonly actions: Partial<Record<ClipRole, THREE.AnimationAction>> = {};
 
   constructor(

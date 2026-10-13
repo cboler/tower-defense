@@ -42,6 +42,18 @@ import { IconComponent } from '../icon/icon.component';
         <span class="fab-label">{{ cameraLabel() }}</span>
       </button>
 
+      <!-- Look switch: cel-shaded miniatures or HD-2D sprites with lens effects -->
+      <button
+        type="button"
+        class="map-fab look-fab"
+        (click)="three.toggleLook()"
+        [title]="'Look: ' + lookLabel() + ' [V]'"
+        [attr.aria-label]="'Switch board look, currently ' + lookLabel()"
+      >
+        <app-icon name="sparkle" [size]="18" />
+        <span class="fab-label">{{ lookLabel() }}</span>
+      </button>
+
       <!-- Main Battlefield Stage (Three.js WebGL Engine) -->
       <div class="battlefield-stage-wrapper">
         <canvas
@@ -370,6 +382,10 @@ import { IconComponent } from '../icon/icon.component';
           color: var(--text-primary);
           border-color: var(--color-primary);
         }
+      }
+
+      .look-fab {
+        top: calc(var(--space-2) + 48px);
       }
 
       .fab-label {
@@ -887,6 +903,10 @@ export class BattleMapComponent implements AfterViewInit, OnDestroy {
 
   protected readonly cameraLabel = computed(
     () => BattleMapComponent.CAMERA_LABELS[this.three.activeCameraMode()],
+  );
+
+  protected readonly lookLabel = computed(() =>
+    this.three.look() === 'hd2d' ? 'HD-2D' : 'Miniatures',
   );
 
   protected cycleCamera(): void {
