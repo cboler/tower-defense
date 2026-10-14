@@ -178,7 +178,7 @@ crystal. The Miniatures look keeps its 3D effects; both exist side by side and t
 
 ## Guardrails
 
-- **Trademarked Content**: Do not use trademarked names (e.g. _Chocobo_, _Moogle_, _Final Fantasy_, _Ivalice_). Use our original counterparts: _Swiftbeak_, _Skulker_, _Prismatic Ooze_, _Blade Warden_, etc.
+- **Trademarked Content**: Do not use trademarked names (e.g. _Chocobo_, _Moogle_, _Final Fantasy_, _Ivalice_). Use our original counterparts: _Swiftbeak_, _Skulker_, _Prismatic Ooze_, _Blade Warden_, etc. The one deliberate exception is the About sheet (`about-modal`), which credits _Crystal Defenders_ by name, links to where to buy it and states that this fan project is unaffiliated; keep that credit, and keep the names out of the game itself.
 - **Light Mazing Rule**: When placing an Aether Barricade on a `MAZE_SLOT` tile (`M`), the pathfinding service must verify that at least one valid path from spawn to sanctuary remains open. Monsters must never be completely sealed off.
 - **Controller Support**: All interactive game features must remain accessible via standard Gamepad API controls (Button A to place/upgrade, B to cancel, X to call wave, Y for speed, LB/RB to cycle classes, D-Pad/sticks for map navigation) alongside keyboard and touch/mouse controls.
 - **Audio Synthesis**: Avoid external binary audio files. Use procedural Web Audio API synthesis in `AudioService` so the app remains lightweight, offline-first, and instant to load.

@@ -22,6 +22,7 @@ import { IconComponent } from './icon/icon.component';
 import { CameraPreset, ThreeBattlefieldService } from './battle-map/three-battlefield.service';
 import { CampaignModalComponent } from './campaign-modal/campaign-modal.component';
 import { BestiaryModalComponent } from './bestiary-modal/bestiary-modal.component';
+import { AboutModalComponent } from './about-modal/about-modal.component';
 import { StoryDialogueOverlayComponent } from './story-dialogue-overlay/story-dialogue-overlay.component';
 
 @Component({
@@ -35,6 +36,7 @@ import { StoryDialogueOverlayComponent } from './story-dialogue-overlay/story-di
     IconComponent,
     CampaignModalComponent,
     BestiaryModalComponent,
+    AboutModalComponent,
     StoryDialogueOverlayComponent,
   ],
   template: `
@@ -230,6 +232,10 @@ import { StoryDialogueOverlayComponent } from './story-dialogue-overlay/story-di
                   <span>{{ audio.muted() ? 'Sound off' : 'Sound on' }}</span>
                   <span class="btn-kbd">Y</span>
                 </button>
+                <button type="button" class="option-tile" (click)="openFromMenu('about')">
+                  <app-icon name="info" />
+                  <span>About</span>
+                </button>
               </div>
 
               <section class="stage-select-box" aria-labelledby="stage-select-label">
@@ -272,6 +278,10 @@ import { StoryDialogueOverlayComponent } from './story-dialogue-overlay/story-di
 
       @if (game.isBestiaryModalOpen()) {
         <app-bestiary-modal (closeModal)="game.isBestiaryModalOpen.set(false)" />
+      }
+
+      @if (isAboutOpen()) {
+        <app-about-modal (closeModal)="isAboutOpen.set(false)" />
       }
 
       <app-story-dialogue-overlay />
@@ -611,6 +621,8 @@ export class GameComponent implements OnInit, OnDestroy {
   protected readonly allMaps = ALL_MAPS;
 
   public readonly isPauseMenuOpen = signal<boolean>(false);
+  /** About Crystal Wardens: credits and a link to the original game. */
+  public readonly isAboutOpen = signal<boolean>(false);
   private sub?: Subscription;
 
   private static readonly CAMERA_LABELS: Record<CameraPreset, string> = {
@@ -672,7 +684,14 @@ export class GameComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // 2. Pause Menu Modal handling
+    // 2. The About sheet: the controller moves between its link and buttons; nothing reaches
+    // the battle behind it
+    if (this.isAboutOpen()) {
+      if (action === 'cancel' || action === 'toggle-menu') this.isAboutOpen.set(false);
+      return;
+    }
+
+    // 3. Pause Menu Modal handling
     if (this.isPauseMenuOpen()) {
       if (action === 'cancel' || action === 'toggle-menu') {
         this.isPauseMenuOpen.set(false);
@@ -693,7 +712,7 @@ export class GameComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // 3. Main Gameplay Actions
+    // 4. Main Gameplay Actions
     switch (action) {
       case 'toggle-menu':
         this.isPauseMenuOpen.set(true);
@@ -798,10 +817,11 @@ export class GameComponent implements OnInit, OnDestroy {
     this.three.setCameraPreset(next);
   }
 
-  protected openFromMenu(target: 'missions' | 'bestiary'): void {
+  protected openFromMenu(target: 'missions' | 'bestiary' | 'about'): void {
     this.isPauseMenuOpen.set(false);
     if (target === 'missions') this.game.toggleCampaignModal();
-    else this.game.toggleBestiaryModal();
+    else if (target === 'bestiary') this.game.toggleBestiaryModal();
+    else this.isAboutOpen.set(true);
   }
 
   protected onPauseBackdrop(event: MouseEvent): void {
@@ -818,18 +838,24 @@ export class GameComponent implements OnInit, OnDestroy {
   }
 
   private readonly onGlobalKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape' && this.isAboutOpen()) {
+      this.isAboutOpen.set(false);
+      e.preventDefault();
+      return;
+    }
     if (e.key === 'Escape') {
       // Escape closes whichever overlay is on top; it only opens the menu from the battlefield
       const overlayOpen =
         this.game.isScoutOpen() ||
         this.game.isCampaignModalOpen() ||
-        this.game.isBestiaryModalOpen();
+        this.game.isBestiaryModalOpen() ||
+        this.isAboutOpen();
       if (!overlayOpen) this.isPauseMenuOpen.set(!this.isPauseMenuOpen());
       e.preventDefault();
       return;
     }
 
-    if (this.isPauseMenuOpen()) return;
+    if (this.isPauseMenuOpen() || this.isAboutOpen()) return;
 
     if (e.key === 'c' || e.key === 'C') {
       this.cycleCameraPreset();
