@@ -1407,35 +1407,46 @@ function swiftbeak(root: THREE.Group, p: Palette): void {
   put(body, ball(0.21), blue, [0, 0, 0], undefined, [0.82, 0.78, 1.4]);
   put(body, ball(0.15), pale, [0, -0.07, 0.08], undefined, [0.85, 0.7, 1.3]);
   for (const side of [-1, 1]) {
-    put(body, ball(0.16), dark, [side * 0.13, 0.04, -0.05], undefined, [0.3, 0.6, 1.25]);
+    // Wings folded along the sides, their tips flared out so the runner reads from the front
+    const wing = put(
+      body,
+      ball(0.16),
+      dark,
+      [side * 0.14, 0.04, -0.05],
+      undefined,
+      [0.3, 0.6, 1.25],
+    );
+    wing.rotation.y = side * 0.35;
+    wing.rotation.z = side * -0.3;
     for (let i = 0; i < 3; i++) {
       put(body, block(0.012, 0.012, 0.22 - i * 0.04, 0.004), pale, [
-        side * 0.18,
+        side * 0.19,
         0.07 - i * 0.04,
         -0.06 - i * 0.02,
       ]);
     }
   }
-  // Neck thrust forward like a sprinter, small crested head, hooked grey beak
+  // Neck thrust forward like a sprinter, a big crested head and a heavy hooked grey beak
   aim(body, limb(0.06, 0.16), blue, [0, 0.08, 0.24], [0, 0.8, 0.6], 0.22);
   aim(body, limb(0.05, 0.08), blue, [0, 0.25, 0.37], [0, 0.97, 0.24], 0.1);
   const head = joint(body, 'head', [0, 0.38, 0.41]);
-  put(head, ball(0.085), blue, [0, 0, 0], undefined, [0.85, 0.9, 1.15]);
-  aim(head, spike(0.045, 0.17, 10), beak, [0, -0.01, 0.07], [0, -0.25, 1], 0.17);
-  put(head, ball(0.022), beak, [0, -0.05, 0.22]);
+  put(head, ball(0.11), blue, [0, 0, 0], undefined, [0.9, 0.9, 1.1]);
+  aim(head, spike(0.062, 0.2, 10), beak, [0, -0.02, 0.08], [0, -0.45, 1], 0.2);
+  put(head, ball(0.03), beak, [0, -0.1, 0.25]);
+  // Orange eyes set forward on the head, so they show head-on as well as in profile
   for (const side of [-1, 1]) {
-    put(head, ball(0.02), p.paint(0xffd04a), [side * 0.06, 0.02, 0.04]);
-    put(head, ball(0.009), p.paint(0x1a1424), [side * 0.07, 0.022, 0.048]);
+    put(head, ball(0.028), p.paint(0xffa02a), [side * 0.07, 0.03, 0.06]);
+    put(head, ball(0.012), p.paint(0x1a1424), [side * 0.08, 0.032, 0.08]);
   }
   tufts(
     head,
     pale,
     [
-      { dir: [0, 0.5, -1], length: 0.2, width: 0.02 },
-      { dir: [0.18, 0.75, -1], length: 0.17, width: 0.018 },
-      { dir: [-0.18, 0.75, -1], length: 0.17, width: 0.018 },
+      { dir: [0, 1, -0.55], length: 0.3, width: 0.026 },
+      { dir: [0.2, 1, -0.75], length: 0.24, width: 0.022 },
+      { dir: [-0.2, 1, -0.75], length: 0.24, width: 0.022 },
     ],
-    0.06,
+    0.08,
   );
   // Streaming tail plumes fanned out behind
   const tail = joint(body, 'tail', [0, 0.06, -0.27]);
@@ -1788,6 +1799,19 @@ function brambleGolem(root: THREE.Group, p: Palette): void {
     ],
     0.1,
   );
+  // Leaves sprout at the branch tips and moss hangs from the jaw, so it reads as a walking tree
+  for (const [x, y, z, length] of [
+    [0.5, 1, -0.05, 0.4],
+    [-0.55, 1, 0, 0.42],
+    [0.05, 1, -0.5, 0.32],
+    [1, 0.6, -0.25, 0.26],
+    [-1, 0.55, -0.25, 0.26],
+  ]) {
+    const tip = new THREE.Vector3(x, y, z).normalize().multiplyScalar(0.1 + length * 0.9);
+    put(head, ball(0.075), moss, [tip.x, tip.y, tip.z], undefined, [1.25, 0.85, 1.1]);
+    put(head, ball(0.055), deepMoss, [tip.x * 0.92, tip.y * 0.92 - 0.035, tip.z * 0.92]);
+  }
+  put(head, ball(0.075), deepMoss, [0, -0.13, 0.08], undefined, [1.35, 0.8, 0.7]);
   // Long, heavy arms hanging past the knees, ending in root claws
   for (const side of [-1, 1]) {
     const arm = joint(torso, side < 0 ? 'arm-left' : 'arm-right', [side * 0.31, 0.36, 0.02]);

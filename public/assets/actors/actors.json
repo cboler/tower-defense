@@ -152,8 +152,8 @@
     },
     "swiftbeak": {
       "file": "monsters/swiftbeak.png",
-      "cell": [52, 56],
-      "anchor": [26, 44],
+      "cell": [56, 64],
+      "anchor": [28, 51],
       "directions": 8,
       "animations": { "walk": { "row": 0, "frames": 8 } }
     },
