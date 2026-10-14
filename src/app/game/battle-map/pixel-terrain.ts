@@ -599,10 +599,52 @@ export function paintCliff(): { color: Raster; glow: Raster } {
   return { color, glow };
 }
 
-/** Pixel-art texture: crisp up close, smoothed only when shrunk far below its pixel size. */
+/** Sharp-bilinear sampling (see SPRITE_SAMPLE), keeping mipmaps for distant faces. */
+const SHARP_SAMPLE = /* glsl */ `
+  vec4 sharpSample(sampler2D tex, vec2 uv) {
+    vec2 size = vec2(textureSize(tex, 0));
+    vec2 texel = uv * size;
+    vec2 seam = floor(texel + 0.5);
+    texel = seam + clamp((texel - seam) / max(fwidth(texel), vec2(1e-4)), -0.5, 0.5);
+    return textureGrad(tex, texel / size, dFdx(uv), dFdy(uv));
+  }
+`;
+
+/**
+ * Draws a lit material's colour and glow maps texel by texel with a one-screen-pixel seam, so
+ * the painting stays even at any zoom and doesn't crawl as the camera moves. Its textures
+ * must be linearly filtered (as `rasterTexture` makes them).
+ */
+export function sharpenPixels<T extends THREE.Material>(material: T): T {
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', `${SHARP_SAMPLE}\nvoid main() {`)
+      .replace(
+        '#include <map_fragment>',
+        THREE.ShaderChunk.map_fragment.replace(
+          'texture2D( map, vMapUv )',
+          'sharpSample( map, vMapUv )',
+        ),
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        THREE.ShaderChunk.emissivemap_fragment.replace(
+          'texture2D( emissiveMap, vEmissiveMapUv )',
+          'sharpSample( emissiveMap, vEmissiveMapUv )',
+        ),
+      );
+  };
+  material.customProgramCacheKey = () => 'sharp-pixels';
+  return material;
+}
+
+/**
+ * Pixel-art texture, filtered linearly for `sharpenPixels`: crisp up close, smoothed only when
+ * shrunk far below its pixel size.
+ */
 export function rasterTexture(raster: Raster, srgb = true): THREE.DataTexture {
   const texture = new THREE.DataTexture(raster.data, raster.width, raster.height);
-  texture.magFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.LinearFilter;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.generateMipmaps = true;
   texture.wrapS = THREE.RepeatWrapping;

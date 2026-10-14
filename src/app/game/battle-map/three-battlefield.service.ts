@@ -16,6 +16,7 @@ import {
   paintCliff,
   paintSides,
   rasterTexture,
+  sharpenPixels,
   sideBand,
 } from './pixel-terrain';
 import {
@@ -1199,14 +1200,16 @@ export class ThreeBattlefieldService {
     this.pixelTextures.push(cliffMap, veins);
     const cliff = new THREE.Mesh(
       islandCliffGeometry(cols / 2 - 0.01, rows / 2 - 0.01, y - height / 2 + 0.02),
-      new THREE.MeshStandardMaterial({
-        map: cliffMap,
-        emissiveMap: veins,
-        emissive: 0xffffff,
-        emissiveIntensity: 1.2,
-        roughness: 0.95,
-        metalness: 0,
-      }),
+      sharpenPixels(
+        new THREE.MeshStandardMaterial({
+          map: cliffMap,
+          emissiveMap: veins,
+          emissive: 0xffffff,
+          emissiveIntensity: 1.2,
+          roughness: 0.95,
+          metalness: 0,
+        }),
+      ),
     );
     cliff.receiveShadow = true;
     this.terrainGroup.add(cliff);
@@ -1358,15 +1361,19 @@ export class ThreeBattlefieldService {
     this.pixelTextures.push(board, runes, walls);
     return {
       // Runes and lava light up through the emissive painting and catch the bloom
-      top: new THREE.MeshStandardMaterial({
-        map: board,
-        emissiveMap: runes,
-        emissive: 0xffffff,
-        emissiveIntensity: 1.6,
-        roughness: 0.92,
-        metalness: 0,
-      }),
-      side: new THREE.MeshStandardMaterial({ map: walls, roughness: 0.95, metalness: 0 }),
+      top: sharpenPixels(
+        new THREE.MeshStandardMaterial({
+          map: board,
+          emissiveMap: runes,
+          emissive: 0xffffff,
+          emissiveIntensity: 1.6,
+          roughness: 0.92,
+          metalness: 0,
+        }),
+      ),
+      side: sharpenPixels(
+        new THREE.MeshStandardMaterial({ map: walls, roughness: 0.95, metalness: 0 }),
+      ),
     };
   }
 
