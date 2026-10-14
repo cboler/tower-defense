@@ -364,12 +364,13 @@ function humanoid(root: THREE.Group, p: Palette, o: Outfit): Rig {
   };
 }
 
-/** Big chibi eyes: dark ovals with a catch-light. */
+/** Big chibi eyes: dark ovals with a catch-light. Named `eye` so the sprite baker can find them. */
 function eyes(head: THREE.Object3D, p: Palette, iris = 0x2b2140, y = -0.035, gap = 0.068): void {
   for (const side of [-1, 1]) {
     const z = Math.sqrt(HEAD_R ** 2 - gap ** 2 - y ** 2) - 0.004;
-    put(head, ball(0.026), p.paint(iris), [side * gap, y, z], undefined, [0.75, 1.25, 0.5]);
-    put(head, ball(0.008), p.paint(0xffffff), [side * gap + 0.008, y + 0.012, z + 0.011]);
+    const eye = joint(head, 'eye', [side * gap, y, z]);
+    put(eye, ball(0.026), p.paint(iris), [0, 0, 0], undefined, [0.75, 1.25, 0.5]);
+    put(eye, ball(0.008), p.paint(0xffffff), [0.008, 0.012, 0.011]);
   }
 }
 
@@ -1525,7 +1526,11 @@ function pyreCore(root: THREE.Group, p: Palette): void {
   }
 }
 
-/** Bat-like wing membrane with finger spars; extends along +x, mirrored for the left side. */
+/**
+ * Bat wing: an arm rising to a clawed wrist, fingers fanning out from it, and a membrane
+ * scalloped between their tips, about as tall as it is wide like the art's. Extends along +x,
+ * mirrored for the left side.
+ */
 function batWing(
   root: THREE.Object3D,
   p: Palette,
@@ -1536,15 +1541,26 @@ function batWing(
   spar: number,
 ): void {
   const wing = joint(root, side < 0 ? 'wing-left' : 'wing-right', at);
+  // Swept back, so the membrane still shows in profile instead of thinning to a line
+  wing.rotation.y = side * 0.5;
+  const shoulder: [number, number] = [0, 0.06];
+  const wrist: [number, number] = [0.36, 0.5];
+  const fingers: [number, number][] = [
+    [1, 0.56],
+    [0.86, -0.04],
+    [0.56, -0.3],
+  ];
   const points: [number, number][] = [
-    [0, 0.08],
-    [0.45, 0.42],
-    [1, 0.3],
-    [0.82, 0.05],
-    [0.62, -0.12],
-    [0.42, 0.02],
-    [0.22, -0.16],
-    [0.08, -0.08],
+    shoulder,
+    wrist,
+    fingers[0],
+    [0.76, 0.26],
+    fingers[1],
+    [0.6, 0.05],
+    fingers[2],
+    [0.36, -0.05],
+    [0.16, -0.24],
+    [0.04, -0.08],
   ];
   const shape = points.map(([x, y]): [number, number] => [side * x * span, y * span]);
   put(
@@ -1553,22 +1569,30 @@ function batWing(
     p.paint(membrane, true),
     [0, 0, 0],
   );
-  for (const [x, y] of [
-    [0.45, 0.42],
-    [1, 0.3],
-    [0.62, -0.12],
-    [0.22, -0.16],
-  ]) {
-    const length = Math.hypot(x, y) * span;
+  const bone = p.paint(spar);
+  const thick = 0.012 * (span / 0.5);
+  const strut = (from: [number, number], to: [number, number], scale = 1) => {
+    const length = Math.hypot(to[0] - from[0], to[1] - from[1]) * span;
     aim(
       wing,
-      limb(0.012 * (span / 0.5), length),
-      p.paint(spar),
-      [0, 0, 0.01],
-      [side * x, y, 0],
+      limb(thick * scale, length),
+      bone,
+      [side * from[0] * span, from[1] * span, 0.01],
+      [side * (to[0] - from[0]), to[1] - from[1], 0],
       length,
     );
-  }
+  };
+  strut(shoulder, wrist, 1.4);
+  for (const tip of fingers) strut(wrist, tip);
+  const claw = 0.07 * span;
+  aim(
+    wing,
+    spike(thick * 1.5, claw, 5),
+    bone,
+    [side * wrist[0] * span, wrist[1] * span, 0.01],
+    [side * 0.3, 1, 0],
+    claw,
+  );
 }
 
 function dreadGaze(root: THREE.Group, p: Palette): void {
@@ -1590,12 +1614,12 @@ function dreadGaze(root: THREE.Group, p: Palette): void {
       [side * 0.3, 0.1, -0.8],
     ];
     dirs.forEach((dir, i) => {
-      const length = 0.11 - i * 0.015;
-      aim(root, spike(0.045 - i * 0.012, length + 0.02, 8), horn, from, dir, length + 0.02);
+      const length = 0.15 - i * 0.02;
+      aim(root, spike(0.058 - i * 0.015, length + 0.02, 8), horn, from, dir, length + 0.02);
       const d = new THREE.Vector3(...dir).normalize().multiplyScalar(length);
       from = [from[0] + d.x, from[1] + d.y, from[2] + d.z];
     });
-    batWing(root, p, side, [side * 0.2, 0.58, -0.1], 0.5, 0x9c2b2b, 0x5a1a1a);
+    batWing(root, p, side, [side * 0.2, 0.56, -0.1], 0.6, 0x9c2b2b, 0x5a1a1a);
   }
   // Small dangling limbs
   for (const side of [-1, 1]) {
@@ -1835,7 +1859,7 @@ function skySovereign(root: THREE.Group, p: Palette): void {
   }
   // Broad wings and a long tapering tail
   for (const side of [-1, 1])
-    batWing(body, p, side, [side * 0.15, 0.12, -0.05], 0.62, 0x3fb3a8, 0x1f6f75);
+    batWing(body, p, side, [side * 0.15, 0.12, -0.05], 0.85, 0x3fb3a8, 0x1f6f75);
   const tail = joint(body, 'tail', [0, -0.02, -0.26]);
   let from: Vec = [0, 0, 0];
   for (let i = 0; i < 4; i++) {

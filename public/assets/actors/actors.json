@@ -23,8 +23,8 @@
     },
     "elementalist": {
       "file": "heroes/elementalist.png",
-      "cell": [48, 68],
-      "anchor": [24, 57],
+      "cell": [56, 76],
+      "anchor": [28, 64],
       "directions": 8,
       "animations": {
         "idle": { "row": 0, "frames": 4 },
@@ -53,8 +53,8 @@
     },
     "rogue": {
       "file": "heroes/rogue.png",
-      "cell": [36, 52],
-      "anchor": [18, 43],
+      "cell": [40, 56],
+      "anchor": [20, 47],
       "directions": 8,
       "animations": {
         "idle": { "row": 0, "frames": 4 },
@@ -93,8 +93,8 @@
     },
     "ninja": {
       "file": "heroes/ninja.png",
-      "cell": [44, 56],
-      "anchor": [22, 45],
+      "cell": [52, 60],
+      "anchor": [26, 48],
       "directions": 8,
       "animations": {
         "idle": { "row": 0, "frames": 4 },
@@ -103,8 +103,8 @@
     },
     "samurai": {
       "file": "heroes/samurai.png",
-      "cell": [48, 56],
-      "anchor": [24, 45],
+      "cell": [48, 60],
+      "anchor": [24, 49],
       "directions": 8,
       "animations": {
         "idle": { "row": 0, "frames": 4 },
@@ -123,8 +123,8 @@
     },
     "astrologian": {
       "file": "heroes/astrologian.png",
-      "cell": [40, 52],
-      "anchor": [20, 43],
+      "cell": [40, 56],
+      "anchor": [20, 47],
       "directions": 8,
       "animations": {
         "idle": { "row": 0, "frames": 4 },
@@ -173,8 +173,8 @@
     },
     "dread-gaze": {
       "file": "monsters/dread-gaze.png",
-      "cell": [56, 60],
-      "anchor": [28, 48],
+      "cell": [68, 68],
+      "anchor": [34, 55],
       "directions": 8,
       "animations": { "walk": { "row": 0, "frames": 8 } }
     },
@@ -194,8 +194,8 @@
     },
     "sky-sovereign": {
       "file": "monsters/sky-sovereign.png",
-      "cell": [88, 92],
-      "anchor": [44, 73],
+      "cell": [112, 116],
+      "anchor": [56, 92],
       "directions": 8,
       "animations": { "walk": { "row": 0, "frames": 8 } }
     }

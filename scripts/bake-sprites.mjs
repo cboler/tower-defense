@@ -54,6 +54,21 @@ function emphasiseWeapons(model, id) {
   else if (offhand.getObjectByName('bow')) offhand.scale.multiplyScalar(1.2);
   else offhand.scale.multiply(new THREE.Vector3(...WEAPON_EMPHASIS.default));
 }
+/**
+ * Faces must survive a 40px sprite seen from above: heroes get a bigger head tipped up toward
+ * the viewer, so brims, hoods and fringes stop hiding the eyes, and bigger eyes. Sprites only.
+ */
+const FACE_EMPHASIS = { head: 1.14, tilt: 0.2, eyes: 1.45 };
+
+function emphasiseFace(model) {
+  const head = model.getObjectByName('head');
+  if (!head) return;
+  head.scale.multiplyScalar(FACE_EMPHASIS.head);
+  head.rotation.x -= FACE_EMPHASIS.tilt;
+  head.traverse((part) => {
+    if (part.name === 'eye') part.scale.multiplyScalar(FACE_EMPHASIS.eyes);
+  });
+}
 const IDLE_FRAMES = 4;
 const ATTACK_FRAMES = 8;
 const WALK_FRAMES = 8;
@@ -87,6 +102,7 @@ async function piece(kind, id, glb, settings) {
   }
   model.rotation.set(0, 0, 0);
   emphasiseWeapons(model, id);
+  if (kind === 'heroes') emphasiseFace(model);
   // Monsters are scaled on the board; bake them at that size so every sprite shares one pixel grid
   if (kind === 'monsters') model.scale.setScalar(BOSSES.has(id) ? 1.35 : 0.95);
   const holder = new THREE.Group();
