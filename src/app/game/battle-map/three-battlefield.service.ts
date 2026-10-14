@@ -500,11 +500,14 @@ export class ThreeBattlefieldService {
     this.portraitBoard.set(portrait);
 
     const preset = this.activeCameraMode();
+    // HD-2D's overhead view stops short of straight down, so the sprites (drawn from the side)
+    // still face it rather than lying flat
+    const overheadTilt = this.look() === 'hd2d' ? 6 : 0.05;
     const dir =
       preset === 'isometric'
         ? this.tmpVec.set(-9.5, 15, 10.5)
         : preset === 'topdown'
-          ? this.tmpVec.set(0, 18.5, 0.05)
+          ? this.tmpVec.set(0, 18.5, overheadTilt)
           : this.tmpVec.set(0, 14.5, 12.5);
     if (portrait) dir.set(dir.z, dir.y, -dir.x);
     dir.normalize();
@@ -591,7 +594,11 @@ export class ThreeBattlefieldService {
    */
   private buildPixelSky(): void {
     if (!this.scene || !this.environmentGroup) return;
-    this.skyTexture ??= spriteTexture(paintSky());
+    if (!this.skyTexture) {
+      this.skyTexture = spriteTexture(paintSky());
+      this.skyTexture.magFilter = THREE.NearestFilter;
+      this.skyTexture.minFilter = THREE.NearestFilter;
+    }
     this.scene.background = this.skyTexture;
     this.fitSky();
     this.scene.fog = new THREE.FogExp2(0x2d4b79, 0.012);
@@ -3411,8 +3418,35 @@ export class ThreeBattlefieldService {
 
   private render(): void {
     if (!this.renderer || !this.scene || !this.camera) return;
-    if (this.post && this.look() === 'hd2d') this.post.render();
-    else this.renderer.render(this.scene, this.camera);
+    if (this.post && this.look() === 'hd2d') {
+      this.focusOnBoard(this.post);
+      this.post.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
+  }
+
+  /**
+   * Fits the tilt-shift focus band to the board as it lands on screen, pieces standing on its
+   * back row included, so play stays sharp on any canvas and only the scenery beyond blurs.
+   */
+  private focusOnBoard(post: Hd2dPost): void {
+    if (!this.camera) return;
+    const halfW = this.gridHalfW + 0.5;
+    const halfD = this.gridHalfH + 0.5;
+    let low = Infinity;
+    let high = -Infinity;
+    for (const x of [-halfW, halfW]) {
+      for (const z of [-halfD, halfD]) {
+        for (const y of [0.1, 1.3]) {
+          const v = this.projectVec.set(x, y, z).project(this.camera);
+          low = Math.min(low, (v.y + 1) / 2);
+          high = Math.max(high, (v.y + 1) / 2);
+        }
+      }
+    }
+    // Capped, so tall canvases keep the miniature-diorama blur on the scenery
+    post.setFocus((low + high) / 2, THREE.MathUtils.clamp((high - low) / 2, 0.22, 0.38));
   }
 
   // ---------------------------------------------------------------------------

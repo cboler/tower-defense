@@ -88,6 +88,22 @@ export const SPRITE_VERTEX = /* glsl */ `
   }
 `;
 
+/**
+ * Sprites rarely land on a whole number of screen pixels per texel, so nearest sampling would
+ * draw texels unevenly wide and make them crawl as pieces move. Instead each texel is drawn
+ * flat with a one-screen-pixel blend into its neighbour ("sharp bilinear"): crisp at any scale,
+ * steady in motion. Needs linear filtering on the texture.
+ */
+export const SPRITE_SAMPLE = /* glsl */ `
+  uniform vec2 texSize;
+  vec2 sharpUv(vec2 uv) {
+    vec2 texel = uv * texSize;
+    vec2 seam = floor(texel + 0.5);
+    texel = seam + clamp((texel - seam) / max(fwidth(texel), vec2(1e-4)), -0.5, 0.5);
+    return texel / texSize;
+  }
+`;
+
 export const SPRITE_FRAGMENT = /* glsl */ `
   #include <common>
   #include <fog_pars_fragment>
@@ -96,8 +112,9 @@ export const SPRITE_FRAGMENT = /* glsl */ `
   uniform float flash;
   uniform float opacity;
   varying vec2 vUv;
+  ${SPRITE_SAMPLE}
   void main() {
-    vec4 texel = texture2D(map, vUv);
+    vec4 texel = texture2D(map, sharpUv(vUv));
     if (texel.a < 0.5) discard;
     gl_FragColor = vec4(mix(texel.rgb * tint, vec3(1.0), flash), opacity);
     #include <colorspace_fragment>
@@ -163,6 +180,7 @@ export class SpriteActor implements PieceRig {
       uniforms: {
         ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
         map: { value: texture },
+        texSize: { value: new THREE.Vector2(image.width, image.height) },
         frame: { value: new THREE.Vector4(0, 0, 1 / this.columns, 1 / this.rows) },
         tint: { value: new THREE.Color(1, 1, 1) },
         flash: { value: 0 },

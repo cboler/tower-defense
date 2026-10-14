@@ -104,6 +104,17 @@ export class Hd2dPost {
     (this.blurY.uniforms['direction'].value as THREE.Vector2).set(0, BLUR_PIXELS / height);
   }
 
+  /**
+   * Centres the focus band on screen height `centre` (0 bottom, 1 top), `half` of the screen
+   * tall either side, so whatever lies inside stays sharp.
+   */
+  public setFocus(centre: number, half: number): void {
+    for (const pass of [this.blurX, this.blurY]) {
+      pass.uniforms['focus'].value = centre;
+      pass.uniforms['band'].value = half;
+    }
+  }
+
   public render(): void {
     this.composer.render();
   }

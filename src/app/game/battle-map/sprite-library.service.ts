@@ -41,9 +41,9 @@ export class SpriteLibraryService {
       (['heroes', 'monsters'] as const).flatMap((kind) =>
         Object.entries(sheets[kind]).map(async ([id, sheet]) => {
           const texture = await loader.loadAsync(ACTOR_ROOT + sheet.file);
-          // Pixel art: no smoothing, no mipmaps, exact sRGB colours
-          texture.magFilter = THREE.NearestFilter;
-          texture.minFilter = THREE.NearestFilter;
+          // Pixel art: linear filtering only for the sprite shader's sharp sampling, no mipmaps
+          texture.magFilter = THREE.LinearFilter;
+          texture.minFilter = THREE.LinearFilter;
           texture.generateMipmaps = false;
           texture.colorSpace = THREE.SRGBColorSpace;
           this.textures.set(`${kind}/${id}`, texture);

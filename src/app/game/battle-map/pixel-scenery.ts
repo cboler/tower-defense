@@ -31,7 +31,10 @@ export const PROP_PIXELS_PER_TILE = 36;
 /** World size of one prop pixel on the board, matching the characters. */
 export const PROP_PIXEL = SPRITE_SCALE / PROP_PIXELS_PER_TILE;
 
-/** A pixel-art texture with its top row at the top, like a loaded image. */
+/**
+ * A pixel-art texture with its top row at the top, like a loaded image. Filtered linearly for
+ * the sprites' sharp sampling (see SPRITE_SAMPLE); set nearest filtering to draw it plainly.
+ */
 export function spriteTexture(raster: Raster): THREE.DataTexture {
   const { width, height } = raster;
   const row = width * 4;
@@ -40,8 +43,8 @@ export function spriteTexture(raster: Raster): THREE.DataTexture {
     data.set(raster.data.subarray(y * row, (y + 1) * row), (height - 1 - y) * row);
   }
   const texture = new THREE.DataTexture(data, width, height);
-  texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearFilter;
   texture.generateMipmaps = false;
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.needsUpdate = true;
@@ -84,6 +87,7 @@ export class ScenerySprite {
       uniforms: {
         ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
         map: { value: texture },
+        texSize: { value: new THREE.Vector2(art.raster.width, art.raster.height) },
         frame: { value: new THREE.Vector4(0, 0, 1 / art.frames, 1) },
         tint: { value: new THREE.Color(1, 1, 1) },
         flash: { value: 0 },
