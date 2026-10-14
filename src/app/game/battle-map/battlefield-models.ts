@@ -364,13 +364,88 @@ function humanoid(root: THREE.Group, p: Palette, o: Outfit): Rig {
   };
 }
 
-/** Big chibi eyes: dark ovals with a catch-light. Named `eye` so the sprite baker can find them. */
-function eyes(head: THREE.Object3D, p: Palette, iris = 0x2b2140, y = -0.035, gap = 0.068): void {
+/** A colour scaled toward black (`f` below 1). */
+function shade(color: number, f: number): number {
+  return new THREE.Color(color).multiplyScalar(f).getHex();
+}
+
+/** A colour washed `t` of the way toward white. */
+function lighten(color: number, t: number): number {
+  return new THREE.Color(color).lerp(new THREE.Color(0xffffff), t).getHex();
+}
+
+/**
+ * One anime eye: a dark outer iris, a lighter lower iris, the pupil and two catch-lights. Named
+ * `eye` so the sprite baker can find it.
+ */
+function animeEye(
+  parent: THREE.Object3D,
+  p: Palette,
+  iris: number,
+  at: Vec,
+  size = 1,
+): THREE.Group {
+  const eye = joint(parent, 'eye', at);
+  eye.scale.setScalar(size);
+  put(eye, ball(0.032), p.paint(shade(iris, 0.6)), [0, 0, 0], undefined, [0.78, 1.22, 0.45]);
+  put(
+    eye,
+    ball(0.022),
+    p.paint(lighten(iris, 0.35)),
+    [0, -0.013, 0.006],
+    undefined,
+    [0.78, 0.92, 0.45],
+  );
+  put(eye, ball(0.012), p.paint(0x14101c), [0, 0.004, 0.009], undefined, [0.8, 1.2, 0.4]);
+  put(eye, ball(0.0095), p.paint(0xffffff), [0.01, 0.018, 0.013]);
+  put(eye, ball(0.005), p.paint(0xffffff), [-0.009, -0.014, 0.012]);
+  return eye;
+}
+
+/** Where a point on the face (x, y from the head's centre) meets the head's surface. */
+const faceZ = (x: number, y: number) => Math.sqrt(HEAD_R ** 2 - x ** 2 - y ** 2);
+
+interface FaceOptions {
+  /** Brow colour (usually a shade darker than the hair); null for none. */
+  brow?: number | null;
+  /** A small mouth below the eyes. */
+  mouth?: boolean;
+  /** Bold brows for fighters, calm ones for healers, scholars and the Bard. */
+  mood?: 'bold' | 'calm';
+}
+
+/**
+ * Big chibi eyes (dark ovals with a catch-light), set brows and a small mouth, so faces carry
+ * expression like the painted art. Eyes are named `eye` so the sprite baker can find them.
+ */
+function eyes(
+  head: THREE.Object3D,
+  p: Palette,
+  iris = 0x2b2140,
+  y = -0.048,
+  gap = 0.068,
+  face: FaceOptions = {},
+): void {
+  const brow = face.brow === undefined ? 0x3a2618 : face.brow;
   for (const side of [-1, 1]) {
-    const z = Math.sqrt(HEAD_R ** 2 - gap ** 2 - y ** 2) - 0.004;
-    const eye = joint(head, 'eye', [side * gap, y, z]);
-    put(eye, ball(0.026), p.paint(iris), [0, 0, 0], undefined, [0.75, 1.25, 0.5]);
-    put(eye, ball(0.008), p.paint(0xffffff), [0.008, 0.012, 0.011]);
+    animeEye(head, p, iris, [side * gap, y, faceZ(gap, y) - 0.004]);
+    if (brow !== null) {
+      // Bold brows dip toward the nose; calm ones lift there
+      const slant = face.mood === 'calm' ? -0.14 : 0.2;
+      const bx = side * (gap + 0.004);
+      const by = y + 0.048;
+      put(
+        head,
+        block(0.05, 0.013, 0.014, 0.004),
+        p.paint(brow),
+        [bx, by, faceZ(bx, by) - 0.002],
+        [0, side * 0.32, side * slant],
+      );
+    }
+  }
+  if (face.mouth !== false) {
+    const my = y - 0.068;
+    put(head, block(0.036, 0.009, 0.01, 0.003), p.paint(0x7a3b3b), [0, my, faceZ(0, my) - 0.002]);
   }
 }
 
@@ -496,7 +571,7 @@ function bladeWarden(root: THREE.Group, p: Palette): void {
   }
   // Spiky brown hair, swept up and back
   const hair = p.paint(0x6e4227);
-  eyes(rig.head, p, 0x3b5d7a);
+  eyes(rig.head, p, 0x3b5d7a, undefined, undefined, { brow: 0x4a2c18 });
   hairCap(rig.head, hair, 0.44);
   tufts(rig.head, hair, [
     { dir: [0, 1, 0.35], length: 0.13, width: 0.06 },
@@ -580,7 +655,7 @@ function ranger(root: THREE.Group, p: Palette): void {
   }
   // Blond hair, pointed ears and a feathered cap
   const hair = p.paint(0xe6c46c);
-  eyes(rig.head, p, 0x3f6fa0);
+  eyes(rig.head, p, 0x3f6fa0, undefined, undefined, { brow: 0xa8823a, mood: 'calm' });
   hairCap(rig.head, hair, 0.5);
   for (const side of [-1, 1]) {
     aim(
@@ -704,7 +779,7 @@ function chronomancer(root: THREE.Group, p: Palette): void {
   put(rig.torso, ball(0.022), p.glow(0x9fd8ff), [0, 0.19, 0.138], undefined, [1, 1, 0.5]);
   // Blond bob framing the face
   const hair = p.paint(0xe8c46c);
-  eyes(rig.head, p, 0x3b6a8c);
+  eyes(rig.head, p, 0x3b6a8c, undefined, undefined, { brow: 0xa8823a, mood: 'calm' });
   hairCap(rig.head, hair, 0.47);
   for (const side of [-1, 1]) {
     put(rig.head, ball(0.08), hair, [side * 0.135, -0.07, 0.0], undefined, [0.65, 1.3, 1]);
@@ -758,7 +833,7 @@ function oracle(root: THREE.Group, p: Palette): void {
   bellSleeves(rig, robeMat, p.paint(red));
   // Hood over light brown hair
   const hair = p.paint(0xb3794a);
-  eyes(rig.head, p, 0x4c6f9c);
+  eyes(rig.head, p, 0x4c6f9c, undefined, undefined, { brow: 0x7a4f2e, mood: 'calm' });
   hairCap(rig.head, hair, 0.47);
   for (const side of [-1, 1]) {
     put(rig.head, ball(0.07), hair, [side * 0.13, -0.08, 0.04], undefined, [0.6, 1.4, 0.9]);
@@ -805,7 +880,7 @@ function rogue(root: THREE.Group, p: Palette): void {
   }
   // Messy brown hair under a red bandana with trailing tails
   const hair = p.paint(0x6b3d22);
-  eyes(rig.head, p, 0x4a3326);
+  eyes(rig.head, p, 0x4a3326, undefined, undefined, { brow: 0x3d2414 });
   hairCap(rig.head, hair, 0.5);
   tufts(rig.head, hair, [
     { dir: [0.2, 1, 0.2], length: 0.09, width: 0.05 },
@@ -949,7 +1024,7 @@ function juggernaut(root: THREE.Group, p: Palette): void {
   }
   // Swept-back hair and a heavy brow
   const hair = p.paint(0x5a3720);
-  eyes(rig.head, p, 0x2a2118, -0.035, 0.062);
+  eyes(rig.head, p, 0x2a2118, -0.035, 0.062, { brow: null });
   for (const side of [-1, 1]) {
     put(
       rig.head,
@@ -1047,13 +1122,14 @@ function ninja(root: THREE.Group, p: Palette): void {
   // Masked face: only a band of skin and the eyes show
   put(rig.head, ball(0.075), p.paint(SKIN), [0, -0.025, 0.142], undefined, [2.05, 0.85, 0.7]);
   for (const side of [-1, 1]) {
+    // Narrowed eyes set on the band, under stern brows
+    animeEye(rig.head, p, 0x2f5f7a, [side * 0.062, -0.03, 0.19], 0.85).scale.y *= 0.8;
     put(
       rig.head,
-      ball(0.02),
-      p.paint(0x241a2a),
-      [side * 0.06, -0.025, 0.185],
-      undefined,
-      [1.1, 0.8, 0.5],
+      block(0.05, 0.012, 0.012, 0.004),
+      p.paint(0x1a1424),
+      [side * 0.064, 0.008, 0.19],
+      [0, side * 0.25, side * 0.22],
     );
   }
   // Hood knot with long tails streaming behind
@@ -1115,7 +1191,7 @@ function samurai(root: THREE.Group, p: Palette): void {
     );
   }
   // Kabuto: dark bowl, flared neck guard, golden crescent crest; black face mask
-  eyes(rig.head, p, 0x2a1d1a, -0.02);
+  eyes(rig.head, p, 0x2a1d1a, -0.02, undefined, { brow: 0x1a1210, mouth: false });
   put(rig.head, dome(HEAD_R + 0.025, Math.PI * 0.45), p.paint(black), [0, 0.01, -0.005]);
   put(
     rig.head,
@@ -1134,46 +1210,137 @@ function samurai(root: THREE.Group, p: Palette): void {
   put(rig.torso, tube(0.018, 0.018, 0.48), p.paint(black), [-0.16, 0.04, -0.02], [0.3, 0, 1.25]);
 }
 
-function paladin(root: THREE.Group, p: Palette): void {
-  const blue = 0x2c5cbe;
-  const rig = humanoid(root, p, {
-    skin: STEEL,
-    top: STEEL,
-    legs: STEEL_DARK,
-    boots: STEEL,
-    hand: STEEL_DARK,
-    belt: GOLD,
-  });
-  cape(rig, p.paint(blue, true), 0.48, 0.26);
-  put(rig.torso, block(0.15, 0.34, 0.024, 0.01), p.paint(blue), [0, 0.01, 0.128]);
-  put(rig.torso, block(0.16, 0.024, 0.03, 0.008), p.paint(GOLD), [0, -0.155, 0.13]);
-  put(rig.torso, gem(0.035), p.paint(GOLD), [0, 0.15, 0.142], undefined, [1.3, 1, 0.4]);
-  for (const arm of [rig.armL, rig.armR]) {
-    put(arm, dome(0.085, Math.PI * 0.55), p.paint(STEEL), [0, 0.015, 0]);
-    put(arm, hoop(0.07, 0.012), p.paint(GOLD), [0, -0.005, 0], [Math.PI / 2, 0, 0]);
+/**
+ * A broad holy blade: winged gold crossguard, a glowing blade wider than a longsword and a
+ * sky-blue gem at its root.
+ */
+function holyBlade(weapon: THREE.Object3D, p: Palette, length: number): void {
+  const gold = p.paint(GOLD);
+  const light = p.glow(0xfff1c4, 0.55);
+  put(weapon, tube(0.017, 0.017, 0.12), p.paint(LEATHER), [0, 0, 0]);
+  put(weapon, gem(0.028), gold, [0, -0.075, 0]);
+  put(weapon, block(0.19, 0.03, 0.04, 0.01), gold, [0, 0.07, 0]);
+  for (const side of [-1, 1]) {
+    put(weapon, spike(0.018, 0.07, 5), gold, [side * 0.105, 0.09, 0], [0, 0, -side * 0.75]);
   }
-  // Great helm: visor, gold ridge and a sweeping blue plume
+  put(weapon, block(0.07, length, 0.016, 0.006), light, [0, 0.085 + length / 2, 0]);
+  put(
+    weapon,
+    spike(0.035, 0.09, 4),
+    light,
+    [0, 0.13 + length, 0],
+    [0, Math.PI / 4, 0],
+    [1, 1, 0.3],
+  );
+  put(weapon, gem(0.02), p.glow(0x7dd3fc), [0, 0.11, 0.012], undefined, [1, 1.3, 0.6]);
+}
+
+/** A flat-topped heater shield: gold rim, white field and a crimson cross. */
+function heaterShield(offhand: THREE.Object3D, p: Palette, size: number): THREE.Group {
+  const shield = joint(offhand, 'shield', [-0.03, 0.02, 0.06]);
+  shield.rotation.set(0, -0.55, 0);
+  const heater: [number, number][] = [
+    [-0.13, 0.15],
+    [0.13, 0.15],
+    [0.13, 0.03],
+    [0.09, -0.09],
+    [0, -0.18],
+    [-0.09, -0.09],
+    [-0.13, 0.03],
+  ].map(([x, y]) => [x * size, y * size]);
+  put(shield, slab(heater, 0.03), p.paint(GOLD), [0, 0, 0]);
+  const inner = heater.map(([x, y]): [number, number] => [x * 0.82, y * 0.84 - 0.004]);
+  put(shield, slab(inner, 0.034), p.paint(0xf6f3ea), [0, 0, 0.002]);
+  const crimson = p.paint(0xb3263a);
+  put(shield, block(0.035 * size, 0.24 * size, 0.04, 0.008), crimson, [0, -0.01 * size, 0.004]);
+  put(shield, block(0.19 * size, 0.035 * size, 0.04, 0.008), crimson, [0, 0.05 * size, 0.004]);
+  put(shield, gem(0.03 * size), p.paint(GOLD), [0, 0.05 * size, 0.026], undefined, [1, 1, 0.5]);
+  return shield;
+}
+
+/**
+ * The Paladin is a holy knight, set well apart from the Blade Warden's steel and blue: ivory
+ * plate trimmed in gold, a white tabard with a gold sunburst, a crimson cape, a winged great
+ * helm under a faint halo, a broad glowing blade and a crimson-crossed heater shield.
+ */
+function paladin(root: THREE.Group, p: Palette): void {
+  const ivory = 0xe8e2d0;
+  const ivoryDark = 0xb7ae98;
+  const crimson = 0xa3223a;
+  const gold = p.paint(GOLD);
+  const rig = humanoid(root, p, {
+    skin: ivory,
+    top: ivory,
+    legs: ivoryDark,
+    boots: ivory,
+    hand: ivoryDark,
+    belt: GOLD,
+    buckle: GOLD,
+    bulk: 1.06,
+  });
+  cape(rig, p.paint(crimson, true), 0.5, 0.3);
+  // White tabard, gold hem and a gold sunburst on the chest
+  put(rig.torso, block(0.16, 0.36, 0.024, 0.01), p.paint(0xf6f3ea), [0, 0, 0.13]);
+  put(rig.torso, block(0.17, 0.026, 0.03, 0.008), gold, [0, -0.17, 0.132]);
+  put(rig.torso, gem(0.03), gold, [0, 0.15, 0.146], undefined, [1, 1, 0.4]);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const length = i % 2 ? 0.035 : 0.05;
+    aim(
+      rig.torso,
+      spike(0.009, length, 4),
+      gold,
+      [0, 0.15, 0.146],
+      [Math.cos(a), Math.sin(a), 0],
+      length,
+    );
+  }
+  // Broad pauldrons rimmed in gold
+  for (const arm of [rig.armL, rig.armR]) {
+    put(arm, dome(0.095, Math.PI * 0.55), p.paint(ivory), [0, 0.016, 0]);
+    put(arm, hoop(0.08, 0.013), gold, [0, -0.004, 0], [Math.PI / 2, 0, 0]);
+  }
+  // Great helm: gold brow band, a T visor, swept gold wings and a crimson plume
   const head = rig.head;
-  put(head, block(0.19, 0.03, 0.05, 0.01), p.paint(0x1f2633), [0, -0.02, 0.165]);
-  put(head, block(0.025, 0.2, 0.04, 0.01), p.paint(GOLD), [0, 0.05, 0.165], [-0.25, 0, 0]);
-  const plume = p.paint(0x2f74d8);
+  put(head, tube(HEAD_R + 0.008, HEAD_R + 0.008, 0.035, 20), gold, [0, 0.04, 0]);
+  put(head, block(0.17, 0.028, 0.04, 0.01), p.paint(0x1f2633), [0, -0.02, 0.168]);
+  put(head, block(0.032, 0.11, 0.04, 0.01), p.paint(0x1f2633), [0, -0.075, 0.158], [0.3, 0, 0]);
+  put(head, block(0.022, 0.12, 0.03, 0.008), gold, [0, 0.1, 0.15], [-0.6, 0, 0]);
+  const wing: [number, number][] = [
+    [0, 0],
+    [0.05, 0.02],
+    [0.11, 0.08],
+    [0.13, 0.16],
+    [0.08, 0.12],
+    [0.06, 0.08],
+    [0.03, 0.06],
+  ];
+  for (const side of [-1, 1]) {
+    const points = wing.map(([x, y]): [number, number] => [side * x, y]);
+    const feather = put(head, slab(side < 0 ? [...points].reverse() : points, 0.014), gold, [
+      side * 0.16,
+      0.02,
+      -0.02,
+    ]);
+    feather.rotation.y = side * 0.6;
+  }
   for (let i = 0; i < 4; i++) {
-    const a = 0.3 + i * 0.45;
+    const a = 0.35 + i * 0.42;
     put(
       head,
-      ball(0.06 - i * 0.006),
-      plume,
-      [0, 0.17 + Math.cos(a) * 0.06, -Math.sin(a) * 0.14],
+      ball(0.058 - i * 0.006),
+      p.paint(i % 2 ? 0xf6f3ea : crimson),
+      [0, 0.17 + Math.cos(a) * 0.07, -Math.sin(a) * 0.15],
       undefined,
       [0.7, 1.3, 1],
     );
   }
-  // Radiant sword and a gold-crossed kite shield
+  // A faint halo behind the helm
+  put(head, hoop(0.19, 0.008), p.glow(0xffe7a0, 0.7), [0, 0.07, -0.16]);
+  // Holy blade and heater shield
   rest(rig.weapon, 0.55);
-  sword(rig.weapon, p, 0.46, p.glow(0xf4f6e6, 0.35));
-  const shield = kiteShield(rig.offhand, p, GOLD, blue, GOLD, 1.18);
-  put(shield, block(0.03, 0.22, 0.04, 0.008), p.paint(GOLD), [0, 0, 0.004]);
-  put(shield, block(0.16, 0.03, 0.04, 0.008), p.paint(GOLD), [0, 0.06, 0.004]);
+  holyBlade(rig.weapon, p, 0.46);
+  heaterShield(rig.offhand, p, 1.18);
 }
 
 function astrologian(root: THREE.Group, p: Palette): void {
@@ -1193,7 +1360,7 @@ function astrologian(root: THREE.Group, p: Palette): void {
   bellSleeves(rig, robeMat, p.paint(GOLD));
   // Dark hair under a starry hood
   const hair = p.paint(0x3b2a20);
-  eyes(rig.head, p, 0x2f2a3a);
+  eyes(rig.head, p, 0x2f2a3a, undefined, undefined, { brow: 0x2a1d14, mood: 'calm' });
   hairCap(rig.head, hair, 0.47);
   hood(rig.head, p.paint(navy, true));
   // Armillary sphere floating above the raised hand
@@ -1211,9 +1378,30 @@ function astrologian(root: THREE.Group, p: Palette): void {
   put(rig.offhand, tube(0.022, 0.022, 0.16), p.paint(0xeee2c4), [0, 0, 0.02], [0, 0, Math.PI / 2]);
 }
 
+/** Strings a polyline of limb segments through `points` (x, y in a vertical plane). */
+function polyline(
+  parent: THREE.Object3D,
+  points: [number, number][],
+  radius: number,
+  mat: THREE.Material,
+): void {
+  for (let i = 0; i < points.length - 1; i++) {
+    const [x0, y0] = points[i];
+    const [x1, y1] = points[i + 1];
+    const length = Math.hypot(x1 - x0, y1 - y0);
+    aim(parent, limb(radius, length), mat, [x0, y0, 0], [x1 - x0, y1 - y0, 0], length);
+  }
+}
+
+/**
+ * The Bard looks nothing like the Ranger or the Red Mage it shares a bow and a plumed hat with:
+ * a floppy beret with a brooch and ribbon, shoulder-length hair, a rose doublet under a scalloped
+ * capelet, a lute slung across the back and a golden harp-bow strung with glowing strings.
+ */
 function bard(root: THREE.Group, p: Palette): void {
   const rose = 0xd04a7a;
-  const wine = 0x8e2a57;
+  const wine = 0x7c2350;
+  const gold = p.paint(GOLD);
   const rig = humanoid(root, p, {
     skin: SKIN,
     top: 0xf3e6cf,
@@ -1222,54 +1410,110 @@ function bard(root: THREE.Group, p: Palette): void {
     belt: LEATHER,
     buckle: GOLD,
   });
-  // Rose doublet laced in gold over a cream shirt, puffed shoulders and a short wine cape
+  // Rose doublet laced in gold over a cream shirt, with puffed, slashed sleeves
   put(rig.torso, tube(0.118, 0.138, 0.2), p.paint(rose), [0, 0.15, 0]);
   put(rig.torso, tube(0.14, 0.18, 0.1), p.paint(rose), [0, -0.02, 0]);
   for (const y of [0.11, 0.17, 0.23]) {
-    put(rig.torso, block(0.06, 0.012, 0.02, 0.004), p.paint(GOLD), [0, y, 0.13]);
+    put(rig.torso, block(0.06, 0.012, 0.02, 0.004), gold, [0, y, 0.13]);
   }
   for (const arm of [rig.armL, rig.armR]) {
-    put(arm, ball(0.068), p.paint(rose), [0, 0, 0], undefined, [1, 0.85, 1]);
+    put(arm, ball(0.07), p.paint(0xf3e6cf), [0, -0.01, 0], undefined, [1, 0.9, 1]);
+    for (const a of [-0.9, 0, 0.9]) {
+      put(
+        arm,
+        block(0.018, 0.09, 0.02, 0.006),
+        p.paint(rose),
+        [Math.sin(a) * 0.062, -0.01, Math.cos(a) * 0.062],
+        [0, a, 0],
+      );
+    }
   }
-  cape(rig, p.paint(wine, true), 0.36, 0.2);
-  // Lyre slung across the back, peeking over the right shoulder: golden frame, glowing strings
-  const lyre = joint(rig.torso, 'lyre', [0.1, 0.3, -0.16]);
-  lyre.rotation.set(0, 0, -0.45);
-  put(lyre, hoop(0.085, 0.014, Math.PI * 1.2), p.paint(GOLD), [0, 0, 0], [0, 0, Math.PI * 0.9]);
-  put(lyre, block(0.16, 0.018, 0.018, 0.006), p.paint(GOLD), [0, 0.07, 0]);
-  for (const x of [-0.03, 0, 0.03]) {
-    put(lyre, tube(0.003, 0.003, 0.14, 4), p.glow(0xf9a8d4, 0.6), [x, 0, 0]);
+  // A short capelet over the shoulders, its hem scalloped
+  const capelet = p.paint(wine, true);
+  put(
+    rig.torso,
+    sheet(0.13, 0.19, 0.12, Math.PI * 0.2, Math.PI * 1.6),
+    capelet,
+    [0, 0.215, -0.005],
+  );
+  for (let i = 0; i < 9; i++) {
+    const a = Math.PI * 0.2 + (i / 8) * Math.PI * 1.6;
+    put(
+      rig.torso,
+      ball(0.032),
+      capelet,
+      [Math.sin(a) * 0.19, 0.155, Math.cos(a) * 0.19],
+      undefined,
+      [1, 0.7, 1],
+    );
   }
-  // Auburn hair under a cocked, wide-brimmed hat with a long pink plume
+  // Lute across the back, its neck rising over the left shoulder
+  const lute = joint(rig.torso, 'lute', [-0.04, 0.16, -0.17]);
+  lute.rotation.set(0, 0, 0.5);
+  const wood = p.paint(0xa8622e);
+  put(lute, ball(0.085), wood, [0, 0, 0], undefined, [1, 1.25, 0.5]);
+  put(lute, ball(0.022), p.paint(0x2b1a10), [0, 0.01, -0.04], undefined, [1, 1, 0.3]);
+  put(lute, block(0.034, 0.22, 0.02, 0.006), p.paint(0x5a3418), [0, 0.19, 0]);
+  put(lute, block(0.04, 0.07, 0.022, 0.006), p.paint(0x5a3418), [0, 0.31, 0.02], [0.6, 0, 0]);
+  // Shoulder-length auburn waves under a floppy wine beret with a gold brooch and a ribbon
   const hair = p.paint(0xa4532c);
-  eyes(rig.head, p, 0x5a3a6e);
+  eyes(rig.head, p, 0x5a3a6e, undefined, undefined, { brow: 0x6e3418, mood: 'calm' });
   hairCap(rig.head, hair, 0.5);
   for (const side of [-1, 1]) {
-    put(rig.head, ball(0.06), hair, [side * 0.14, -0.07, 0.03], undefined, [0.7, 1.3, 0.9]);
+    for (let i = 0; i < 3; i++) {
+      put(
+        rig.head,
+        ball(0.062 - i * 0.006),
+        hair,
+        [side * (0.145 - i * 0.01), -0.07 - i * 0.06, 0.01 - i * 0.03],
+        undefined,
+        [0.75, 1.1, 0.9],
+      );
+    }
   }
-  const hat = p.paint(wine);
-  const tilt: Vec = [-0.15, 0, 0.12];
-  put(rig.head, tube(0.3, 0.3, 0.02, 20), hat, [0, 0.11, -0.01], tilt);
-  put(rig.head, tube(0.13, 0.17, 0.13, 16), hat, [0.008, 0.18, -0.02], tilt);
-  put(rig.head, tube(0.168, 0.172, 0.03, 16), p.paint(GOLD), [0.004, 0.135, -0.014], tilt);
-  for (const [color, from, dir, length] of [
-    [0xfbcfe8, [0.12, 0.2, -0.04], [0.55, 0.4, -1], 0.42],
-    [0xffffff, [0.1, 0.19, -0.06], [0.3, 0.25, -1], 0.3],
-  ] as [number, Vec, Vec, number][]) {
-    aim(rig.head, spike(0.045, length, 6), p.paint(color), from, dir, length).scale.set(1, 1, 0.3);
+  put(rig.head, ball(0.1), hair, [0, -0.13, -0.09], undefined, [1.4, 1, 0.8]);
+  const beret = joint(rig.head, 'beret', [0.02, 0.13, -0.01]);
+  beret.rotation.set(-0.15, 0, -0.32);
+  put(beret, ball(0.205), p.paint(wine), [0, 0, 0], undefined, [1.15, 0.36, 1.1]);
+  put(beret, tube(0.165, 0.17, 0.035, 18), p.paint(0x5e1a3c), [0, -0.03, 0]);
+  put(beret, gem(0.028), p.glow(0xf9a8d4, 0.6), [-0.15, 0.0, 0.1], undefined, [1, 1, 0.5]);
+  put(beret, hoop(0.032, 0.008), gold, [-0.15, 0.0, 0.1], [0, -0.6, 0]);
+  for (const [x, length, turn] of [
+    [-0.17, 0.2, 0.25],
+    [-0.15, 0.16, -0.05],
+  ]) {
+    aim(
+      beret,
+      block(0.026, length, 0.006, 0.002),
+      p.paint(rose),
+      [x, -0.02, 0.04],
+      [Math.sin(turn) * 0.4, -1, -0.3],
+      length,
+    );
   }
-  // Recurve bow held out in the left hand, strung with a singing pink string
+  // Golden harp-bow in the left hand: curling horns, a yoke and three glowing strings
   rest(rig.armL, -0.7);
   const bow = joint(rig.offhand, 'bow', [0, 0, 0.02]);
-  bow.rotation.set(0.7, 0, 0);
-  put(
-    bow,
-    hoop(0.24, 0.016, Math.PI * 0.95),
-    p.paint(0xb07040),
-    [0, 0, 0],
-    [0, Math.PI / 2, Math.PI / 2 + 0.08],
-  );
-  put(bow, tube(0.004, 0.004, 0.46, 4), p.glow(0xf9a8d4), [0, 0, -0.01]);
+  bow.rotation.set(0.7, Math.PI / 2 - 0.65, 0);
+  for (const side of [-1, 1]) {
+    polyline(
+      bow,
+      [
+        [side * 0.03, -0.21],
+        [side * 0.1, -0.12],
+        [side * 0.115, 0.04],
+        [side * 0.07, 0.18],
+        [side * 0.11, 0.25],
+      ],
+      0.014,
+      gold,
+    );
+  }
+  put(bow, block(0.08, 0.03, 0.03, 0.01), gold, [0, -0.215, 0]);
+  put(bow, block(0.17, 0.018, 0.02, 0.006), gold, [0, 0.17, 0]);
+  for (const x of [-0.04, 0, 0.04]) {
+    put(bow, tube(0.004, 0.004, 0.37, 4), p.glow(0xf9a8d4), [x, -0.02, 0]);
+  }
 }
 
 const HEROES: Record<

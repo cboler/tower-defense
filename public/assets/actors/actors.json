@@ -113,8 +113,8 @@
     },
     "paladin": {
       "file": "heroes/paladin.png",
-      "cell": [44, 60],
-      "anchor": [22, 49],
+      "cell": [48, 60],
+      "anchor": [24, 48],
       "directions": 8,
       "animations": {
         "idle": { "row": 0, "frames": 4 },
@@ -133,8 +133,8 @@
     },
     "bard": {
       "file": "heroes/bard.png",
-      "cell": [52, 64],
-      "anchor": [26, 52],
+      "cell": [44, 60],
+      "anchor": [22, 49],
       "directions": 8,
       "animations": {
         "idle": { "row": 0, "frames": 4 },

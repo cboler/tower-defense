@@ -43,7 +43,7 @@ const BOSSES = new Set(['sky-sovereign', 'bramble-golem']);
  * Pixel art exaggerates weapons so they survive a 40px sprite: blades and hafts get thicker
  * (x, z) and a little longer (y, along the weapon). Sprites only; the 3D look is untouched.
  */
-const WEAPON_EMPHASIS = { default: [1.8, 1.3, 1.8], juggernaut: [1.15, 1.15, 1.15], lancer: [1.8, 1.05, 1.8], chronomancer: [1.8, 1.0, 1.8], oracle: [1.8, 1.0, 1.8], elementalist: [1.4, 1.4, 1.4], astrologian: [1.4, 1.4, 1.4] };
+const WEAPON_EMPHASIS = { default: [1.8, 1.3, 1.8], paladin: [1.25, 1.15, 1.4], juggernaut: [1.15, 1.15, 1.15], lancer: [1.8, 1.05, 1.8], chronomancer: [1.8, 1.0, 1.8], oracle: [1.8, 1.0, 1.8], elementalist: [1.4, 1.4, 1.4], astrologian: [1.4, 1.4, 1.4] };
 
 function emphasiseWeapons(model, id) {
   const [x, y, z] = WEAPON_EMPHASIS[id] ?? WEAPON_EMPHASIS.default;
@@ -58,7 +58,7 @@ function emphasiseWeapons(model, id) {
  * Faces must survive a 40px sprite seen from above: heroes get a bigger head tipped up toward
  * the viewer, so brims, hoods and fringes stop hiding the eyes, and bigger eyes. Sprites only.
  */
-const FACE_EMPHASIS = { head: 1.14, tilt: 0.2, eyes: 1.45 };
+const FACE_EMPHASIS = { head: 1.14, tilt: 0.2, eyes: 1.2 };
 
 function emphasiseFace(model) {
   const head = model.getObjectByName('head');
