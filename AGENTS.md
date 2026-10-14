@@ -143,8 +143,16 @@ clouds and the sky as pixel-art frame strips (a breeze, a glint, a turn) at the 
 per tile, lit from the upper left with a 1px ink outline. In HD-2D the board sits on a one-tile rim
 of wild meadow (`R` ground) above a painted cliff that tapers to a keel; `pixel-scenery.ts` scatters
 props over the rim per map theme (`SCENERY_THEMES`) and hides tall ones that would stand between the
-camera and the board. Sprites lean back at most 60° (`MAX_SPRITE_LEAN`), so they stay upright enough
-from the overhead camera. Distant backdrops get bigger pixels so they look the same size on screen.
+camera and the board. Sprites lean back at most 60° (`MAX_SPRITE_LEAN`), and HD-2D's overhead
+preset stops at about 72°, so side-drawn sprites never lie flat. Distant backdrops get bigger pixels
+so they look the same size on screen.
+
+Pixels are sampled "sharp bilinear" (`SPRITE_SAMPLE`, `sharpenPixels`): each texel drawn flat with a
+one-screen-pixel seam, so sprites and the board painting stay even at the non-integer scales of real
+screens and don't crawl in motion. Their textures are therefore linearly filtered, not nearest. The
+tilt-shift focus band follows the board on screen, so short canvases never blur the play area. The
+sprite baker also enlarges heroes' heads and eyes and tips the head toward the viewer
+(`FACE_EMPHASIS`), so faces read at sprite size; eyes are `eye` joints in the sculpted rig.
 
 ## Guardrails
 
