@@ -1,9 +1,12 @@
-// Renders heroes' recruit portraits and full-body sprites from their battlefield models (the
-// authored glTF when one is published, else the sculpted miniature), so every class's pictures
-// share one look: the same bust framing on the head, portrait lighting, cel shading and ink, on a
-// backdrop in the class colour. Uses Playwright's Chromium for WebGL.
-// Usage: node scripts/render-hero-art.mjs [classId ...] [--out <dir>]
-//   No class ids renders every hero. --out writes there instead of public/assets (for review).
+// Renders every piece's pictures from its battlefield model (the authored glTF when one is
+// published, else the sculpted miniature), so heroes and monsters share one look across the game:
+// portrait lighting, cel shading and ink, on a backdrop in the piece's colour.
+//   Heroes:   public/assets/portraits/<id>.png (bust framed on the head) and sprites/<id>.png
+//   Monsters: public/assets/monsters/<id>-portrait.png (the creature framed whole, as many have
+//             no head and shoulders) and <id>-sprite.png
+// Uses Playwright's Chromium for WebGL.
+// Usage: node scripts/render-art.mjs [id ...] [--out <dir>]
+//   No ids renders every hero and monster. --out writes there instead of public/assets.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import esbuild from 'esbuild';
@@ -14,23 +17,27 @@ const root = path.resolve('.');
 const args = process.argv.slice(2);
 const outFlag = args.indexOf('--out');
 const outRoot = outFlag >= 0 ? path.resolve(args[outFlag + 1]) : path.join(root, 'public/assets');
-// Class ids are every argument except --out and the directory after it
+// Ids are every argument except --out and the directory after it
 const only = args.filter((a, i) => !a.startsWith('--') && !(outFlag >= 0 && i === outFlag + 1));
 
 /** Rendered at twice the final size and scaled down, for clean edges and ink lines. */
 const SUPERSAMPLE = 2;
 const PORTRAIT = 256;
-const SPRITE = [160, 195];
+const HERO_SPRITE = [160, 195];
+const MONSTER_SPRITE = [200, 200];
 /** Busts turn the hero toward its weapon hand's far side; these carry theirs high, so face front. */
 const BUST_YAW = { juggernaut: 0.32, lancer: 0.3 };
+/** Monster portraits turn to the left, except where a hood or crest would hide the face. */
+const CREATURE_YAW = { skulker: 0.35 };
 
 const entry = `
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { animateModel, createHeroModel } from './src/app/game/battle-map/battlefield-models';
+import { animateModel, createHeroModel, createMonsterModel } from './src/app/game/battle-map/battlefield-models';
 import { instantiateModel } from './src/app/game/battle-map/imported-models';
 import { TOWER_CLASSES } from './src/app/core/models/tower.model';
+import { MOB_TYPES } from './src/app/core/models/mob.model';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(1);
@@ -50,29 +57,33 @@ rim.position.set(4, 6, -9);
 scene.add(key, fill, rim);
 
 let model = null;
-window.heroes = () =>
-  Object.values(TOWER_CLASSES)
+window.pieces = () => [
+  ...Object.values(TOWER_CLASSES)
     .filter((c) => c.id !== 'barricade')
-    .map((c) => ({ id: c.id, color: c.color }));
+    .map((c) => ({ kind: 'heroes', id: c.id, color: c.color })),
+  ...Object.values(MOB_TYPES).map((m) => ({ kind: 'monsters', id: m.id, color: m.color })),
+];
 
-window.load = async (id, glb, settings) => {
+window.load = async (kind, id, glb, settings) => {
   if (model) scene.remove(model);
+  const create = kind === 'heroes' ? createHeroModel : createMonsterModel;
   if (glb) {
     const bytes = Uint8Array.from(atob(glb), (c) => c.charCodeAt(0)).buffer;
     const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(bytes, '');
-    const sculpted = createHeroModel(id);
+    const sculpted = create(id);
     const height = new THREE.Box3().setFromObject(sculpted).getSize(new THREE.Vector3()).y;
     model = instantiateModel({ scene: gltf.scene, animations: gltf.animations }, settings, height, {}).root;
   } else {
-    model = createHeroModel(id);
+    model = create(id);
   }
   animateModel(model, 0, 0, 0);
   scene.add(model);
 };
 
 /**
- * Full body: framed on the whole model. Bust: framed on the head joint at a fixed distance, so
- * every hero's face lands in the same place whatever hat or staff they carry.
+ * Bust: framed on the head joint at a fixed distance, so every hero's face lands in the same
+ * place whatever hat or staff it carries. Creature: the whole model, a little above centre.
+ * Body: the whole model, for full-length sprites.
  */
 window.shot = (o) => {
   model.rotation.y = o.yaw;
@@ -80,15 +91,23 @@ window.shot = (o) => {
   const target = new THREE.Vector3();
   let distance;
   const head = model.getObjectByName('head');
-  if (o.bust && head) {
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  box.getCenter(target);
+  if (o.frame === 'bust' && head) {
     head.getWorldPosition(target);
     target.y += 0.02;
     distance = 2.05;
+  } else if (o.frame === 'creature' && head) {
+    // Close on the head, scaled to the creature, so even a 32px icon reads
+    head.getWorldPosition(target);
+    target.y -= size.y * 0.06;
+    distance = Math.max(size.x * 0.6, size.y) * 1.75;
+  } else if (o.frame === 'creature') {
+    target.y += size.y * 0.04;
+    distance = Math.max(size.x, size.y) * 1.95;
   } else {
-    const box = new THREE.Box3().setFromObject(model);
-    const height = box.getSize(new THREE.Vector3()).y;
-    box.getCenter(target);
-    distance = height * 3.2;
+    distance = size.y * 3.2;
   }
   renderer.setSize(o.w, o.h, false);
   const camera = new THREE.PerspectiveCamera(24, o.w / o.h, 0.05, 50);
@@ -127,7 +146,7 @@ const shot = async (options) => {
   return Buffer.from(url.split(',')[1], 'base64');
 };
 
-/** The portrait card: the class colour glowing from behind the hero into a dark navy edge. */
+/** The portrait card: the piece's colour glowing from behind it into a dark navy edge. */
 function backdrop(size, color) {
   const hex = `#${color.replace('#', '')}`;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
@@ -144,40 +163,64 @@ function backdrop(size, color) {
   return Buffer.from(svg);
 }
 
-const heroes = (await page.evaluate(() => window.heroes())).filter(
-  (h) => !only.length || only.includes(h.id),
-);
-await fs.mkdir(path.join(outRoot, 'portraits'), { recursive: true });
-await fs.mkdir(path.join(outRoot, 'sprites'), { recursive: true });
-
-for (const { id, color } of heroes) {
-  const entry = manifest.heroes?.[id];
-  const glb = entry
-    ? (await fs.readFile(path.join(root, 'public/assets/models', entry.file))).toString('base64')
-    : null;
-  await page.evaluate(([i, g, s]) => window.load(i, g, s), [id, glb, settings.heroes?.[id] ?? {}]);
-
-  // Full body, turned a little to its left, transparent for the battle fallback grid
-  const [sw, sh] = SPRITE;
-  const body = await shot({ w: 640, h: 760, yaw: 0.3 });
-  await sharp(body)
+/** Writes a transparent full-length picture, trimmed and fitted to `size`. */
+async function writeSprite(image, [w, h], file) {
+  await sharp(image)
     .trim()
-    .resize(sw, sh, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .resize(w, h, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .png()
-    .toFile(path.join(outRoot, 'sprites', `${id}.png`));
+    .toFile(file);
+}
 
-  // Head-and-shoulders bust, turned the other way so a raised weapon clears the face
-  const size = PORTRAIT * SUPERSAMPLE;
-  const bust = await shot({ w: size, h: size, yaw: BUST_YAW[id] ?? -0.42, bust: true });
-  const hero = await sharp(bust)
+/** Writes a portrait: the supersampled render scaled down onto the colour backdrop. */
+async function writePortrait(image, color, file) {
+  const piece = await sharp(image)
     .resize(PORTRAIT, PORTRAIT, { kernel: 'lanczos3' })
     .png()
     .toBuffer();
   await sharp(backdrop(PORTRAIT, color))
-    .composite([{ input: hero }])
+    .composite([{ input: piece }])
     .png()
-    .toFile(path.join(outRoot, 'portraits', `${id}.png`));
-  console.log(`✓ ${id}${entry ? ' (authored)' : ''}`);
+    .toFile(file);
+}
+
+const pieces = (await page.evaluate(() => window.pieces())).filter(
+  (p) => !only.length || only.includes(p.id),
+);
+for (const dir of ['portraits', 'sprites', 'monsters']) {
+  await fs.mkdir(path.join(outRoot, dir), { recursive: true });
+}
+
+const size = PORTRAIT * SUPERSAMPLE;
+for (const { kind, id, color } of pieces) {
+  const entry = manifest[kind]?.[id];
+  const glb = entry
+    ? (await fs.readFile(path.join(root, 'public/assets/models', entry.file))).toString('base64')
+    : null;
+  await page.evaluate(
+    ([k, i, g, s]) => window.load(k, i, g, s),
+    [kind, id, glb, settings[kind]?.[id] ?? {}],
+  );
+
+  if (kind === 'heroes') {
+    // Full body turned a little to its left; the bust turned the other way, so a raised weapon
+    // clears the face
+    const body = await shot({ w: 640, h: 760, yaw: 0.3, frame: 'body' });
+    await writeSprite(body, HERO_SPRITE, path.join(outRoot, 'sprites', `${id}.png`));
+    const bust = await shot({ w: size, h: size, yaw: BUST_YAW[id] ?? -0.42, frame: 'bust' });
+    await writePortrait(bust, color, path.join(outRoot, 'portraits', `${id}.png`));
+  } else {
+    const body = await shot({ w: 720, h: 720, yaw: -0.5, frame: 'body' });
+    await writeSprite(body, MONSTER_SPRITE, path.join(outRoot, 'monsters', `${id}-sprite.png`));
+    const portrait = await shot({
+      w: size,
+      h: size,
+      yaw: CREATURE_YAW[id] ?? -0.5,
+      frame: 'creature',
+    });
+    await writePortrait(portrait, color, path.join(outRoot, 'monsters', `${id}-portrait.png`));
+  }
+  console.log(`✓ ${kind}/${id}${entry ? ' (authored)' : ''}`);
 }
 
 await browser.close();

@@ -487,13 +487,14 @@ function cape(rig: Rig, mat: THREE.Material, length = 0.46, flare = 0.22): void 
 }
 
 /** Hood around the head, open at the face, ending in a soft point at the back. */
-function hood(head: THREE.Object3D, mat: THREE.Material): void {
+/** A pointed hood over the head; `opening` (radians) is how wide it frames the face. */
+function hood(head: THREE.Object3D, mat: THREE.Material, opening = 1.56): void {
   const shell = new THREE.SphereGeometry(
     HEAD_R + 0.034,
     18,
     12,
-    Math.PI / 2 + 0.78,
-    TAU - 1.56,
+    Math.PI / 2 + opening / 2,
+    TAU - opening,
     0,
     Math.PI * 0.74,
   );
@@ -1616,7 +1617,31 @@ function skulker(root: THREE.Group, p: Palette): void {
     );
   }
   aim(head, spike(0.045, 0.13, 8), p.paint(0x5d9332), [0, -0.05, 0.16], [0, -0.55, 1], 0.13);
-  hood(head, hoodMat);
+  // A scowl: heavy brows pinched over the eyes and a fanged grin
+  for (const side of [-1, 1]) {
+    put(
+      head,
+      block(0.065, 0.018, 0.018, 0.006),
+      p.paint(0x2f4a1c),
+      [side * 0.066, 0.034, 0.168],
+      [0, side * 0.3, side * 0.38],
+    );
+    put(
+      head,
+      spike(0.011, 0.03, 5),
+      p.paint(0xf1e7c8),
+      [side * 0.024, -0.118, 0.152],
+      [Math.PI, 0, 0],
+    );
+  }
+  put(
+    head,
+    block(0.085, 0.018, 0.014, 0.006),
+    p.paint(0x2a1a18),
+    [0, -0.105, 0.155],
+    [-0.25, 0, 0],
+  );
+  hood(head, hoodMat, 2.1);
   // Curved knife
   rest(rig.weapon, 1.1);
   put(rig.weapon, tube(0.014, 0.014, 0.07), p.paint(0x4a3322), [0, 0, 0]);

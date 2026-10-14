@@ -402,13 +402,13 @@ export class ModelGalleryComponent implements AfterViewInit, OnDestroy {
         kind: 'heroes' as const,
         id,
         name: TOWER_CLASSES[id].name,
-        art: `assets/sprites/${id}.png`,
+        art: `assets/reference/heroes/${id}.png`,
       })),
     ...(Object.keys(MOB_TYPES) as MobTypeId[]).map((id) => ({
       kind: 'monsters' as const,
       id,
       name: MOB_TYPES[id].name,
-      art: `assets/monsters/${id}-sprite.png`,
+      art: `assets/reference/monsters/${id}.png`,
     })),
   ];
 

@@ -50,6 +50,9 @@ src/
 art/models/                          # Model pipeline inputs (see Authored Models)
 public/assets/models/                # Published .glb models + generated manifest.json
 public/assets/actors/                # Baked HD-2D sprite sheets + actors.json
+public/assets/portraits, sprites/     # Hero pictures rendered from the models (npm run models:art)
+public/assets/monsters/              # Monster pictures rendered from the models
+public/assets/reference/             # The original painted art, kept as the /models gallery's reference
 ```
 
 ## Commands & Quality Gates
@@ -84,7 +87,7 @@ npm run e2e
 npm run models:export          # sculpted miniatures → art/models/blockouts/*.glb
 npm run models:blender         # art/models/blender/*.py → art/models/source/*.glb (headless)
 npm run models:optimize        # art/models/source/*.glb → public/assets/models + manifest
-npm run models:art -- <class>  # render a recruit portrait & sprite from a miniature
+npm run models:art [-- <id>]   # render heroes' and monsters' pictures from their models
 npm run sprites:bake [-- <id>] # bake HD-2D sprite sheets from the miniatures
 ```
 
@@ -118,6 +121,17 @@ Models should face +Z; scale and position don't matter. Avoid Draco compression 
 applied instead). Models without clips still animate if they keep the sculpted joint names
 (`arm-right`, `leg-left`, `cape`...), as exported blockouts do. Only feed your own artwork to
 image-to-3D tools.
+
+## Pictures
+
+Every hero and monster picture in the UI (recruit cards, dossier, story dialogue, bestiary, wave
+preview, the no-WebGL fallback board) is rendered from the piece's in-game model by
+`npm run models:art` (`scripts/render-art.mjs`), so the presentation matches the battlefield: the
+same portrait lighting, cel shading and ink, on a backdrop in the piece's colour. Hero busts are
+framed on the head joint; monsters are framed on the head where they have one, else whole. Re-run
+it after changing a model (and re-bake sprites); `--out <dir>` renders a review set without
+touching the live pictures. The original painted art lives in `public/assets/reference/` as the
+`/models` gallery's sculpting reference.
 
 ## Board Looks
 
