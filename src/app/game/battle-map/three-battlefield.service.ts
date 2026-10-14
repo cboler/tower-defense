@@ -7,15 +7,38 @@ import { CLASS_ATTACK, attackDuration, leadArm, poseAttack } from './motions';
 import { SpriteActor } from './sprite-actors';
 import { SpriteLibraryService } from './sprite-library.service';
 import {
+  Ground,
   SIDE_ATLAS_ROWS,
   SIDE_ROWS,
   TERRAIN_TEXELS,
   TILE_SHAPES,
   paintBoard,
+  paintCliff,
   paintSides,
   rasterTexture,
   sideBand,
 } from './pixel-terrain';
+import {
+  CRYSTAL_PALETTES,
+  paintCloud,
+  paintDais,
+  paintGate,
+  paintGem,
+  paintSky,
+  paintSkyIsland,
+  paintVoidOrb,
+} from './pixel-props';
+import {
+  PROP_PIXEL,
+  PropCache,
+  SCENERY_THEMES,
+  ScenerySprite,
+  blocksBoard,
+  islandCliffGeometry,
+  layoutRimProps,
+  paintProp,
+  spriteTexture,
+} from './pixel-scenery';
 import type { Hd2dPost } from './hd2d-post';
 import { GameService } from '../../core/services/game.service';
 import { TOWER_CLASSES, TowerClassId } from '../../core/models/tower.model';
@@ -66,6 +89,24 @@ const PROJECTILE_ARC: Record<Projectile['visualType'], number> = {
 };
 
 const MAX_PARTICLES = 450;
+
+/** The HD-2D sun stands low to the west, so shadows fall where the camera sees them. */
+const HD2D_SUN = new THREE.Vector3(-15, 15, 5);
+
+/** Tiles of wild island around the board in HD-2D. */
+const PIXEL_RIM = 1;
+
+/** HD-2D altar crystal: frames per sixth of a turn (one facet of the gem). */
+const ALTAR_FRAMES = 8;
+
+/** A painted backdrop piece drifting in the sky. */
+interface SkyProp {
+  sprite: ScenerySprite;
+  base: THREE.Vector3;
+  phase: number;
+  /** Tiles per second sideways (clouds); 0 for islands and shards that only bob. */
+  drift: number;
+}
 
 interface BurstOptions {
   speed?: number;
@@ -173,6 +214,17 @@ export class ThreeBattlefieldService {
   private sunYaw = 0;
   /** The HD-2D board painting, regenerated per map. */
   private pixelTextures: THREE.Texture[] = [];
+  /** HD-2D props, painted once and shared between every copy. */
+  private readonly propCache = new PropCache();
+  /** Painted props on and around the board, turned to the camera every frame. */
+  private boardProps: ScenerySprite[] = [];
+  /** Tall rim props, hidden while they would stand between the camera and the board. */
+  private tallProps: { sprite: ScenerySprite; x: number; z: number }[] = [];
+  private skyProps: SkyProp[] = [];
+  private pixelAltar: { crystal: ScenerySprite; satellites: ScenerySprite[]; spin: number } | null =
+    null;
+  private pixelOrb: ScenerySprite | null = null;
+  private skyTexture: THREE.Texture | null = null;
   private renderer: THREE.WebGLRenderer | null = null;
   private scene: THREE.Scene | null = null;
   private camera: THREE.PerspectiveCamera | null = null;
@@ -404,7 +456,7 @@ export class ThreeBattlefieldService {
     if (this.ambientLight) this.ambientLight.intensity = hd2d ? 1.35 : 2.0;
     this.sunLight?.color.setHex(hd2d ? 0xffcf94 : 0xffe4b5);
     // From the side in HD-2D, so shadows fall where the camera can see them
-    if (hd2d) this.sunLight?.position.set(-15, 15, 5);
+    if (hd2d) this.sunLight?.position.copy(HD2D_SUN);
     else this.sunLight?.position.set(-9, 19, 11);
     const sun = this.sunLight?.position;
     this.sunYaw = sun ? Math.atan2(sun.x, sun.z) : 0;
@@ -474,6 +526,7 @@ export class ThreeBattlefieldService {
 
     this.cameraTargetPos.copy(dir).multiplyScalar(Math.max(distance, 10));
     this.cameraLookTarget.set(0, 0, 0);
+    this.updatePropVisibility();
   }
 
   /**
@@ -483,16 +536,157 @@ export class ThreeBattlefieldService {
     if (!this.scene) return;
 
     if (this.environmentGroup) {
-      this.scene.remove(this.environmentGroup);
+      for (const prop of this.skyProps) prop.sprite.dispose();
+      this.disposeObject(this.environmentGroup);
     }
+    this.skyProps = [];
+    this.cloudRings = null;
 
     this.environmentGroup = new THREE.Group();
 
+    if (this.look() === 'hd2d') {
+      this.buildPixelSky();
+    } else {
+      this.buildMiniatureSky();
+    }
+
+    // 2. Aether Motes (Magical shimmering fireflies floating across the arena)
+    const moteCount = 280;
+    const moteGeo = new THREE.BufferGeometry();
+    this.aetherPositions = new Float32Array(moteCount * 3);
+    this.aetherVelocities = new Float32Array(moteCount * 3);
+
+    for (let i = 0; i < moteCount; i++) {
+      const idx = i * 3;
+      this.aetherPositions[idx] = (Math.random() - 0.5) * 22;
+      this.aetherPositions[idx + 1] = Math.random() * 8 - 1;
+      this.aetherPositions[idx + 2] = (Math.random() - 0.5) * 18;
+
+      this.aetherVelocities[idx] = (Math.random() - 0.5) * 0.2;
+      this.aetherVelocities[idx + 1] = 0.15 + Math.random() * 0.25;
+      this.aetherVelocities[idx + 2] = (Math.random() - 0.5) * 0.2;
+    }
+
+    moteGeo.setAttribute('position', new THREE.BufferAttribute(this.aetherPositions, 3));
+
+    const moteMat = new THREE.PointsMaterial({
+      color: 0x7dd3fc,
+      size: 0.14,
+      transparent: true,
+      opacity: 0.7,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    this.aetherMotes = new THREE.Points(moteGeo, moteMat);
+    this.environmentGroup.add(this.aetherMotes);
+
+    this.scene.add(this.environmentGroup);
+  }
+
+  /**
+   * HD-2D backdrop, all painted: a dithered twilight sky, distant floating islands with
+   * waterfalls, cloud banks drifting beneath the board and crystal shards hovering around it.
+   * Backdrop pixels grow with distance so they look the same size as the board's.
+   */
+  private buildPixelSky(): void {
+    if (!this.scene || !this.environmentGroup) return;
+    this.skyTexture ??= spriteTexture(paintSky());
+    this.scene.background = this.skyTexture;
+    this.fitSky();
+    this.scene.fog = new THREE.FogExp2(0x2d4b79, 0.012);
+
+    const eye = this.cameraTargetPos;
+    const reference = eye.length();
+    const place = (sprite: ScenerySprite, at: THREE.Vector3, phase: number, drift = 0) => {
+      sprite.root.position.copy(at);
+      this.environmentGroup?.add(sprite.root);
+      this.skyProps.push({ sprite, base: at.clone(), phase, drift });
+    };
+    const pixelAt = (at: THREE.Vector3) => (PROP_PIXEL * at.distanceTo(eye)) / reference;
+
+    const islands = [
+      new THREE.Vector3(-12, -1.5, -14),
+      new THREE.Vector3(12.5, -0.5, -15),
+      new THREE.Vector3(-17, -4.5, 3),
+      new THREE.Vector3(17, -5, 2),
+    ];
+    islands.forEach((at, i) => {
+      const sprite = this.propCache.sprite(`sky-island-${i}`, () => paintSkyIsland(i + 1), {
+        pixelSize: pixelAt(at),
+        phase: i * 0.3,
+      });
+      place(sprite, at, i * 1.7);
+    });
+
+    for (let i = 0; i < 9; i++) {
+      const angle = (i / 9) * Math.PI * 2 + 0.4;
+      const at = new THREE.Vector3(
+        Math.cos(angle) * (11 + (i % 3) * 3),
+        -3.2 - (i % 4) * 0.9,
+        Math.sin(angle) * (8 + (i % 2) * 3),
+      );
+      const sprite = this.propCache.sprite(`cloud-${i % 3}`, () => paintCloud(i % 3), {
+        pixelSize: pixelAt(at),
+      });
+      place(sprite, at, i, 0.12 + (i % 3) * 0.05);
+    }
+
+    const halfW = (this.gridHalfW || 6.5) + PIXEL_RIM + 1.5;
+    const halfH = (this.gridHalfH || 4) + PIXEL_RIM + 1.5;
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2 + 0.3;
+      const at = new THREE.Vector3(
+        Math.cos(angle) * halfW,
+        -0.6 + (i % 3) * 0.45,
+        Math.sin(angle) * halfH,
+      );
+      const sprite = this.propCache.sprite(
+        'sky-shard',
+        () =>
+          paintGem({
+            sides: 4,
+            radius: 3.5,
+            top: 8,
+            bottom: 6,
+            palette: CRYSTAL_PALETTES.cyan,
+            frames: 4,
+            duration: 1.2,
+          }),
+        { phase: i * 0.37 },
+      );
+      place(sprite, at, i * 1.1);
+    }
+  }
+
+  /** Stretches the painted sky over the canvas without distorting its pixels. */
+  private fitSky(): void {
+    const sky = this.skyTexture;
+    const image = sky?.image as { width: number; height: number } | undefined;
+    if (!sky || !image || !this.camera) return;
+    const ratio = this.camera.aspect / (image.width / image.height);
+    if (ratio >= 1) {
+      sky.repeat.set(1, 1 / ratio);
+      sky.offset.set(0, (1 - 1 / ratio) / 2);
+    } else {
+      sky.repeat.set(ratio, 1);
+      sky.offset.set((1 - ratio) / 2, 0);
+    }
+  }
+
+  /** The miniatures' backdrop: a smooth twilight sky and distant 3D islands with ruins. */
+  private buildMiniatureSky(): void {
+    if (!this.scene || !this.environmentGroup) return;
     // A procedural sky stays available offline and needs no large panorama download.
+    const cachedSky = this.textures.get('sky');
+    if (cachedSky) {
+      this.scene.background = cachedSky;
+      this.scene.fog = new THREE.FogExp2(0x24475e, 0.012);
+    }
     const skyCanvas = document.createElement('canvas');
     skyCanvas.width = 1024;
     skyCanvas.height = 1024;
-    const sky = skyCanvas.getContext('2d');
+    const sky = cachedSky ? null : skyCanvas.getContext('2d');
     if (sky) {
       const gradient = sky.createLinearGradient(0, 0, 0, 1024);
       gradient.addColorStop(0, '#09182d');
@@ -590,38 +784,7 @@ export class ThreeBattlefieldService {
       this.environmentGroup.add(miniIsland);
     }
 
-    // 2. Aether Motes (Magical shimmering fireflies floating across the arena)
-    const moteCount = 280;
-    const moteGeo = new THREE.BufferGeometry();
-    this.aetherPositions = new Float32Array(moteCount * 3);
-    this.aetherVelocities = new Float32Array(moteCount * 3);
-
-    for (let i = 0; i < moteCount; i++) {
-      const idx = i * 3;
-      this.aetherPositions[idx] = (Math.random() - 0.5) * 22;
-      this.aetherPositions[idx + 1] = Math.random() * 8 - 1;
-      this.aetherPositions[idx + 2] = (Math.random() - 0.5) * 18;
-
-      this.aetherVelocities[idx] = (Math.random() - 0.5) * 0.2;
-      this.aetherVelocities[idx + 1] = 0.15 + Math.random() * 0.25;
-      this.aetherVelocities[idx + 2] = (Math.random() - 0.5) * 0.2;
-    }
-
-    moteGeo.setAttribute('position', new THREE.BufferAttribute(this.aetherPositions, 3));
-
-    const moteMat = new THREE.PointsMaterial({
-      color: 0x7dd3fc,
-      size: 0.14,
-      transparent: true,
-      opacity: 0.7,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-
-    this.aetherMotes = new THREE.Points(moteGeo, moteMat);
-    this.environmentGroup.add(this.aetherMotes);
-
-    // 3. Broad, translucent mist banks beneath the island, instead of solid torus bands.
+    // Broad, translucent mist banks beneath the island, instead of solid torus bands.
     this.cloudRings = new THREE.Group();
     const cloudMat = new THREE.MeshBasicMaterial({
       color: 0x91b6c5,
@@ -641,8 +804,6 @@ export class ThreeBattlefieldService {
       this.cloudRings.add(ring);
     }
     this.environmentGroup.add(this.cloudRings);
-
-    this.scene.add(this.environmentGroup);
   }
 
   private terrainTexture(url: string): THREE.Texture {
@@ -765,27 +926,38 @@ export class ThreeBattlefieldService {
     if (!this.scene) return;
 
     if (this.terrainGroup) {
+      for (const prop of this.boardProps) prop.dispose();
       this.disposeObject(this.terrainGroup);
     }
 
     this.breezeObjects = [];
+    this.boardProps = [];
+    this.tallProps = [];
     this.terrainGroup = new THREE.Group();
     this.tileMeshes = [];
+    // The altar and portal are rebuilt for the current look below
+    this.crystalAltarMesh = this.crystalCore = this.crystalShell = this.crystalRing = null;
+    this.crystalLight = null;
+    this.crystalBeaconBeam = null;
+    this.crystalSatellites = [];
+    this.spawnVortexMesh = this.spawnDisc = this.spawnCore = null;
+    this.pixelAltar = null;
+    this.pixelOrb = null;
 
     const map = game.activeMap();
     const halfW = (map.width - 1) / 2;
     const halfH = (map.height - 1) / 2;
     this.gridHalfW = halfW;
     this.gridHalfH = halfH;
-    this.fitCameraToBoard();
-
-    // 1. Build Sculpted Floating Sky Island Base
-    this.buildSculptedIslandBase(map.width, map.height);
 
     // HD-2D paints the board as one pixel-art picture; the last map's painting is let go
     for (const texture of this.pixelTextures) texture.dispose();
     this.pixelTextures = [];
     const pixel = this.look() === 'hd2d' ? this.pixelTerrainMaterials(map.tiles) : null;
+
+    // 1. The island beneath the board: sculpted strata, or in HD-2D a wild rim on a painted cliff
+    if (pixel) this.buildPixelIsland(map.width, map.height, pixel.top, pixel.side);
+    else this.buildSculptedIslandBase(map.width, map.height);
 
     // 2. High-Resolution Seamless Terrain Textures
     const cobblestoneTex = this.terrainTexture('assets/tile-cobblestone.png');
@@ -897,7 +1069,10 @@ export class ThreeBattlefieldService {
           uvAttr.needsUpdate = true;
         }
 
-        if (pixel) this.pixelTileUVs(boxGeo, c, r, tile, map.width, map.height);
+        if (pixel) {
+          const [pc, pr] = [c + PIXEL_RIM, r + PIXEL_RIM];
+          this.pixelBoxUVs(boxGeo, pc, pr, pc, pr, tile, map.width, map.height);
+        }
 
         // Multi-material: top face gets topMat, all sides get dark bedrock cliffSideMat
         const side = pixel?.side ?? cliffSideMat;
@@ -916,19 +1091,18 @@ export class ThreeBattlefieldService {
           this.buildRoadCurbs(c, r, wx, wz, map, curbMat);
         }
 
-        // Add 3D Tactical Environmental Props on Obstacle tiles
+        // Props on Obstacle tiles, the Sanctuary altar at 'C' and the spawn portal at 'S'
         if (tile === 'O') {
-          this.createObstacleProp(wx, wz, c * 31 + r * 17);
+          if (pixel) this.addPixelObstacleProp(wx, wz, c * 31 + r * 17, map.id);
+          else this.createObstacleProp(wx, wz, c * 31 + r * 17);
         }
-
-        // Build Sanctuary Crystal Altar at 'C'
         if (tile === 'C') {
-          this.buildSanctuaryAltar(wx, wz);
+          if (pixel) this.buildPixelAltar(wx, wz);
+          else this.buildSanctuaryAltar(wx, wz);
         }
-
-        // Build Spawn Portal Vortex at 'S'
         if (tile === 'S') {
-          this.buildSpawnVortex(wx, wz);
+          if (pixel) this.buildPixelGate(wx, wz);
+          else this.buildSpawnVortex(wx, wz);
         }
       }
     }
@@ -936,11 +1110,232 @@ export class ThreeBattlefieldService {
     // 4. Delicate Tactical Grid Line Overlay for tactical precision (painted in HD-2D)
     if (!pixel) this.buildTacticalGridOverlay(map.width, map.height);
 
-    // 5. Scenic Perimeter Environment (Trees, Monoliths, Floating Crystals on island rim)
-    this.buildPerimeterScenery(map.width, map.height);
+    // 5. Scenery around the board: trees, monoliths and crystals on the rim
+    if (pixel) this.buildRimProps(map.width, map.height, map.id);
+    else this.buildPerimeterScenery(map.width, map.height);
     if (!pixel) this.buildGardenDetails(map.tiles, halfW, halfH);
 
     this.scene.add(this.terrainGroup);
+    this.fitCameraToBoard();
+  }
+
+  /** Tops a box with a span of cells of the board painting and walls it with a kind's band. */
+  private pixelBoxUVs(
+    geometry: THREE.BoxGeometry,
+    c0: number,
+    r0: number,
+    c1: number,
+    r1: number,
+    ground: Ground,
+    mapW: number,
+    mapH: number,
+  ): void {
+    const uv = geometry.attributes['uv'] as THREE.BufferAttribute;
+    const position = geometry.attributes['position'] as THREE.BufferAttribute;
+    const T = TERRAIN_TEXELS;
+    const cols = mapW + PIXEL_RIM * 2;
+    const rows = mapH + PIXEL_RIM * 2;
+    // Half a texel in from the cell edge so magnified pixels never pick up a neighbour
+    const u0 = (c0 * T + 0.5) / (cols * T);
+    const u1 = ((c1 + 1) * T - 0.5) / (cols * T);
+    const v0 = (r0 * T + 0.5) / (rows * T);
+    const v1 = ((r1 + 1) * T - 0.5) / (rows * T);
+    // Top face: north-west, north-east, south-west, south-east
+    uv.setXY(8, u0, v0);
+    uv.setXY(9, u1, v0);
+    uv.setXY(10, u0, v1);
+    uv.setXY(11, u1, v1);
+    // Walls: the band's top row at the rim, as many rows down as the wall is tall
+    const top = sideBand(ground) * SIDE_ROWS + 0.01;
+    const bottom = top + TILE_SHAPES[ground].height * T;
+    for (const i of [0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20, 21, 22, 23]) {
+      const along = i < 8 ? position.getZ(i) : position.getX(i);
+      uv.setXY(i, along + 0.5, (position.getY(i) > 0 ? top : bottom) / SIDE_ATLAS_ROWS);
+    }
+    uv.needsUpdate = true;
+  }
+
+  /**
+   * The HD-2D island: a step-down rim of wild meadow framing the board (four long blocks sharing
+   * the board painting), standing on a painted cliff that tapers to a keel.
+   */
+  private buildPixelIsland(
+    mapW: number,
+    mapH: number,
+    top: THREE.Material,
+    walls: THREE.Material,
+  ): void {
+    if (!this.terrainGroup) return;
+    const cols = mapW + PIXEL_RIM * 2;
+    const rows = mapH + PIXEL_RIM * 2;
+    const { height, y } = TILE_SHAPES.R;
+    const strips = [
+      { c0: 0, r0: 0, c1: cols - 1, r1: PIXEL_RIM - 1 },
+      { c0: 0, r0: rows - PIXEL_RIM, c1: cols - 1, r1: rows - 1 },
+      { c0: 0, r0: PIXEL_RIM, c1: PIXEL_RIM - 1, r1: rows - PIXEL_RIM - 1 },
+      { c0: cols - PIXEL_RIM, r0: PIXEL_RIM, c1: cols - 1, r1: rows - PIXEL_RIM - 1 },
+    ];
+    for (const { c0, r0, c1, r1 } of strips) {
+      const w = c1 - c0 + 1;
+      const d = r1 - r0 + 1;
+      const geometry = new THREE.BoxGeometry(w, height, d);
+      this.pixelBoxUVs(geometry, c0, r0, c1, r1, 'R', mapW, mapH);
+      const mesh = new THREE.Mesh(geometry, [walls, walls, top, walls, walls, walls]);
+      mesh.position.set(c0 + w / 2 - cols / 2, y, r0 + d / 2 - rows / 2);
+      mesh.receiveShadow = true;
+      this.terrainGroup.add(mesh);
+    }
+
+    const { color, glow } = paintCliff();
+    const cliffMap = rasterTexture(color);
+    const veins = rasterTexture(glow);
+    this.pixelTextures.push(cliffMap, veins);
+    const cliff = new THREE.Mesh(
+      islandCliffGeometry(cols / 2 - 0.01, rows / 2 - 0.01, y - height / 2 + 0.02),
+      new THREE.MeshStandardMaterial({
+        map: cliffMap,
+        emissiveMap: veins,
+        emissive: 0xffffff,
+        emissiveIntensity: 1.2,
+        roughness: 0.95,
+        metalness: 0,
+      }),
+    );
+    cliff.receiveShadow = true;
+    this.terrainGroup.add(cliff);
+  }
+
+  /** Adds a painted prop standing on the board at (x, y, z). */
+  private addBoardProp(sprite: ScenerySprite, x: number, y: number, z: number): ScenerySprite {
+    sprite.root.position.set(x, y, z);
+    this.terrainGroup?.add(sprite.root);
+    this.boardProps.push(sprite);
+    return sprite;
+  }
+
+  /** Trees, standing stones, crystals, bushes and rocks over the rim, in the map's flavour. */
+  private buildRimProps(mapW: number, mapH: number, mapId: string): void {
+    const theme = SCENERY_THEMES[mapId] ?? SCENERY_THEMES['verdant-crossroads'];
+    const ground = TILE_SHAPES.R.y + TILE_SHAPES.R.height / 2;
+    const [halfW, halfD] = [mapW / 2, mapH / 2];
+    layoutRimProps(mapW, mapH, PIXEL_RIM, theme, mapW * 31 + mapH).forEach((prop, i) => {
+      // Trees on the sunny side would throw long shadows over the board; only the rest cast
+      const shadow =
+        prop.tall && !blocksBoard(prop.x, prop.z, HD2D_SUN.x, HD2D_SUN.z, halfW, halfD);
+      const sprite = this.propCache.sprite(
+        `${prop.kind}-${prop.variant}-${theme.hue}`,
+        () => paintProp(prop.kind, prop.variant, theme.hue),
+        { shadow, phase: i * 0.61 },
+      );
+      // A touch darker and cooler than the pieces, so the scenery sits back
+      sprite.tint.setRGB(0.82, 0.86, 0.94);
+      this.addBoardProp(sprite, prop.x, ground, prop.z);
+      if (prop.tall) this.tallProps.push({ sprite, x: prop.x, z: prop.z });
+    });
+  }
+
+  /**
+   * Crystals or a boulder on some basalt tiles; nothing tall, so the paths behind stay in view,
+   * and some left bare so the painted lava shows.
+   */
+  private addPixelObstacleProp(x: number, z: number, seed: number, mapId: string): void {
+    const theme = SCENERY_THEMES[mapId] ?? SCENERY_THEMES['verdant-crossroads'];
+    const kind = (['crystals', 'rock', null, 'rock'] as const)[seed % 4];
+    if (!kind) return;
+    const variant = (seed % 5) % 3;
+    const sprite = this.propCache.sprite(
+      `${kind}-${variant}-${theme.hue}`,
+      () => paintProp(kind, variant, theme.hue),
+      { shadow: kind !== 'rock', phase: seed * 0.13 },
+    );
+    const { y, height } = TILE_SHAPES.O;
+    this.addBoardProp(sprite, x, y + height / 2, z);
+  }
+
+  /**
+   * The HD-2D sanctuary: a painted dais with a pulsing rune ring, the crystal turning above it
+   * through painted frames, shards circling it, and the same light and beam as the miniature.
+   */
+  private buildPixelAltar(x: number, z: number): void {
+    if (!this.terrainGroup) return;
+    const { y, height } = TILE_SHAPES.C;
+    const top = y + height / 2;
+    this.addBoardProp(this.propCache.sprite('dais', paintDais), x, top, z + 0.32);
+    const crystal = this.propCache.sprite(
+      'altar-crystal',
+      () =>
+        paintGem({
+          sides: 6,
+          radius: 7.5,
+          top: 16,
+          bottom: 10,
+          palette: CRYSTAL_PALETTES.altar,
+          frames: ALTAR_FRAMES,
+          duration: 1.2,
+        }),
+      { shadow: true },
+    );
+    crystal.playing = false;
+    this.addBoardProp(crystal, x, top + 0.42, z);
+    const satellites = [0, 1, 2, 3].map((i) => {
+      const shard = this.propCache.sprite(
+        'altar-shard',
+        () =>
+          paintGem({
+            sides: 4,
+            radius: 2.5,
+            top: 5,
+            bottom: 4,
+            palette: CRYSTAL_PALETTES.cyan,
+            frames: 4,
+            duration: 0.8,
+          }),
+        { phase: i * 0.2 },
+      );
+      return this.addBoardProp(shard, x, top + 0.6, z);
+    });
+    this.pixelAltar = { crystal, satellites, spin: 0 };
+    this.crystalAltarMesh = new THREE.Group();
+    this.crystalAltarMesh.position.set(x, top, z);
+    this.crystalBeaconBeam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.25, 0.28, 10, 16, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.16,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    this.crystalBeaconBeam.position.y = 5;
+    this.crystalLight = new THREE.PointLight(0x38bdf8, 2.6, 7);
+    this.crystalLight.position.y = 0.7;
+    this.crystalAltarMesh.add(this.crystalBeaconBeam, this.crystalLight);
+    this.terrainGroup.add(this.crystalAltarMesh);
+  }
+
+  /** The HD-2D spawn rift: a painted obsidian gate around a swirling void orb. */
+  private buildPixelGate(x: number, z: number): void {
+    const { y, height } = TILE_SHAPES.S;
+    const top = y + height / 2;
+    this.addBoardProp(this.propCache.sprite('gate', paintGate, { shadow: true }), x, top, z);
+    this.pixelOrb = this.addBoardProp(
+      this.propCache.sprite('void-orb', paintVoidOrb),
+      x,
+      top + 0.3,
+      z,
+    );
+  }
+
+  /** Hides tall rim props that would stand between the camera and the board. */
+  private updatePropVisibility(): void {
+    const eye = this.cameraTargetPos;
+    const halfW = this.gridHalfW + 0.5;
+    const halfD = this.gridHalfH + 0.5;
+    for (const prop of this.tallProps) {
+      prop.sprite.root.visible = !blocksBoard(prop.x, prop.z, eye.x, eye.z, halfW, halfD);
+    }
   }
 
   /** Materials for the HD-2D board: one painting for every top face, a wall atlas for sides. */
@@ -948,7 +1343,7 @@ export class ThreeBattlefieldService {
     top: THREE.Material;
     side: THREE.Material;
   } {
-    const { color, glow } = paintBoard(tiles);
+    const { color, glow } = paintBoard(tiles, PIXEL_RIM);
     const board = rasterTexture(color);
     const runes = rasterTexture(glow);
     const walls = rasterTexture(paintSides());
@@ -966,38 +1361,6 @@ export class ThreeBattlefieldService {
       }),
       side: new THREE.MeshStandardMaterial({ map: walls, roughness: 0.95, metalness: 0 }),
     };
-  }
-
-  /** Points a tile box at its cell of the board painting and its kind's band of the wall atlas. */
-  private pixelTileUVs(
-    geometry: THREE.BoxGeometry,
-    c: number,
-    r: number,
-    tile: TileCode,
-    mapW: number,
-    mapH: number,
-  ): void {
-    const uv = geometry.attributes['uv'] as THREE.BufferAttribute;
-    const position = geometry.attributes['position'] as THREE.BufferAttribute;
-    const T = TERRAIN_TEXELS;
-    // Half a texel in from the cell edge so magnified pixels never pick up a neighbour
-    const u0 = (c * T + 0.5) / (mapW * T);
-    const u1 = ((c + 1) * T - 0.5) / (mapW * T);
-    const v0 = (r * T + 0.5) / (mapH * T);
-    const v1 = ((r + 1) * T - 0.5) / (mapH * T);
-    // Top face: north-west, north-east, south-west, south-east
-    uv.setXY(8, u0, v0);
-    uv.setXY(9, u1, v0);
-    uv.setXY(10, u0, v1);
-    uv.setXY(11, u1, v1);
-    // Walls: the band's top row at the rim, as many rows down as the wall is tall
-    const top = sideBand(tile) * SIDE_ROWS + 0.01;
-    const bottom = top + TILE_SHAPES[tile].height * T;
-    for (const i of [0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20, 21, 22, 23]) {
-      const along = i < 8 ? position.getZ(i) : position.getX(i);
-      uv.setXY(i, along + 0.5, (position.getY(i) > 0 ? top : bottom) / SIDE_ATLAS_ROWS);
-    }
-    uv.needsUpdate = true;
   }
 
   /**
@@ -1592,6 +1955,7 @@ export class ThreeBattlefieldService {
     this.renderer.setSize(width, height, false);
     this.post?.setSize(width, height);
     this.fitCameraToBoard();
+    this.fitSky();
     // Snap instead of sweeping when the board flips orientation
     if (wasPortrait !== this.portraitBoard()) {
       this.cameraBasePos.copy(this.cameraTargetPos);
@@ -1681,9 +2045,56 @@ export class ThreeBattlefieldService {
       }
     }
 
+    if (this.pixelAltar) {
+      // The painted crystal turns through its frames, faster and flushed red when struck
+      const altar = this.pixelAltar;
+      altar.spin += dt * (0.9 + hit * 8);
+      altar.crystal.setFrame(Math.floor((altar.spin / (Math.PI / 3)) * ALTAR_FRAMES));
+      const base = altar.crystal.root.position;
+      const top = TILE_SHAPES.C.y + TILE_SHAPES.C.height / 2;
+      base.y = top + 0.42 + Math.sin(elapsed * 2.4) * 0.05;
+      altar.crystal.tint.setRGB(1 + hit * 0.5, 1 - hit * 0.55, 1 - hit * 0.55);
+      const centre = this.crystalAltarMesh?.position;
+      base.x = (centre?.x ?? 0) + (hit > 0 ? hit * Math.sin(this.crystalHitAge * 70) * 0.05 : 0);
+      altar.satellites.forEach((shard, i) => {
+        const orbit = elapsed * (1.2 + i * 0.3) + (i * Math.PI) / 2;
+        const radius = 0.42 + hit * 0.25;
+        shard.root.position.set(
+          (centre?.x ?? 0) + Math.cos(orbit) * radius,
+          top + 0.55 + Math.sin(elapsed * 3.0 + i) * 0.08,
+          (centre?.z ?? 0) + Math.sin(orbit) * radius,
+        );
+      });
+    }
+
     // 3. Animate Spawn Portal Vortex (pulses as each monster emerges)
     this.portalPulseAge += simDt;
     const portalPulse = this.portalPulseAge < 0.35 ? 1 - this.portalPulseAge / 0.35 : 0;
+    if (this.pixelOrb) {
+      this.pixelOrb.root.scale.setScalar(1 + portalPulse * 0.6);
+      this.pixelOrb.root.position.y =
+        TILE_SHAPES.S.y + TILE_SHAPES.S.height / 2 + 0.3 + Math.sin(elapsed * 3.5) * 0.04;
+    }
+
+    // Painted scenery: frames advance in real time and every prop turns to the camera
+    const sceneryDt = this.reducedMotion ? 0 : dt;
+    for (const prop of this.boardProps) {
+      prop.update(sceneryDt);
+      prop.faceCamera(this.camera, this.sunYaw);
+    }
+    for (const prop of this.skyProps) {
+      prop.sprite.update(sceneryDt);
+      prop.sprite.faceCamera(this.camera, this.sunYaw);
+      const at = prop.sprite.root.position;
+      at.copy(prop.base);
+      at.y += Math.sin(elapsed * 0.5 + prop.phase) * 0.18;
+      if (prop.drift) {
+        // Clouds drift across and wrap around beneath the island
+        const span = 36;
+        at.x =
+          ((((prop.base.x + elapsed * prop.drift + span / 2) % span) + span) % span) - span / 2;
+      }
+    }
     if (this.spawnDisc) {
       this.spawnDisc.rotation.z += dt * (2.0 + portalPulse * 6);
       this.spawnDisc.scale.setScalar(1 + portalPulse * 0.35);
@@ -3011,6 +3422,7 @@ export class ThreeBattlefieldService {
   public setLook(look: BoardLook): void {
     if (look === this.look()) return;
     this.look.set(look);
+    this.buildAtmosphericEnvironment();
     if (this.game) this.rebuildTerrain(this.game);
     try {
       localStorage.setItem(LOOK_STORAGE_KEY, look);
@@ -3063,6 +3475,15 @@ export class ThreeBattlefieldService {
     this.post = null;
     for (const texture of this.pixelTextures) texture.dispose();
     this.pixelTextures = [];
+    for (const prop of [...this.boardProps, ...this.skyProps.map((p) => p.sprite)]) prop.dispose();
+    this.boardProps = [];
+    this.tallProps = [];
+    this.skyProps = [];
+    this.pixelAltar = null;
+    this.pixelOrb = null;
+    this.propCache.dispose();
+    this.skyTexture?.dispose();
+    this.skyTexture = null;
     if (this.renderer) {
       this.renderer.dispose();
       this.renderer = null;

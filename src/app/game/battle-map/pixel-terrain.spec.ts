@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { TileCode } from '../../core/models/map.model';
 import {
+  CLIFF_TILES_DEEP,
+  CLIFF_TILES_WIDE,
   Raster,
   SIDE_ATLAS_ROWS,
   SIDE_ROWS,
   TERRAIN_TEXELS,
   paintBoard,
+  paintCliff,
   paintSides,
   sideBand,
+  withRim,
 } from './pixel-terrain';
 
 const T = TERRAIN_TEXELS;
@@ -64,6 +68,40 @@ describe('pixel terrain', () => {
     expect(lit(2, 1)).toBeGreaterThan(20);
     expect(lit(2, 2)).toBeGreaterThan(20);
     expect(lit(1, 2)).toBeGreaterThan(20);
+  });
+
+  it('frames the board with wild rim ground, a step below the meadows', () => {
+    const rim = withRim(BOARD, 1);
+    expect(rim.length).toBe(5);
+    expect(rim[0].every((g) => g === 'R')).toBe(true);
+    expect(rim[2].slice(1, 4)).toEqual(BOARD[1]);
+    const framed = paintBoard(BOARD, 1);
+    expect(framed.color.width).toBe(5 * T);
+    // Map tile (c, r) moves to cell (c + 1, r + 1)
+    expect(framed.color.get(3 * T + 5, 3 * T + 9)).toEqual(
+      paintBoard(BOARD).color.get(2 * T + 5, 2 * T + 9),
+    );
+    // The meadow lights its lip where it steps down to the rim
+    expect(rowBrightness(framed.color, 1, 1, 0)).toBeGreaterThan(
+      rowBrightness(framed.color, 1, 1, T / 2),
+    );
+  });
+
+  it('paints a cliff that repeats sideways without a seam', () => {
+    const { color, glow } = paintCliff();
+    expect(color.width).toBe(CLIFF_TILES_WIDE * T);
+    expect(color.height).toBe(CLIFF_TILES_DEEP * T);
+    // Neighbouring columns across the wrap differ about as much as any neighbours do
+    const diff = (a: number, b: number) => {
+      let sum = 0;
+      for (let y = 0; y < color.height; y++) {
+        const [p, q] = [color.get(a, y), color.get(b, y)];
+        sum += Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) + Math.abs(p[2] - q[2]);
+      }
+      return sum / color.height;
+    };
+    expect(diff(color.width - 1, 0)).toBeLessThan(diff(40, 41) * 2.5 + 10);
+    for (let i = 3; i < glow.data.length; i += 4) expect(glow.data[i]).toBe(255);
   });
 
   it('gives every tile kind its own band of wall, meadows topped with grass', () => {

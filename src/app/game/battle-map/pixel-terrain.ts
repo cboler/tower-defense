@@ -11,21 +11,26 @@ import { TileCode } from '../../core/models/map.model';
 /** Texels per tile: close to an HD-2D sprite pixel on screen (36 px per tile at 1.35x). */
 export const TERRAIN_TEXELS = 28;
 
+/** Ground the painting knows: the map's tiles plus `R`, the wild rim of the island around them. */
+export type Ground = TileCode | 'R';
+
 /** Each tile's box: its height and the y of its centre. Meadows stand above the sunken road. */
-export const TILE_SHAPES: Record<TileCode, { height: number; y: number }> = {
+export const TILE_SHAPES: Record<Ground, { height: number; y: number }> = {
   B: { height: 0.36, y: 0.07 },
   P: { height: 0.24, y: -0.05 },
   M: { height: 0.28, y: -0.02 },
   O: { height: 0.42, y: 0.1 },
   S: { height: 0.26, y: -0.04 },
   C: { height: 0.3, y: -0.02 },
+  // A step below the meadows, so the playable board reads as a raised stage
+  R: { height: 0.33, y: -0.005 },
 };
 
-const topOf = (tile: TileCode) => TILE_SHAPES[tile].y + TILE_SHAPES[tile].height / 2;
+const topOf = (tile: Ground) => TILE_SHAPES[tile].y + TILE_SHAPES[tile].height / 2;
 
-type RGB = readonly [number, number, number];
-const rgb = (value: number): RGB => [(value >> 16) & 255, (value >> 8) & 255, value & 255];
-const scale = ([r, g, b]: RGB, f: number): RGB => [
+export type RGB = readonly [number, number, number];
+export const rgb = (value: number): RGB => [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+export const scale = ([r, g, b]: RGB, f: number): RGB => [
   Math.min(255, r * f),
   Math.min(255, g * f),
   Math.min(255, b * f),
@@ -57,8 +62,11 @@ export function hash(x: number, y: number, seed: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-/** Smooth value noise in [0, 1). */
-function noise(x: number, y: number, size: number, seed: number): number {
+/**
+ * Smooth value noise in [0, 1). With `period` (a multiple of `size`) it repeats every `period`
+ * texels in x, for textures that tile sideways.
+ */
+export function noise(x: number, y: number, size: number, seed: number, period = 0): number {
   const fx = x / size;
   const fy = y / size;
   const x0 = Math.floor(fx);
@@ -67,16 +75,18 @@ function noise(x: number, y: number, size: number, seed: number): number {
   const sy = fy - y0;
   const u = sx * sx * (3 - 2 * sx);
   const v = sy * sy * (3 - 2 * sy);
-  const a = hash(x0, y0, seed);
-  const b = hash(x0 + 1, y0, seed);
-  const c = hash(x0, y0 + 1, seed);
-  const d = hash(x0 + 1, y0 + 1, seed);
+  const cells = Math.round(period / size);
+  const wrap = (i: number) => (cells ? ((i % cells) + cells) % cells : i);
+  const a = hash(wrap(x0), y0, seed);
+  const b = hash(wrap(x0 + 1), y0, seed);
+  const c = hash(wrap(x0), y0 + 1, seed);
+  const d = hash(wrap(x0 + 1), y0 + 1, seed);
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
 
 /** 4x4 ordered dither threshold in [-0.5, 0.5): the classic pixel-art gradient pattern. */
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
-const dither = (x: number, y: number) => BAYER[(y & 3) * 4 + (x & 3)] / 16 - 0.5;
+export const dither = (x: number, y: number) => BAYER[(y & 3) * 4 + (x & 3)] / 16 - 0.5;
 
 /** RGBA pixel buffer; row 0 is the north edge of the board. */
 export class Raster {
@@ -103,13 +113,19 @@ export class Raster {
     return [this.data[i], this.data[i + 1], this.data[i + 2]];
   }
 
+  /** True where something has been painted; false outside the raster. */
+  public opaque(x: number, y: number): boolean {
+    if (x < 0 || y < 0 || x >= this.width || y >= this.height) return false;
+    return this.data[(y * this.width + x) * 4 + 3] > 0;
+  }
+
   public shade(x: number, y: number, f: number): void {
     this.set(x, y, scale(this.get(x, y), f));
   }
 }
 
 interface Cell {
-  tiles: TileCode[][];
+  tiles: Ground[][];
   c: number;
   r: number;
   /** Top-left texel of the cell. */
@@ -140,7 +156,7 @@ function neighbourTop(cell: Cell, side: (typeof SIDES)[number]): number {
 }
 
 /** Darkens texels beside taller neighbours, as if in their shade. */
-function shadowFromTaller(out: Raster, cell: Cell, own: TileCode): void {
+function shadowFromTaller(out: Raster, cell: Cell, own: Ground): void {
   for (const side of SIDES) {
     if (neighbourTop(cell, side) <= topOf(own) + 0.01) continue;
     for (let y = 0; y < TERRAIN_TEXELS; y++) {
@@ -205,6 +221,64 @@ function paintMeadow(out: Raster, cell: Cell): void {
     }
   }
   shadowFromTaller(out, cell, 'B');
+}
+
+/**
+ * The island's wild rim: deeper, unkempt grass with clover, pebbles and flower drifts, no tactics
+ * grid, and a sunlit lip where the island ends.
+ */
+function paintWilds(out: Raster, cell: Cell): void {
+  const { ox, oy } = cell;
+  for (let y = 0; y < TERRAIN_TEXELS; y++) {
+    for (let x = 0; x < TERRAIN_TEXELS; x++) {
+      const gx = ox + x;
+      const gy = oy + y;
+      const n = 0.55 * noise(gx, gy, 11, 13) + 0.45 * noise(gx, gy, 3, 14);
+      const level = Math.max(0, Math.min(3, Math.floor((n + dither(gx, gy) * 0.26) * 4.2 - 0.5)));
+      out.set(gx, gy, MEADOW[level]);
+    }
+  }
+  const tufts = 9 + Math.floor(hash(cell.c, cell.r, 15) * 6);
+  for (let i = 0; i < tufts; i++) {
+    const x = ox + 2 + Math.floor(hash(cell.c * 5 + i, cell.r, 16) * (TERRAIN_TEXELS - 4));
+    const y = oy + 3 + Math.floor(hash(cell.c, cell.r * 5 + i, 17) * (TERRAIN_TEXELS - 4));
+    out.set(x, y, MEADOW[0]);
+    out.set(x, y - 1, MEADOW[2]);
+    out.set(x - 1, y - 2, MEADOW[3]);
+    out.set(x + 1, y - 2, MEADOW[4]);
+    out.set(x + 1, y - 3, MEADOW[4]);
+  }
+  // A drift of one kind of flower now and then, scattered pebbles
+  if (hash(cell.c, cell.r, 18) < 0.45) {
+    const petal = FLOWERS[Math.floor(hash(cell.r, cell.c, 19) * FLOWERS.length)];
+    for (let i = 0; i < 5; i++) {
+      const x = ox + 3 + Math.floor(hash(cell.c + i * 7, cell.r, 20) * (TERRAIN_TEXELS - 6));
+      const y = oy + 3 + Math.floor(hash(cell.c, cell.r + i * 7, 21) * (TERRAIN_TEXELS - 6));
+      out.set(x, y, petal);
+      out.set(x + 1, y, scale(petal, 0.8));
+      out.set(x, y - 1, petal);
+    }
+  }
+  for (let i = 0; i < 3; i++) {
+    if (hash(cell.c + i, cell.r, 22) > 0.5) continue;
+    const x = ox + 3 + Math.floor(hash(cell.c, cell.r + i * 3, 23) * (TERRAIN_TEXELS - 6));
+    const y = oy + 3 + Math.floor(hash(cell.c + i * 3, cell.r, 24) * (TERRAIN_TEXELS - 6));
+    out.set(x, y, PEBBLE[1]);
+    out.set(x + 1, y, PEBBLE[0]);
+    out.set(x, y + 1, scale(PEBBLE[0], 0.7));
+    out.set(x + 1, y + 1, scale(PEBBLE[0], 0.6));
+  }
+  for (const side of SIDES) {
+    if (neighbourTop(cell, side) >= topOf('R') - 0.01) continue;
+    for (let y = 0; y < TERRAIN_TEXELS; y++) {
+      for (let x = 0; x < TERRAIN_TEXELS; x++) {
+        const d = edgeDistance(x, y, side);
+        if (d === 0) out.set(ox + x, oy + y, MEADOW_LIP);
+        else if (d === 1) out.set(ox + x, oy + y, MEADOW[4]);
+      }
+    }
+  }
+  shadowFromTaller(out, cell, 'R');
 }
 
 /** Rounded stones from a jittered Voronoi pattern over the whole board, lit from the top left. */
@@ -315,16 +389,32 @@ function paintBasalt(out: Raster, glow: Raster, cell: Cell): void {
   paintStones(out, cell, 9, 61, BASALT, () => LAVA, glow);
 }
 
-/** The whole board's top faces (colour) and what glows on them (runes, lava). */
-export function paintBoard(tiles: TileCode[][]): { color: Raster; glow: Raster } {
-  const height = tiles.length;
-  const width = tiles[0]?.length ?? 0;
+/** The map's tiles framed by `rim` tiles of wild ground on every side. */
+export function withRim(tiles: TileCode[][], rim: number): Ground[][] {
+  const width = (tiles[0]?.length ?? 0) + rim * 2;
+  return Array.from({ length: tiles.length + rim * 2 }, (_, r) =>
+    Array.from({ length: width }, (_, c): Ground => tiles[r - rim]?.[c - rim] ?? 'R'),
+  );
+}
+
+/**
+ * The whole board's top faces (colour) and what glows on them (runes, lava). With a `rim`, the
+ * painting also covers that many tiles of wild ground around the map, and map tile (c, r) sits
+ * at cell (c + rim, r + rim).
+ */
+export function paintBoard(tiles: TileCode[][], rim = 0): { color: Raster; glow: Raster } {
+  const ground = withRim(tiles, rim);
+  const height = ground.length;
+  const width = ground[0]?.length ?? 0;
   const color = new Raster(width * TERRAIN_TEXELS, height * TERRAIN_TEXELS);
   const glow = new Raster(width * TERRAIN_TEXELS, height * TERRAIN_TEXELS);
   for (let r = 0; r < height; r++) {
     for (let c = 0; c < width; c++) {
-      const cell: Cell = { tiles, c, r, ox: c * TERRAIN_TEXELS, oy: r * TERRAIN_TEXELS };
-      switch (tiles[r][c]) {
+      const cell: Cell = { tiles: ground, c, r, ox: c * TERRAIN_TEXELS, oy: r * TERRAIN_TEXELS };
+      switch (ground[r][c]) {
+        case 'R':
+          paintWilds(color, cell);
+          break;
         case 'B':
           paintMeadow(color, cell);
           break;
@@ -351,12 +441,12 @@ export function paintBoard(tiles: TileCode[][]): { color: Raster; glow: Raster }
 
 /** Rows per tile kind in the side atlas, enough for the tallest wall. */
 export const SIDE_ROWS = 14;
-const SIDE_KINDS: TileCode[] = ['B', 'P', 'C', 'M', 'S', 'O'];
+const SIDE_KINDS: Ground[] = ['B', 'P', 'C', 'M', 'S', 'O', 'R'];
 /** Total rows in the wall atlas. */
 export const SIDE_ATLAS_ROWS = SIDE_ROWS * SIDE_KINDS.length;
 
 /** Atlas band (0 = first) holding the walls for a tile kind. */
-export function sideBand(tile: TileCode): number {
+export function sideBand(tile: Ground): number {
   return SIDE_KINDS.indexOf(tile);
 }
 
@@ -372,7 +462,7 @@ export function paintSides(): Raster {
     for (let y = 0; y < SIDE_ROWS; y++) {
       for (let x = 0; x < TERRAIN_TEXELS; x++) {
         const gy = top + y;
-        if (kind === 'B') {
+        if (kind === 'B' || kind === 'R') {
           const overhang = 2 + Math.floor(hash(x, 0, 71) * 2.6);
           if (y === 0) out.set(x, gy, MEADOW_LIP);
           else if (y < overhang) out.set(x, gy, MEADOW[y === 1 ? 3 : 2]);
@@ -395,6 +485,118 @@ export function paintSides(): Raster {
     }
   });
   return out;
+}
+
+/** The cliff painting spans this many tiles across (repeating sideways) and down. */
+export const CLIFF_TILES_WIDE = 8;
+export const CLIFF_TILES_DEEP = 6;
+
+const STRATA = [0x4d3220, 0x5e3f28, 0x6f4c30, 0x7d5a3a, 0x5a3a26].map(rgb);
+const ROOTS = [0x8c6a48, 0x5e4330].map(rgb);
+const CRAG = [0x3d384a, 0x4a4358, 0x5a5268, 0x6b637a].map(rgb);
+const VEIN = [0x2f9bd6, 0x6fe0f7, 0xd8fbff].map(rgb);
+
+/**
+ * The island's flanks below the rim: dark soil hung with roots and vines, banded earth strata,
+ * then craggy rock darkening with depth and veined with glowing crystal. Repeats sideways.
+ */
+export function paintCliff(): { color: Raster; glow: Raster } {
+  const W = CLIFF_TILES_WIDE * TERRAIN_TEXELS;
+  const H = CLIFF_TILES_DEEP * TERRAIN_TEXELS;
+  const color = new Raster(W, H);
+  const glow = new Raster(W, H);
+  const put = (out: Raster, x: number, y: number, c: RGB) => out.set(((x % W) + W) % W, y, c);
+  const grid = 14;
+  const cells = W / grid;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const boundary = 30 + Math.round((noise(x, 0, 16, 81, W) - 0.5) * 12);
+      if (y < 4) {
+        // Dark soil just under the rim's wall, shaded by the overhang
+        color.set(x, y, scale(SOIL[y < 2 ? 0 : 1], 0.8 + dither(x, y) * 0.1));
+      } else if (y < boundary) {
+        const wave = noise(x, y, 28, 82, W) * 5;
+        const band = Math.floor((y + wave) / 6);
+        const row = (y + wave) % 6;
+        const base = STRATA[Math.floor(hash(band, 0, 83) * STRATA.length)];
+        const lit = row < 1 ? 1.14 : row > 5 ? 0.8 : 1;
+        const pebble = hash(x, y, 84) < 0.025;
+        color.set(x, y, pebble ? PEBBLE[1] : scale(base, lit + dither(x, y) * 0.08));
+      } else {
+        // Jittered Voronoi crags whose cells wrap with the texture
+        const cx = Math.floor(x / grid);
+        const cy = Math.floor(y / grid);
+        let d1 = Infinity;
+        let d2 = Infinity;
+        let near = [0, 0, 0, 0];
+        for (let j = cy - 2; j <= cy + 2; j++) {
+          for (let i = cx - 1; i <= cx + 1; i++) {
+            const wi = ((i % cells) + cells) % cells;
+            const px = (i + 0.2 + 0.6 * hash(wi, j, 85)) * grid;
+            const py = (j + 0.2 + 0.6 * hash(wi, j, 86)) * grid;
+            // Squashed vertically, so the crags stand tall like a cliff face
+            const d = Math.hypot(x + 0.5 - px, (y + 0.5 - py) * 0.55);
+            if (d < d1) {
+              d2 = d1;
+              d1 = d;
+              near = [px, py, wi, j];
+            } else if (d < d2) {
+              d2 = d;
+            }
+          }
+        }
+        const depth = Math.min(1, (y - boundary) / (H - 34));
+        const fade = 1 - depth * 0.5;
+        if (d2 - d1 < 1.2) {
+          color.set(x, y, scale(CRAG[0], 0.6 * fade));
+          continue;
+        }
+        const base = CRAG[Math.floor(hash(near[2], near[3], 87) * CRAG.length)];
+        const lean = (x + 0.5 - near[0] + (y + 0.5 - near[1])) / grid;
+        const lit = lean < -0.3 ? 1.18 : lean > 0.35 ? 0.82 : 1;
+        color.set(x, y, scale(base, (lit + dither(x, y) * 0.07) * fade));
+      }
+    }
+  }
+  // Crystal veins glinting in the rock
+  for (let i = 0; i < 7; i++) {
+    const x = Math.floor(hash(i, 1, 88) * W);
+    const y = 46 + Math.floor(hash(i, 2, 88) * (H - 60));
+    for (let s = 0; s < 3; s++) {
+      const sx = x + s * 3 - 3;
+      const tall = 3 + Math.floor(hash(i, s, 89) * 4);
+      for (let k = -tall; k <= 1; k++) {
+        const wide = k > -tall + 1 && k < 1;
+        for (const dx of wide ? [-1, 0, 1] : [0]) {
+          const c = dx === 0 ? VEIN[k < -1 ? 2 : 1] : VEIN[0];
+          put(color, sx + dx, y + k, c);
+          put(glow, sx + dx, y + k, c);
+        }
+      }
+    }
+  }
+  // Roots and vines hang from the rim
+  for (let i = 0; i < 18; i++) {
+    const x0 = Math.floor(hash(i, 3, 90) * W);
+    const vine = i % 3 === 0;
+    const length = (vine ? 10 : 4) + Math.floor(hash(i, 4, 90) * (vine ? 18 : 12));
+    for (let t = 0; t < length; t++) {
+      const x = x0 + Math.round(Math.sin(t * 0.45 + i) * (vine ? 1.4 : 0.8));
+      if (vine) {
+        put(color, x, t, MEADOW[t % 4 === 0 ? 4 : 2]);
+        if (t % 3 === 1) put(color, x + (t % 2 ? 1 : -1), t, MEADOW[3]);
+      } else {
+        put(color, x, t, ROOTS[t < length / 2 ? 0 : 1]);
+      }
+    }
+  }
+  // A dim copy of the painting glows too, so faces turned from the sun stay readable
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (!glow.opaque(x, y)) glow.set(x, y, scale(color.get(x, y), 0.22));
+    }
+  }
+  return { color, glow };
 }
 
 /** Pixel-art texture: crisp up close, smoothed only when shrunk far below its pixel size. */

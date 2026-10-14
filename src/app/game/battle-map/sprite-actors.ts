@@ -53,12 +53,29 @@ export function facingIndex(yaw: number, cameraYaw: number, directions: number):
   return (index + directions) % directions;
 }
 
+/**
+ * Furthest a sprite leans back to face the camera. From overhead a fully camera-facing sprite
+ * would lie flat on the board and sink into taller tiles behind it; capped, it stays upright
+ * enough to clear them and is only a little foreshortened.
+ */
+export const MAX_SPRITE_LEAN = THREE.MathUtils.degToRad(60);
+
+const billboardEuler = new THREE.Euler();
+
+/** The turn that faces a sprite to the camera, leaning back no further than MAX_SPRITE_LEAN. */
+export function billboardTurn(camera: THREE.Camera, out: THREE.Quaternion): THREE.Quaternion {
+  billboardEuler.setFromQuaternion(camera.quaternion, 'YXZ');
+  billboardEuler.x = Math.max(billboardEuler.x, -MAX_SPRITE_LEAN);
+  billboardEuler.z = 0;
+  return out.setFromEuler(billboardEuler);
+}
+
 /** Yaw of the camera around a point: 0 when the camera sits on its +z side. */
 export function cameraYawAround(camera: THREE.Camera, point: THREE.Vector3): number {
   return Math.atan2(camera.position.x - point.x, camera.position.z - point.z);
 }
 
-const VERTEX = /* glsl */ `
+export const SPRITE_VERTEX = /* glsl */ `
   #include <common>
   #include <fog_pars_vertex>
   uniform vec4 frame;
@@ -71,7 +88,7 @@ const VERTEX = /* glsl */ `
   }
 `;
 
-const FRAGMENT = /* glsl */ `
+export const SPRITE_FRAGMENT = /* glsl */ `
   #include <common>
   #include <fog_pars_fragment>
   uniform sampler2D map;
@@ -89,7 +106,7 @@ const FRAGMENT = /* glsl */ `
 `;
 
 /** Shadow pass: the sprite's current frame as a silhouette, so it casts its own shape. */
-const SHADOW_FRAGMENT = /* glsl */ `
+export const SPRITE_SHADOW_FRAGMENT = /* glsl */ `
   #include <packing>
   uniform sampler2D map;
   varying vec2 vUv;
@@ -99,7 +116,7 @@ const SHADOW_FRAGMENT = /* glsl */ `
   }
 `;
 
-const SHADOW_VERTEX = /* glsl */ `
+export const SPRITE_SHADOW_VERTEX = /* glsl */ `
   uniform vec4 frame;
   varying vec2 vUv;
   void main() {
@@ -151,8 +168,8 @@ export class SpriteActor implements PieceRig {
         flash: { value: 0 },
         opacity: { value: 1 },
       },
-      vertexShader: VERTEX,
-      fragmentShader: FRAGMENT,
+      vertexShader: SPRITE_VERTEX,
+      fragmentShader: SPRITE_FRAGMENT,
       fog: true,
     });
     // The art's colours are final; keep them out of filmic tone mapping
@@ -174,8 +191,8 @@ export class SpriteActor implements PieceRig {
     this.shadow.castShadow = true;
     this.shadow.customDepthMaterial = new THREE.ShaderMaterial({
       uniforms: { map: material.uniforms['map'], frame: material.uniforms['frame'] },
-      vertexShader: SHADOW_VERTEX,
-      fragmentShader: SHADOW_FRAGMENT,
+      vertexShader: SPRITE_SHADOW_VERTEX,
+      fragmentShader: SPRITE_SHADOW_FRAGMENT,
       side: THREE.DoubleSide,
     });
     this.root.add(this.shadow);
@@ -251,7 +268,7 @@ export class SpriteActor implements PieceRig {
     this.euler.setFromQuaternion(this.yaw, 'YXZ');
     const yaw = this.euler.y;
     this.yaw.invert();
-    this.mesh.quaternion.copy(this.yaw).multiply(camera.quaternion);
+    this.mesh.quaternion.copy(this.yaw).multiply(billboardTurn(camera, this.turn));
     this.turn.setFromAxisAngle(SpriteActor.UP, sunYaw);
     this.shadow.quaternion.copy(this.yaw).multiply(this.turn);
     parent.getWorldPosition(this.worldPosition);

@@ -35,7 +35,9 @@ src/
 │   │   │   ├── motions.ts             # Keyframed attacks/idle shared by 3D heroes and sprites
 │   │   │   ├── sprite-actors.ts       # HD-2D billboard sprites (8 facings) from baked sheets
 │   │   │   ├── sprite-library.service.ts # Loads the baked sheets in public/assets/actors
-│   │   │   ├── pixel-terrain.ts       # HD-2D board painted as pixel art in code (no images)
+│   │   │   ├── pixel-terrain.ts       # HD-2D board, rim and cliff painted as pixel art in code
+│   │   │   ├── pixel-props.ts         # HD-2D scenery sprites painted in code (trees, crystals...)
+│   │   │   ├── pixel-scenery.ts       # Prop billboards, island cliff, rim prop layout and themes
 │   │   │   └── hd2d-post.ts           # HD-2D lens: bloom, tilt-shift, grade, vignette (lazy)
 │   │   ├── hud/                     # Crystals, Gold, Wave call, speed, gamepad pill
 │   │   ├── tower-panel/             # Class recruitment dock, priority, and upgrade dossier
@@ -134,6 +136,15 @@ sprite pixel on screen): one continuous painting for the tile tops that reads ea
 neighbours (sunlit meadow lips, shade beside taller tiles, a faint tactics grid), a wall atlas for
 tile sides, and a glow map for runes and lava. The sun comes from the side so shadows show; sprites
 cast their silhouettes through an upright stand-in turned toward it.
+
+The scenery is painted in code too, never loaded: `pixel-props.ts` paints trees, bushes, rocks,
+runestones, crystal clusters, the altar's dais and turning crystal, the spawn gate, sky islands,
+clouds and the sky as pixel-art frame strips (a breeze, a glint, a turn) at the sprites' 36 pixels
+per tile, lit from the upper left with a 1px ink outline. In HD-2D the board sits on a one-tile rim
+of wild meadow (`R` ground) above a painted cliff that tapers to a keel; `pixel-scenery.ts` scatters
+props over the rim per map theme (`SCENERY_THEMES`) and hides tall ones that would stand between the
+camera and the board. Sprites lean back at most 60° (`MAX_SPRITE_LEAN`), so they stay upright enough
+from the overhead camera. Distant backdrops get bigger pixels so they look the same size on screen.
 
 ## Guardrails
 
