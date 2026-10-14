@@ -65,10 +65,14 @@ export class ScenerySprite {
   public readonly root = new THREE.Group();
   /** False when the owner picks frames itself with `setFrame`. */
   public playing = true;
+  /** Turn in the screen plane, e.g. to point a projectile along its flight on screen. */
+  public roll = 0;
   private readonly mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   private readonly shadow: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null = null;
   private readonly parentTurn = new THREE.Quaternion();
   private readonly sunTurn = new THREE.Quaternion();
+  private readonly rollTurn = new THREE.Quaternion();
+  private static readonly FORWARD = new THREE.Vector3(0, 0, 1);
   private static readonly UP = new THREE.Vector3(0, 1, 0);
   private clock: number;
 
@@ -92,6 +96,7 @@ export class ScenerySprite {
         tint: { value: new THREE.Color(1, 1, 1) },
         flash: { value: 0 },
         opacity: { value: 1 },
+        dissolve: { value: 0 },
       },
       vertexShader: SPRITE_VERTEX,
       fragmentShader: SPRITE_FRAGMENT,
@@ -123,6 +128,11 @@ export class ScenerySprite {
     this.setFrame(Math.floor((this.clock / art.duration) * art.frames));
   }
 
+  /** Dithers the sprite away, 0 whole to 1 gone. */
+  public set dissolve(value: number) {
+    this.mesh.material.uniforms['dissolve'].value = value;
+  }
+
   /** Multiplies the painting's colours, e.g. to flush a crystal red. */
   public get tint(): THREE.Color {
     return this.mesh.material.uniforms['tint'].value as THREE.Color;
@@ -151,6 +161,11 @@ export class ScenerySprite {
     }
     this.root.quaternion.identity();
     this.mesh.quaternion.copy(this.parentTurn).multiply(billboardTurn(camera, this.sunTurn));
+    if (this.roll) {
+      this.mesh.quaternion.multiply(
+        this.rollTurn.setFromAxisAngle(ScenerySprite.FORWARD, this.roll),
+      );
+    }
     if (this.shadow) {
       this.sunTurn.setFromAxisAngle(ScenerySprite.UP, sunYaw);
       this.shadow.quaternion.copy(this.parentTurn).multiply(this.sunTurn);

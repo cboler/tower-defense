@@ -4,10 +4,25 @@ import { animateModel } from './battlefield-models';
 import { PieceRig } from './miniature-rig';
 import { ModelKind, ModelLibraryService } from './model-library.service';
 import { CLASS_ATTACK, attackDuration, leadArm, poseAttack } from './motions';
-import { SpriteActor } from './sprite-actors';
+import { SpriteActor, billboardTurn } from './sprite-actors';
+import {
+  PixelRing,
+  paintArrow,
+  paintBladeStar,
+  paintCursorBrackets,
+  paintCursorGem,
+  paintExplosion,
+  paintFireball,
+  paintLightPillar,
+  paintSlash,
+  paintSpark,
+  paintSpear,
+  paintTimeOrb,
+} from './pixel-fx';
 import { SpriteLibraryService } from './sprite-library.service';
 import {
   Ground,
+  Raster,
   SIDE_ATLAS_ROWS,
   SIDE_ROWS,
   TERRAIN_TEXELS,
@@ -21,6 +36,7 @@ import {
 } from './pixel-terrain';
 import {
   CRYSTAL_PALETTES,
+  PropArt,
   paintCloud,
   paintDais,
   paintGate,
@@ -89,6 +105,28 @@ const PROJECTILE_ARC: Record<Projectile['visualType'], number> = {
   dagger: 0.03,
 };
 
+/** HD-2D projectile art, and whether it is drawn pointing along its flight (to the right). */
+const PIXEL_SHOTS: Record<Projectile['visualType'], [() => PropArt, boolean]> = {
+  arrow: [() => paintArrow(), true],
+  'song-arrow': [() => paintArrow(true), true],
+  spear: [paintSpear, true],
+  fireball: [paintFireball, true],
+  'time-orb': [paintTimeOrb, false],
+  dagger: [paintBladeStar, false],
+  'magic-spark': [() => paintSpark(), false],
+};
+
+/** Trail and impact spark colours per projectile, shared by both looks. */
+const SHOT_COLOURS: Record<Projectile['visualType'], { trail: number | null; impact: number }> = {
+  arrow: { trail: 0xfef9c3, impact: 0xfde68a },
+  'song-arrow': { trail: 0xf472b6, impact: 0xf9a8d4 },
+  spear: { trail: 0x7dd3fc, impact: 0x38bdf8 },
+  fireball: { trail: 0xf97316, impact: 0xfb923c },
+  'time-orb': { trail: 0xa855f7, impact: 0xc084fc },
+  dagger: { trail: null, impact: 0x22d3ee },
+  'magic-spark': { trail: 0x7dd3fc, impact: 0x38bdf8 },
+};
+
 const MAX_PARTICLES = 450;
 
 /** The HD-2D sun stands low to the west, so shadows fall where the camera sees them. */
@@ -128,6 +166,9 @@ interface ParticleInstance {
   maxLife: number;
   gravity: number;
   baseScale: number;
+  /** HD-2D: edge in sprite pixels of a camera-facing square; shrinks a pixel at a time. */
+  pixels?: number;
+  sparkle?: boolean;
 }
 
 interface TowerVisual {
@@ -159,6 +200,8 @@ interface MobVisual {
   hpLag: THREE.Mesh;
   hpTrail: number;
   stunStars: THREE.Group;
+  /** HD-2D stun stars, painted; they turn to the camera. */
+  stunSprites: ScenerySprite[];
   spriteSize: number;
   lastHp: number;
   hitAge: number;
@@ -188,6 +231,10 @@ interface ProjectileVisual {
   trailTimer: number;
   trailColor: number | null;
   impactColor: number;
+  /** HD-2D: the painted projectile, rolled to point along its flight on screen. */
+  sprite: ScenerySprite | null;
+  /** Painted art that already points the way it flies (arrows, spears, fireballs). */
+  pointed: boolean;
 }
 
 interface EffectVisual {
@@ -196,6 +243,7 @@ interface EffectVisual {
   age: number;
   life: number;
   animate: (progress: number, object: THREE.Object3D) => void;
+  dispose?: () => void;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -243,6 +291,11 @@ export class ThreeBattlefieldService {
   private reticleMesh: THREE.Group | null = null;
   private rangeMesh: THREE.Mesh | null = null;
   private supportRangeMesh: THREE.Mesh | null = null;
+  /** HD-2D tile cursor: brackets painted on the tile and a crystal bobbing above it. */
+  private pixelCursor: { decal: THREE.Mesh; texture: THREE.Texture; gem: ScenerySprite } | null =
+    null;
+  private pixelRange: PixelRing | null = null;
+  private pixelSupportRange: PixelRing | null = null;
 
   // Key Feature Meshes
   private crystalAltarMesh: THREE.Group | null = null;
@@ -283,6 +336,13 @@ export class ThreeBattlefieldService {
   private readonly fxRingGeo = new THREE.RingGeometry(0.82, 1, 48);
   private readonly fxArcGeo = new THREE.RingGeometry(0.62, 1, 24, 1, 0, Math.PI * 0.9);
   private readonly fxWideArcGeo = new THREE.RingGeometry(0.78, 1, 48, 1, 0, Math.PI * 1.5);
+  /** HD-2D sparks: camera-facing squares sized in whole sprite pixels. */
+  private readonly pixelSquareGeo = new THREE.PlaneGeometry(1, 1);
+  private sparkleTexture: THREE.DataTexture | null = null;
+  private readonly particleTurn = new THREE.Quaternion();
+  private readonly fxTurn = new THREE.Quaternion();
+  private readonly fxVec = new THREE.Vector3();
+  private readonly fx = new THREE.Vector3();
   private readonly fxPillarGeo = new THREE.CylinderGeometry(1, 1, 1, 20, 1, true).translate(
     0,
     0.5,
@@ -298,6 +358,7 @@ export class ThreeBattlefieldService {
     this.fxArcGeo,
     this.fxWideArcGeo,
     this.fxPillarGeo,
+    this.pixelSquareGeo,
   ]);
 
   // Reactive scene feedback
@@ -1900,6 +1961,21 @@ export class ThreeBattlefieldService {
     }
 
     this.scene.add(this.reticleMesh);
+
+    // HD-2D: brackets painted at the board's texel size, and a crystal bobbing overhead
+    const texture = spriteTexture(paintCursorBrackets(TERRAIN_TEXELS));
+    texture.repeat.set(0.5, 1);
+    const decal = new THREE.Mesh(
+      new THREE.PlaneGeometry(this.TILE_SIZE, this.TILE_SIZE),
+      sharpenPixels(new THREE.MeshBasicMaterial({ map: texture, alphaTest: 0.5 })),
+    );
+    decal.material.toneMapped = false;
+    decal.rotation.x = -Math.PI / 2;
+    decal.visible = false;
+    const gem = this.propCache.sprite('cursor-gem', paintCursorGem);
+    gem.root.visible = false;
+    this.scene.add(decal, gem.root);
+    this.pixelCursor = { decal, texture, gem };
   }
 
   private buildRangeOverlay(): void {
@@ -1932,6 +2008,25 @@ export class ThreeBattlefieldService {
     this.supportRangeMesh.rotation.x = -Math.PI / 2;
     this.supportRangeMesh.visible = false;
     this.scene.add(this.supportRangeMesh);
+
+    // HD-2D: the same circles drawn in board texels, the attack range with a dithered glow inside
+    const texel = 1 / TERRAIN_TEXELS;
+    this.pixelRange = new PixelRing({
+      color: 0x38bdf8,
+      core: 0xd6f6ff,
+      pixel: texel,
+      ground: true,
+    });
+    this.pixelSupportRange = new PixelRing({
+      color: 0xfbbf24,
+      core: 0xfff1b8,
+      pixel: texel,
+      ground: true,
+    });
+    for (const ring of [this.pixelRange, this.pixelSupportRange]) {
+      ring.mesh.visible = false;
+      this.scene.add(ring.mesh);
+    }
   }
 
   private setupPointerEvents(canvas: HTMLCanvasElement, game: GameService): void {
@@ -2141,6 +2236,27 @@ export class ThreeBattlefieldService {
     } else if (this.reticleMesh) {
       this.reticleMesh.visible = false;
     }
+    const hd2d = this.look() === 'hd2d';
+    if (this.pixelCursor && this.reticleMesh) {
+      // HD-2D follows the same glide, snapped to whole board texels, on the tile's own top
+      const { decal, texture, gem } = this.pixelCursor;
+      const show = hd2d && !!sel;
+      decal.visible = gem.root.visible = show;
+      if (hd2d) this.reticleMesh.visible = false;
+      if (show && sel) {
+        const tile = map.tiles[sel.y]?.[sel.x];
+        const top = tile ? TILE_SHAPES[tile].y + TILE_SHAPES[tile].height / 2 : 0.25;
+        const snap = (v: number) => Math.round(v * TERRAIN_TEXELS) / TERRAIN_TEXELS;
+        const { x, z } = this.reticleMesh.position;
+        decal.position.set(snap(x), top + 0.006, snap(z));
+        texture.offset.x = Math.floor(elapsed * 3) % 2 ? 0.5 : 0;
+        const above = game.selectedTower() ? 1.95 : 0.85;
+        const bob = Math.round(Math.abs(Math.sin(elapsed * 3)) * 3) * PROP_PIXEL;
+        gem.root.position.set(decal.position.x, top + above + bob, decal.position.z);
+        gem.update(dt);
+        gem.faceCamera(this.camera, this.sunYaw);
+      }
+    }
 
     // 7. Range Overlay Update (geometry rebuilt only when the radius changes)
     const selTower = game.selectedTower();
@@ -2194,6 +2310,29 @@ export class ThreeBattlefieldService {
         );
       } else {
         this.rangeMesh.visible = false;
+      }
+    }
+    // HD-2D draws the same circles in board texels, just above the meadows so they show on all
+    const texel = 1 / TERRAIN_TEXELS;
+    if (this.pixelRange && this.rangeMesh) {
+      const show = hd2d && this.rangeMesh.visible;
+      this.pixelRange.mesh.visible = show;
+      if (hd2d) this.rangeMesh.visible = false;
+      if (show) {
+        this.pixelRange.setRadius(this.rangeRadius - texel, 2 * texel);
+        this.pixelRange.setFill(0.45, 0.32 + Math.sin(elapsed * 4) * 0.1);
+        const { x, z } = this.rangeMesh.position;
+        this.pixelRange.mesh.position.set(x, 0.265, z);
+      }
+    }
+    if (this.pixelSupportRange && this.supportRangeMesh) {
+      const show = hd2d && this.supportRangeMesh.visible;
+      this.pixelSupportRange.mesh.visible = show;
+      if (hd2d) this.supportRangeMesh.visible = false;
+      if (show) {
+        this.pixelSupportRange.setRadius(this.supportRangeMesh.scale.x - texel, 2 * texel);
+        const { x, z } = this.supportRangeMesh.position;
+        this.pixelSupportRange.mesh.position.set(x, 0.27, z);
       }
     }
 
@@ -2401,6 +2540,24 @@ export class ThreeBattlefieldService {
         vis.xpRatio = quantized;
         this.updateXpRing(group, quantized);
       }
+
+      // HD-2D swaps both plinth rings for their pixel twins; the aura swells on every action
+      const hd2d = this.look() === 'hd2d';
+      const pixelAura = group.getObjectByName('pixel-aura')?.userData['ring'] as
+        PixelRing | undefined;
+      const pixelXp = group.getObjectByName('pixel-xp')?.userData['ring'] as PixelRing | undefined;
+      const xpRing = group.getObjectByName('xp-ring');
+      if (auraRing) auraRing.visible = !hd2d;
+      if (xpRing) xpRing.visible = !hd2d && vis.xpRatio > 0;
+      if (pixelAura) {
+        pixelAura.mesh.visible = hd2d;
+        if (hd2d) pixelAura.setRadius(0.38 * (1 + pose.flash * 0.25), 3 / TERRAIN_TEXELS);
+      }
+      if (pixelXp) {
+        pixelXp.mesh.visible = hd2d && vis.xpRatio > 0;
+        // From the top of the plinth round clockwise, as the 3D arc fills
+        pixelXp.setArc(-Math.PI / 2, Math.PI * 2 * vis.xpRatio);
+      }
     }
 
     // Dismissed heroes sink away instead of vanishing
@@ -2584,6 +2741,21 @@ export class ThreeBattlefieldService {
     xpRing.position.y = 0.085;
     xpRing.visible = false;
     group.add(xpRing);
+
+    // HD-2D twins of both rings, in board texels; syncTowers shows whichever the look wants
+    const texel = 1 / TERRAIN_TEXELS;
+    const pixelAura = new PixelRing({ color: classDef.color, pixel: texel, ground: true });
+    pixelAura.setRadius(0.38, 3 * texel);
+    pixelAura.mesh.name = 'pixel-aura';
+    pixelAura.mesh.userData['ring'] = pixelAura;
+    pixelAura.mesh.position.y = 0.075;
+    const pixelXp = new PixelRing({ color: 0xfacc15, core: 0xfff3b0, pixel: texel, ground: true });
+    pixelXp.setRadius(0.27, 2 * texel);
+    pixelXp.mesh.name = 'pixel-xp';
+    pixelXp.mesh.userData['ring'] = pixelXp;
+    pixelXp.mesh.position.y = 0.08;
+    pixelAura.mesh.visible = pixelXp.mesh.visible = false;
+    group.add(pixelAura.mesh, pixelXp.mesh);
 
     // The miniature itself is mounted (and swapped when its model changes) in syncTowers
     const model = new THREE.Group();
@@ -2788,7 +2960,19 @@ export class ThreeBattlefieldService {
 
         // Dizzy stars orbit stunned heads
         vis.stunStars.visible = stunned;
-        if (stunned) vis.stunStars.rotation.y += dt * 6;
+        if (stunned) {
+          vis.stunStars.rotation.y += dt * 6;
+          const hd2d = this.look() === 'hd2d';
+          for (const star of vis.stunStars.children) {
+            star.visible = star.userData['pixel'] ? hd2d : !hd2d;
+          }
+          if (hd2d && this.camera) {
+            for (const twinkle of vis.stunSprites) {
+              twinkle.update(dt);
+              twinkle.faceCamera(this.camera, this.sunYaw);
+            }
+          }
+        }
       }
     }
 
@@ -2872,6 +3056,17 @@ export class ThreeBattlefieldService {
       star.scale.setScalar(1.4);
       stunStars.add(star);
     }
+    // Painted twinkling stars for HD-2D, swapped in for the 3D ones while that look is on
+    const stunSprites = [0, 1, 2].map((i) => {
+      const twinkle = this.propCache.sprite('stun-star', () => paintSpark('#facc15', [1, 2]), {
+        phase: i * 0.12,
+      });
+      const a = (i / 3) * Math.PI * 2;
+      twinkle.root.position.set(Math.cos(a) * 0.24, 0, Math.sin(a) * 0.24);
+      twinkle.root.userData['pixel'] = true;
+      stunStars.add(twinkle.root);
+      return twinkle;
+    });
     stunStars.visible = false;
     group.add(stunStars);
 
@@ -2887,6 +3082,7 @@ export class ThreeBattlefieldService {
       hpLag,
       hpTrail: 1,
       stunStars,
+      stunSprites,
       spriteSize: sprSize,
       lastHp: mob.hp,
       hitAge: Infinity,
@@ -2973,8 +3169,19 @@ export class ThreeBattlefieldService {
       const wz = (p.currentY - halfH) * this.TILE_SIZE;
       vis.group.position.set(wx, y, wz);
 
-      // Point along the flight path
-      if (vis.hasPrev) {
+      if (vis.sprite && this.camera) {
+        // Painted shots turn in the screen plane to point the way they move on screen
+        if (vis.pointed && vis.hasPrev) {
+          const from = this.fxVec.copy(vis.prev).project(this.camera);
+          const to = this.fx.set(wx, y, wz).project(this.camera);
+          const dx = (to.x - from.x) * this.camera.aspect;
+          const dy = to.y - from.y;
+          if (dx * dx + dy * dy > 1e-10) vis.sprite.roll = Math.atan2(dy, dx);
+        }
+        vis.sprite.update(simDt);
+        vis.sprite.faceCamera(this.camera, this.sunYaw);
+      } else if (vis.hasPrev) {
+        // Point along the flight path
         this.tmpVec.set(wx - vis.prev.x, y - vis.prev.y, wz - vis.prev.z);
         if (this.tmpVec.lengthSq() > 1e-8) {
           this.tmpVec.add(vis.group.position);
@@ -2984,11 +3191,11 @@ export class ThreeBattlefieldService {
       vis.prev.set(wx, y, wz);
       vis.hasPrev = true;
 
-      // Per-type flair
+      // Per-type flair (painted shots carry their own in their frames)
       vis.spin += simDt;
-      if (p.visualType === 'dagger') {
+      if (!vis.sprite && p.visualType === 'dagger') {
         vis.body.rotation.y = vis.spin * 28;
-      } else if (p.visualType === 'fireball' || p.visualType === 'time-orb') {
+      } else if (!vis.sprite && (p.visualType === 'fireball' || p.visualType === 'time-orb')) {
         const pulse = 1 + Math.sin(vis.spin * 30) * 0.12;
         vis.body.scale.setScalar(pulse);
       }
@@ -3022,8 +3229,25 @@ export class ThreeBattlefieldService {
     const group = new THREE.Group();
     const body = new THREE.Group();
     group.add(body);
-    let trailColor: number | null = null;
-    let impactColor: number;
+    if (this.look() === 'hd2d') {
+      // A painted shot; arrows, spears and fireballs are drawn pointing right and rolled to fly
+      const [paint, pointed] = PIXEL_SHOTS[type];
+      const sprite = this.propCache.sprite(`shot-${type}`, paint);
+      body.add(sprite.root);
+      const { trail, impact } = SHOT_COLOURS[type];
+      return {
+        group,
+        body,
+        prev: new THREE.Vector3(),
+        hasPrev: false,
+        spin: 0,
+        trailTimer: 0,
+        trailColor: trail,
+        impactColor: impact,
+        sprite,
+        pointed,
+      };
+    }
 
     if (type === 'fireball') {
       body.add(new THREE.Mesh(this.fxSphereGeo, new THREE.MeshBasicMaterial({ color: 0xfff7ed })));
@@ -3031,8 +3255,6 @@ export class ThreeBattlefieldService {
       const glow = new THREE.Mesh(this.fxSphereGeo, this.additiveMat(0xf97316, 0.55));
       glow.scale.setScalar(0.24);
       body.add(glow);
-      trailColor = 0xf97316;
-      impactColor = 0xfb923c;
     } else if (type === 'time-orb') {
       body.add(new THREE.Mesh(this.fxSphereGeo, new THREE.MeshBasicMaterial({ color: 0xf5d0fe })));
       body.children[0].scale.setScalar(0.1);
@@ -3042,8 +3264,6 @@ export class ThreeBattlefieldService {
       const ring = new THREE.Mesh(this.fxRingGeo, this.additiveMat(0xc084fc, 0.8));
       ring.scale.setScalar(0.2);
       body.add(ring);
-      trailColor = 0xa855f7;
-      impactColor = 0xc084fc;
     } else if (type === 'arrow' || type === 'song-arrow') {
       // Built along +Z so lookAt() aims it down the flight path; Bard song arrows glow pink
       const song = type === 'song-arrow';
@@ -3059,8 +3279,6 @@ export class ThreeBattlefieldService {
       head.rotation.x = Math.PI / 2;
       head.position.z = 0.24;
       body.add(shaft, head);
-      trailColor = song ? 0xf472b6 : 0xfef9c3;
-      impactColor = song ? 0xf9a8d4 : 0xfde68a;
     } else if (type === 'dagger') {
       const star = new THREE.Mesh(
         new THREE.OctahedronGeometry(0.12, 0),
@@ -3068,7 +3286,6 @@ export class ThreeBattlefieldService {
       );
       star.scale.set(1, 0.15, 1);
       body.add(star);
-      impactColor = 0x22d3ee;
     } else {
       // Spear
       const shaft = new THREE.Mesh(
@@ -3083,8 +3300,6 @@ export class ThreeBattlefieldService {
       head.rotation.x = Math.PI / 2;
       head.position.z = 0.36;
       body.add(shaft, head);
-      trailColor = 0x7dd3fc;
-      impactColor = 0x38bdf8;
     }
 
     return {
@@ -3094,8 +3309,10 @@ export class ThreeBattlefieldService {
       hasPrev: false,
       spin: 0,
       trailTimer: 0,
-      trailColor,
-      impactColor,
+      trailColor: SHOT_COLOURS[type].trail,
+      impactColor: SHOT_COLOURS[type].impact,
+      sprite: null,
+      pointed: false,
     };
   }
 
@@ -3119,6 +3336,10 @@ export class ThreeBattlefieldService {
 
   private spawnEffect(fx: ParticleFx, wx: number, wz: number): void {
     if (!this.scene) return;
+    if (this.look() === 'hd2d') {
+      this.spawnPixelEffect(fx, wx, wz);
+      return;
+    }
     const color = new THREE.Color(fx.color);
     const r = fx.maxRadius;
 
@@ -3266,16 +3487,206 @@ export class ThreeBattlefieldService {
     });
   }
 
+  /**
+   * HD-2D versions of the combat effects: painted slashes, explosions and light pillars, pixel
+   * rings on the board's grid, and square sparks, all fading by dither.
+   */
+  private spawnPixelEffect(fx: ParticleFx, wx: number, wz: number): void {
+    const r = fx.maxRadius;
+    const texel = 1 / TERRAIN_TEXELS;
+    switch (fx.type) {
+      case 'slash': {
+        if (r > 1.5) {
+          // Whirlwind: a blade arc sweeping round the hero
+          this.addRingEffect(fx.color, wx, 0.45, wz, 0.35, (p, ring) => {
+            ring.setRadius(r * 0.9 * (0.6 + 0.4 * this.easeOutCubic(p)), r * 0.2);
+            ring.setArc(-p * Math.PI * 2.2, Math.PI * 1.5);
+            ring.density = 1 - p * p;
+          });
+        } else {
+          const roll = Math.random() * Math.PI * 2;
+          this.addSpriteEffect(
+            `slash-${fx.color}`,
+            () => paintSlash(fx.color),
+            wx,
+            0.6,
+            wz,
+            0.22,
+            roll,
+          );
+        }
+        this.spawnBurst(wx, 0.6, wz, fx.color, 4, { speed: 1.6, additive: true });
+        break;
+      }
+
+      case 'death':
+        this.pixelGroundRing(wx, wz, fx.color, r * 0.6, 0.3);
+        break;
+
+      case 'explosion': {
+        const radius = Math.max(6, Math.round((r * 0.5) / PROP_PIXEL));
+        this.addSpriteEffect(
+          `boom-${fx.color}-${radius}`,
+          () => paintExplosion(fx.color, radius),
+          wx,
+          0.5,
+          wz,
+          0.45,
+        );
+        this.pixelGroundRing(wx, wz, fx.color, r, 0.45);
+        this.spawnBurst(wx, 0.5, wz, fx.color, 10, { speed: 2.4, additive: true });
+        this.shake(Math.min(0.08, 0.025 * r));
+        break;
+      }
+
+      case 'tremor':
+        this.pixelGroundRing(wx, wz, fx.color, r, 0.5);
+        this.pixelGroundRing(wx, wz, '#fde68a', r * 0.7, 0.4);
+        this.spawnBurst(wx, 0.25, wz, 0x78716c, 12, { speed: 2.8, lift: 1.6 });
+        this.shake(0.09);
+        break;
+
+      case 'time-pulse':
+        this.addRingEffect(
+          fx.color,
+          wx,
+          0.55,
+          wz,
+          0.45,
+          (p, ring) => {
+            ring.setRadius(0.75 * (1 - this.easeOutCubic(p)) + 0.1, 2 * PROP_PIXEL);
+            ring.density = 1 - p;
+          },
+          false,
+        );
+        break;
+
+      case 'aura':
+        this.addRingEffect(fx.color, wx, 0.2, wz, 0.6, (p, ring) => {
+          ring.mesh.position.y = 0.2 + p * 0.8;
+          ring.setRadius(r * 0.45 * (0.5 + p * 0.5), 2 * texel);
+          ring.density = 1 - p;
+        });
+        this.spawnBurst(wx, 0.4, wz, fx.color, 6, { speed: 0.6, lift: 1.4, gravity: -1.5 });
+        break;
+
+      case 'levelup': {
+        this.addSpriteEffect(
+          `pillar-${fx.color}`,
+          () => paintLightPillar(fx.color),
+          wx,
+          0.15,
+          wz,
+          1,
+        );
+        for (let i = 0; i < 3; i++) {
+          const delay = i * 0.15;
+          this.addRingEffect(fx.color, wx, 0.2, wz, 0.9, (p, ring) => {
+            const q = Math.max(0, Math.min(1, (p * 0.9 - delay) / (0.9 - delay)));
+            ring.mesh.position.y = 0.2 + q * 1.6;
+            ring.setRadius(0.55 - q * 0.25, 2 * texel);
+            ring.density = q <= 0 ? 0 : 1 - q;
+          });
+        }
+        this.spawnBurst(wx, 0.4, wz, fx.color, 18, {
+          speed: 1.1,
+          lift: 2.6,
+          gravity: -0.6,
+          life: 0.9,
+          size: 1.4,
+          additive: true,
+          sparkle: true,
+        });
+        break;
+      }
+
+      case 'stun':
+        this.spawnBurst(wx, 0.8, wz, fx.color, 6, { speed: 1, additive: true, sparkle: true });
+        break;
+    }
+  }
+
+  /** A painted effect played once through its frames over `life` seconds, facing the camera. */
+  private addSpriteEffect(
+    key: string,
+    paint: () => PropArt,
+    x: number,
+    y: number,
+    z: number,
+    life: number,
+    roll = 0,
+  ): void {
+    const { art } = this.propCache.get(key, paint);
+    const sprite = this.propCache.sprite(key, paint);
+    sprite.playing = false;
+    sprite.roll = roll;
+    sprite.root.position.set(x, y, z);
+    this.addEffect(
+      sprite.root,
+      [],
+      life,
+      (p) => {
+        sprite.setFrame(Math.min(art.frames - 1, Math.floor(p * art.frames)));
+        if (this.camera) sprite.faceCamera(this.camera, this.sunYaw);
+      },
+      () => sprite.dispose(),
+    );
+  }
+
+  /** A pixel ring effect lying on the board, or facing the camera when not `ground`. */
+  private addRingEffect(
+    colour: string,
+    x: number,
+    y: number,
+    z: number,
+    life: number,
+    animate: (progress: number, ring: PixelRing) => void,
+    ground = true,
+  ): void {
+    const ring = new PixelRing({
+      color: colour,
+      pixel: ground ? 1 / TERRAIN_TEXELS : PROP_PIXEL,
+      ground,
+    });
+    ring.mesh.position.set(x, y, z);
+    this.addEffect(
+      ring.mesh,
+      [],
+      life,
+      (p) => {
+        if (!ground && this.camera)
+          ring.mesh.quaternion.copy(billboardTurn(this.camera, this.fxTurn));
+        animate(p, ring);
+      },
+      () => ring.dispose(),
+    );
+  }
+
+  /** A ring spreading over the board and dithering away; above the meadows so it shows on all. */
+  private pixelGroundRing(
+    x: number,
+    z: number,
+    colour: string,
+    radius: number,
+    life: number,
+  ): void {
+    this.addRingEffect(colour, x, 0.265, z, life, (p, ring) => {
+      ring.setRadius(Math.max(0.02, radius * this.easeOutCubic(p)), 2 / TERRAIN_TEXELS);
+      ring.density = 1 - p;
+    });
+  }
+
   private addEffect(
     object: THREE.Object3D,
     materials: THREE.Material[],
     life: number,
     animate: (progress: number, object: THREE.Object3D) => void,
+    dispose?: () => void,
   ): void {
     if (!this.scene) return;
     animate(0, object);
     this.scene.add(object);
-    this.activeEffects.push({ object, materials, age: 0, life, animate });
+    this.activeEffects.push({ object, materials, age: 0, life, animate, dispose });
   }
 
   private updateEffects(dt: number): void {
@@ -3287,6 +3698,7 @@ export class ThreeBattlefieldService {
       if (p >= 1) {
         this.scene?.remove(e.object);
         e.materials.forEach((m) => m.dispose());
+        e.dispose?.();
         this.activeEffects.splice(i, 1);
       }
     }
@@ -3321,7 +3733,9 @@ export class ThreeBattlefieldService {
     if (n <= 0) return;
 
     const speedBase = opts.speed ?? 2.0;
-    const geo = opts.sparkle ? this.sparkleGeo : this.burstGeo;
+    // HD-2D sparks are flat squares (or pixel crosses) a whole number of sprite pixels across
+    const pixel = this.look() === 'hd2d';
+    const geo = pixel ? this.pixelSquareGeo : opts.sparkle ? this.sparkleGeo : this.burstGeo;
 
     for (let i = 0; i < n; i++) {
       const mat = new THREE.MeshBasicMaterial({
@@ -3330,7 +3744,9 @@ export class ThreeBattlefieldService {
         opacity: 1,
         depthWrite: false,
         blending: opts.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+        ...(pixel && opts.sparkle ? { map: this.sparkle(), alphaTest: 0.5 } : {}),
       });
+      if (pixel) mat.toneMapped = false;
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(x, y, z);
       mesh.rotation.set(Math.random() * 3, Math.random() * 3, 0);
@@ -3350,11 +3766,14 @@ export class ThreeBattlefieldService {
         maxLife: (opts.life ?? 0.45) * (0.75 + Math.random() * 0.5),
         gravity: opts.gravity ?? 9.8,
         baseScale,
+        pixels: pixel ? Math.max(1, Math.round(baseScale * 1.8)) : undefined,
+        sparkle: opts.sparkle,
       });
     }
   }
 
   private updateParticles(dt: number): void {
+    if (this.camera) billboardTurn(this.camera, this.particleTurn);
     for (let i = this.activeParticles.length - 1; i >= 0; i--) {
       const p = this.activeParticles[i];
       p.life += dt;
@@ -3372,13 +3791,42 @@ export class ThreeBattlefieldService {
       p.mesh.position.x += p.vx * dt;
       p.mesh.position.y += p.vy * dt;
       p.mesh.position.z += p.vz * dt;
+      const remaining = 1 - p.life / p.maxLife;
+      if (p.pixels !== undefined) {
+        // Faces the camera and shrinks a whole pixel at a time instead of fading
+        p.mesh.quaternion.copy(this.particleTurn);
+        const size = p.sparkle
+          ? 3 * Math.max(1, Math.round(p.pixels * remaining * 0.7))
+          : Math.max(1, Math.round(p.pixels * remaining + 0.3));
+        p.mesh.scale.setScalar(size * PROP_PIXEL);
+        continue;
+      }
       p.mesh.rotation.x += dt * 6;
       p.mesh.rotation.y += dt * 4;
 
-      const remaining = 1 - p.life / p.maxLife;
       p.mesh.scale.setScalar(Math.max(0.001, p.baseScale * remaining));
       (p.mesh.material as THREE.MeshBasicMaterial).opacity = Math.min(1, remaining * 1.6);
     }
+  }
+
+  /** A white pixel cross that HD-2D sparkles tint with their colour. */
+  private sparkle(): THREE.DataTexture {
+    if (!this.sparkleTexture) {
+      const cross = new Raster(3, 3);
+      for (const [x, y] of [
+        [1, 0],
+        [0, 1],
+        [1, 1],
+        [2, 1],
+        [1, 2],
+      ]) {
+        cross.set(x, y, [255, 255, 255]);
+      }
+      this.sparkleTexture = spriteTexture(cross);
+      this.sparkleTexture.magFilter = THREE.NearestFilter;
+      this.sparkleTexture.minFilter = THREE.NearestFilter;
+    }
+    return this.sparkleTexture;
   }
 
   // ---------------------------------------------------------------------------

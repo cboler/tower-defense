@@ -111,11 +111,16 @@ export const SPRITE_FRAGMENT = /* glsl */ `
   uniform vec3 tint;
   uniform float flash;
   uniform float opacity;
+  uniform float dissolve;
   varying vec2 vUv;
   ${SPRITE_SAMPLE}
+  float bayer2(vec2 a) { a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }
+  float bayer4(vec2 a) { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
   void main() {
     vec4 texel = texture2D(map, sharpUv(vUv));
     if (texel.a < 0.5) discard;
+    // Fades out a pixel at a time in an ordered dither, as pixel art does
+    if (dissolve > 0.0 && bayer4(floor(vUv * texSize)) < dissolve) discard;
     gl_FragColor = vec4(mix(texel.rgb * tint, vec3(1.0), flash), opacity);
     #include <colorspace_fragment>
     #include <fog_fragment>
@@ -185,6 +190,7 @@ export class SpriteActor implements PieceRig {
         tint: { value: new THREE.Color(1, 1, 1) },
         flash: { value: 0 },
         opacity: { value: 1 },
+        dissolve: { value: 0 },
       },
       vertexShader: SPRITE_VERTEX,
       fragmentShader: SPRITE_FRAGMENT,
@@ -259,12 +265,14 @@ export class SpriteActor implements PieceRig {
     );
   }
 
-  /** Fades out (0 visible, 1 gone), flashing white like the miniatures' death. */
+  /**
+   * Fades out (0 visible, 1 gone), flashing white like the miniatures' death; it breaks up a
+   * pixel at a time in an ordered dither rather than turning see-through.
+   */
   public fade(progress: number): void {
-    const material = this.mesh.material;
-    material.transparent = progress > 0;
-    material.uniforms['opacity'].value = 1 - progress;
-    material.uniforms['flash'].value = Math.min(1, progress * 2);
+    const uniforms = this.mesh.material.uniforms;
+    uniforms['dissolve'].value = progress;
+    uniforms['flash'].value = Math.min(1, progress * 2);
   }
 
   /** Squash and stretch in screen space, unaffected by the holder's facing. */

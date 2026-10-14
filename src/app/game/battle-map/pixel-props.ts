@@ -55,7 +55,7 @@ function normalise(v: number[]): [number, number, number] {
 }
 
 /** Lambert light in -1..1 on a ball of radius r, (dx, dy) pixels from its centre; null outside. */
-function ballLight(dx: number, dy: number, r: number): number | null {
+export function ballLight(dx: number, dy: number, r: number): number | null {
   const nx = dx / r;
   const ny = -dy / r;
   const nz2 = 1 - nx * nx - ny * ny;
@@ -64,7 +64,13 @@ function ballLight(dx: number, dy: number, r: number): number | null {
 }
 
 /** A palette tone for light in 0..1, dithered across the steps. */
-function ramp(palette: readonly RGB[], light: number, x: number, y: number, spread = 0.5): RGB {
+export function ramp(
+  palette: readonly RGB[],
+  light: number,
+  x: number,
+  y: number,
+  spread = 0.5,
+): RGB {
   const t = light * palette.length + dither(x, y) * spread;
   return palette[Math.max(0, Math.min(palette.length - 1, Math.floor(t)))];
 }
@@ -98,7 +104,7 @@ export function blit(to: Raster, from: Raster, ox: number, oy: number): void {
 }
 
 /** Lays frames side by side in one strip. */
-function strip(frames: Raster[], anchor: [number, number], duration: number): PropArt {
+export function strip(frames: Raster[], anchor: [number, number], duration: number): PropArt {
   const [first] = frames;
   const raster = new Raster(first.width * frames.length, first.height);
   frames.forEach((frame, i) => blit(raster, frame, i * first.width, 0));

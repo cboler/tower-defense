@@ -38,6 +38,7 @@ src/
 │   │   │   ├── pixel-terrain.ts       # HD-2D board, rim and cliff painted as pixel art in code
 │   │   │   ├── pixel-props.ts         # HD-2D scenery sprites painted in code (trees, crystals...)
 │   │   │   ├── pixel-scenery.ts       # Prop billboards, island cliff, rim prop layout and themes
+│   │   │   ├── pixel-fx.ts            # HD-2D projectiles, slashes, explosions and pixel rings
 │   │   │   └── hd2d-post.ts           # HD-2D lens: bloom, tilt-shift, grade, vignette (lazy)
 │   │   ├── hud/                     # Crystals, Gold, Wave call, speed, gamepad pill
 │   │   ├── tower-panel/             # Class recruitment dock, priority, and upgrade dossier
@@ -153,6 +154,13 @@ screens and don't crawl in motion. Their textures are therefore linearly filtere
 tilt-shift focus band follows the board on screen, so short canvases never blur the play area. The
 sprite baker also enlarges heroes' heads and eyes and tips the head toward the viewer
 (`FACE_EMPHASIS`), so faces read at sprite size; eyes are `eye` joints in the sculpted rig.
+
+Combat effects are pixel art in HD-2D too (`pixel-fx.ts`): painted projectiles rolled to point along
+their flight on screen, painted slashes, explosions and level-up pillars tinted by the game's effect
+colour, square sparks that shrink a pixel at a time, and one `PixelRing` shader for every ring (impact
+and aura rings, range circles, hero plinth and XP rings) drawn on the board's texel grid. Fades are
+ordered dither (`dissolve`), never transparency. The tile cursor is painted brackets plus a floating
+crystal. The Miniatures look keeps its 3D effects; both exist side by side and the look picks.
 
 ## Guardrails
 
