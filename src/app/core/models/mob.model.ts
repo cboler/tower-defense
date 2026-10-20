@@ -8,7 +8,8 @@ export type MobTypeId =
   | 'dread-gaze'
   | 'bonewalker'
   | 'bramble-golem'
-  | 'sky-sovereign';
+  | 'sky-sovereign'
+  | 'iron-colossus';
 
 export interface MobTypeDefinition {
   id: MobTypeId;
@@ -25,6 +26,24 @@ export interface MobTypeDefinition {
   goldReward: number;
   description: string;
   specialTrait: string;
+  /** Board scale of the miniature; rank and file stand at 0.95. */
+  scale?: number;
+  /**
+   * Super bosses break apart as they are worn down: crossing each health fraction staggers them
+   * in place, then they carry on at that stage's speed (at the last, a crawl).
+   */
+  damageStages?: DamageStage[];
+}
+
+export interface DamageStage {
+  /** Health fraction at or below which this stage breaks. */
+  at: number;
+  /** Time spent reeling in place as the armour gives. */
+  staggerMs: number;
+  /** Speed from here on, as a fraction of base speed. */
+  speed: number;
+  /** Shouted over the board when the stage breaks. */
+  callout: string;
 }
 
 export interface StatusEffect {
@@ -59,6 +78,36 @@ export interface MobInstance {
   isDead: boolean;
   hasEscaped: boolean;
   spawnTimeMs: number;
+  /** Damage stages broken so far (super bosses only). */
+  damageStage?: number;
+  /** Time left reeling from the last broken stage. */
+  staggerMs?: number;
+}
+
+/** Real time a fallen super boss spends dying before its wave can end. */
+export const SUPER_BOSS_DEATH_MS = 4200;
+
+/**
+ * Beats of a super boss's death, in seconds, shared by its animation and its sound: it
+ * convulses as explosions pop across it ever faster, reaches once more for the crystal, slumps
+ * face down and blows apart.
+ */
+export const SUPER_BOSS_DEATH = {
+  pops: [0.12, 0.42, 0.68, 0.9, 1.1, 1.28, 1.44, 1.58, 1.7, 1.81, 1.9, 1.98, 2.05],
+  reach: 2.15,
+  slump: 2.85,
+  blast: 3.25,
+} as const;
+
+/** How many of its damage stages a monster at this health has broken. */
+export function damageStageAt(def: MobTypeDefinition, hp: number, maxHp: number): number {
+  const ratio = hp / maxHp;
+  return def.damageStages?.filter((stage) => ratio <= stage.at).length ?? 0;
+}
+
+/** Scale of a monster's miniature on the board. */
+export function mobScale(id: MobTypeId): number {
+  return MOB_TYPES[id].scale ?? 0.95;
 }
 
 export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
@@ -181,6 +230,7 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
     description:
       'Towering living monolith of ancient timber and stone. Consumes 3 crystals on breach.',
     specialTrait: 'Boss: Colossal health pool. Stun and Chronomancer slows are essential.',
+    scale: 1.35,
   },
 
   'sky-sovereign': {
@@ -198,5 +248,31 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
     goldReward: 80,
     description: 'Legendary winged apex predator. Ignores terrain and steals 5 crystals on escape.',
     specialTrait: 'Flying Apex Boss: Extreme health, bypasses barricades, tests your air defense.',
+    scale: 1.35,
+  },
+
+  'iron-colossus': {
+    id: 'iron-colossus',
+    name: 'Iron Colossus',
+    icon: '🗿',
+    badge: 'Super Boss',
+    color: '#c2410c',
+    baseHp: 9000,
+    baseSpeed: 0.42,
+    armor: 0.45,
+    magicResist: 0.3,
+    isFlying: false,
+    crystalLoss: 10,
+    goldReward: 300,
+    description:
+      'A walking fortress of riveted iron around a furnace heart. The ground shakes with every step, and it shatters 10 crystals on breach.',
+    specialTrait:
+      'Super Boss: breaks apart as it is worn down, reeling at 75%, 50% and 25% health, and crawls on to the end.',
+    scale: 2.1,
+    damageStages: [
+      { at: 0.75, staggerMs: 1400, speed: 1, callout: 'Armor Cracked!' },
+      { at: 0.5, staggerMs: 1600, speed: 0.9, callout: 'Arm Torn Away!' },
+      { at: 0.25, staggerMs: 2600, speed: 0.75, callout: 'It Falls... and Crawls!' },
+    ],
   },
 };

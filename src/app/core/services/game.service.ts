@@ -11,7 +11,13 @@ import {
   TowerLevelConfig,
   XP_PER_SUPPORT_GOLD,
 } from '../models/tower.model';
-import { MOB_TYPES, MobInstance, MobTypeId } from '../models/mob.model';
+import {
+  MOB_TYPES,
+  MobInstance,
+  MobTypeId,
+  SUPER_BOSS_DEATH_MS,
+  damageStageAt,
+} from '../models/mob.model';
 import { FloatingText, GameSpeed, ParticleFx, Projectile } from '../models/game-state.model';
 import { PathfindingService } from './pathfinding.service';
 import { AudioService } from './audio.service';
@@ -221,6 +227,11 @@ export class GameService implements OnDestroy {
   // Towers whose XP changed since the last publish to the towers() signal
   private readonly xpDirtyIds = new Set<string>();
   private lastXpFlushMs = 0;
+  /**
+   * A fallen super boss takes its time dying, in real time so the show plays at every game
+   * speed; the wave holds until it has.
+   */
+  private bossDeathRemainingMs = 0;
 
   constructor() {
     this.loadMission(this.campaign.activeMission());
@@ -273,6 +284,7 @@ export class GameService implements OnDestroy {
     this.barricades.set(new Set());
     this.unlockedJobIds.set(new Set());
     this.spawnQueue = [];
+    this.bossDeathRemainingMs = 0;
     this.xpDirtyIds.clear();
     this.lastXpFlushMs = 0;
     this.countdownRemainingMs.set(this.countdownDurationMs);
@@ -413,7 +425,7 @@ export class GameService implements OnDestroy {
     this.spawnQueue = [];
     this.enqueueWaveMobs(waveIdx);
 
-    const alertEvent = this.story.getWaveAlertEvent(waveIdx + 1);
+    const alertEvent = this.story.getWaveAlertEvent(waveIdx + 1, wave);
     if (alertEvent) {
       this.story.startSequence(alertEvent);
     }
@@ -646,6 +658,7 @@ export class GameService implements OnDestroy {
     if (!this.isPaused() && !this.isGameOver() && !this.isVictory()) {
       const deltaMs = rawDelta * this.gameSpeed();
       this.gameTimeMs += deltaMs;
+      this.bossDeathRemainingMs = Math.max(0, this.bossDeathRemainingMs - rawDelta);
       this.update(deltaMs);
     }
 
@@ -745,6 +758,7 @@ export class GameService implements OnDestroy {
       isDead: false,
       hasEscaped: false,
       spawnTimeMs: this.gameTimeMs,
+      ...(def.damageStages ? { damageStage: 0, staggerMs: 0 } : {}),
     };
 
     this.mobs.update((ms) => [...ms, newMob]);
@@ -763,6 +777,7 @@ export class GameService implements OnDestroy {
       mob.statusEffects = mob.statusEffects
         .map((e) => ({ ...e, remainingMs: e.remainingMs - deltaSeconds * 1000 }))
         .filter((e) => e.remainingMs > 0);
+      if (mob.staggerMs) mob.staggerMs = Math.max(0, mob.staggerMs - deltaSeconds * 1000);
 
       const moveResult = this.rules.resolveMobSpeed(
         mob,
@@ -1308,7 +1323,21 @@ export class GameService implements OnDestroy {
     if (mob.hp <= 0 && !mob.isDead) {
       mob.isDead = true;
       this.onMobDefeated(mob, tower);
+    } else if (mob.damageStage !== undefined) {
+      this.breakDamageStages(mob);
     }
+  }
+
+  /** A super boss worn past a damage stage sheds armour and reels in place. */
+  private breakDamageStages(mob: MobInstance): void {
+    const def = MOB_TYPES[mob.typeId];
+    const stage = damageStageAt(def, mob.hp, mob.maxHp);
+    if (stage <= (mob.damageStage ?? 0)) return;
+    mob.damageStage = stage;
+    const broken = def.damageStages![stage - 1];
+    mob.staggerMs = broken.staggerMs;
+    this.audio.playArmorBreak(stage);
+    this.addFloatingText(broken.callout, mob.x, mob.y - 0.8, '#fb923c', 'alert');
   }
 
   private onMobDefeated(mob: MobInstance, tower: TowerInstance | null): void {
@@ -1347,6 +1376,11 @@ export class GameService implements OnDestroy {
     }
 
     this.addParticle(mob.x, mob.y, mob.color, 1.0, 'death');
+
+    if (MOB_TYPES[mob.typeId].damageStages) {
+      this.bossDeathRemainingMs = SUPER_BOSS_DEATH_MS;
+      this.audio.playColossusDeath();
+    }
   }
 
   private updateVisuals(): void {
@@ -1368,8 +1402,9 @@ export class GameService implements OnDestroy {
 
     const noMoreSpawns = this.spawnQueue.length === 0;
     const noLivingMobs = this.mobs().every((m) => m.isDead || m.hasEscaped);
+    const bossDying = this.bossDeathRemainingMs > 0;
 
-    if (noMoreSpawns && noLivingMobs) {
+    if (noMoreSpawns && noLivingMobs && !bossDying) {
       // Wave completed!
       this.waveActive.set(false);
       this.mobs.set([]);

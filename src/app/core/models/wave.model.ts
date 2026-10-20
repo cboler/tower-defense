@@ -24,7 +24,8 @@ export interface WaveDefinition {
     | 'Magic-Immune'
     | 'Mixed'
     | 'Boss'
-    | 'Apex Boss';
+    | 'Apex Boss'
+    | 'Super Boss';
   groups: WaveGroup[];
 }
 
@@ -476,4 +477,43 @@ export function generateStandardWaves(count = 31, difficultyMultiplier = 1.0): W
       hpMultiplier: (group.hpMultiplier ?? 1.0) * difficultyMultiplier,
     })),
   }));
+}
+
+/**
+ * Verdant Crossroads ends on its super boss instead of the apex gauntlet: the Iron Colossus,
+ * with a Bonewalker screen ahead of it and Swiftbeaks running in its shadow.
+ */
+export const IRON_COLOSSUS_FINALE: WaveDefinition = {
+  waveNumber: 31,
+  name: 'SUPER BOSS: The Iron Colossus',
+  intel:
+    'The ground itself shakes! A walking fortress of iron reels as its armor breaks at 75%, 50% and 25% health, then crawls on. It shatters 10 crystals on breach.',
+  bonusGold: 1000,
+  recommendedClass: 'Elementalist + Lancer + Chronomancer',
+  threatBadge: 'Super Boss',
+  groups: [
+    { mobType: 'bonewalker', count: 20, intervalMs: 450, spawnDelayMs: 0 },
+    { mobType: 'iron-colossus', count: 1, intervalMs: 1000, spawnDelayMs: 6000, hpMultiplier: 1.5 },
+    { mobType: 'swiftbeak', count: 16, intervalMs: 700, spawnDelayMs: 14000 },
+    { mobType: 'prismatic-ooze', count: 10, intervalMs: 1100, spawnDelayMs: 22000 },
+  ],
+};
+
+/** Swaps a map's last wave for its own finale, scaled by the map's difficulty. */
+export function withFinale(
+  waves: WaveDefinition[],
+  finale: WaveDefinition,
+  difficultyMultiplier = 1.0,
+): WaveDefinition[] {
+  return [
+    ...waves.slice(0, -1),
+    {
+      ...finale,
+      waveNumber: waves.length,
+      groups: finale.groups.map((group) => ({
+        ...group,
+        hpMultiplier: (group.hpMultiplier ?? 1.0) * difficultyMultiplier,
+      })),
+    },
+  ];
 }

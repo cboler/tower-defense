@@ -318,6 +318,9 @@ import { IconComponent } from '../icon/icon.component';
         &[data-threat='apex-boss'] {
           --threat: #f472b6;
         }
+        &[data-threat='super-boss'] {
+          --threat: #fb923c;
+        }
       }
 
       .wave-sub {

@@ -32,13 +32,17 @@ import {
   CLASS_ATTACK, attackDuration, attackImpact, leadArm, poseAttack, poseIdle,
 } from './src/app/game/battle-map/motions';
 import { TOWER_CLASSES } from './src/app/core/models/tower.model';
-import { MOB_TYPES } from './src/app/core/models/mob.model';
+import { MOB_TYPES, SUPER_BOSS_DEATH, mobScale } from './src/app/core/models/mob.model';
+import {
+  COLOSSUS_DEATH_FRAMES, applyColossusDamage, applyColossusPose, deathPose, gaitPose, staggerPose,
+} from './src/app/game/battle-map/colossus';
 
 const PPU = ${PIXELS_PER_TILE};
 const DIRECTIONS = 8;
 const PITCH = (${SPRITE_PITCH_DEGREES} * Math.PI) / 180;
 const INK = [0x1a, 0x14, 0x24];
-const BOSSES = new Set(['sky-sovereign', 'bramble-golem']);
+/** Largest sheet edge; past it animations sit side by side in bands of facings. */
+const MAX_SHEET = 4096;
 /**
  * Pixel art exaggerates weapons so they survive a 40px sprite: blades and hafts get thicker
  * (x, z) and a little longer (y, along the weapon). Sprites only; the 3D look is untouched.
@@ -46,6 +50,8 @@ const BOSSES = new Set(['sky-sovereign', 'bramble-golem']);
 const WEAPON_EMPHASIS = { default: [1.8, 1.3, 1.8], paladin: [1.25, 1.15, 1.4], juggernaut: [1.15, 1.15, 1.15], lancer: [1.8, 1.05, 1.8], chronomancer: [1.8, 1.0, 1.8], oracle: [1.8, 1.0, 1.8], elementalist: [1.4, 1.4, 1.4], astrologian: [1.4, 1.4, 1.4] };
 
 function emphasiseWeapons(model, id) {
+  // The colossus's cleaver is already longer than a hero is tall
+  if (id === 'iron-colossus') return;
   const [x, y, z] = WEAPON_EMPHASIS[id] ?? WEAPON_EMPHASIS.default;
   model.getObjectByName('weapon')?.scale.multiply(new THREE.Vector3(x, y, z));
   const offhand = model.getObjectByName('offhand');
@@ -104,14 +110,51 @@ async function piece(kind, id, glb, settings) {
   emphasiseWeapons(model, id);
   if (kind === 'heroes') emphasiseFace(model);
   // Monsters are scaled on the board; bake them at that size so every sprite shares one pixel grid
-  if (kind === 'monsters') model.scale.setScalar(BOSSES.has(id) ? 1.35 : 0.95);
+  if (kind === 'monsters') model.scale.setScalar(mobScale(id));
   const holder = new THREE.Group();
   holder.add(model);
   scene.add(holder);
   return { model, holder };
 }
 
+/**
+ * The Iron Colossus carries its damage in its frames: a gait per damage stage (the last a crawl),
+ * the reel as each stage breaks, and its death.
+ */
+function colossusAnimations() {
+  const gait = (name, stage) => ({
+    name,
+    frames: WALK_FRAMES,
+    pose: (m, u) => { applyColossusDamage(m, stage); applyColossusPose(m, gaitPose(stage, u * Math.PI * 2)); },
+  });
+  const stagger = (stage, frames) => ({
+    name: 'stagger-' + stage,
+    frames,
+    pose: (m, u) => { applyColossusDamage(m, stage); applyColossusPose(m, staggerPose(stage, u)); },
+    u: (i) => (i + 0.5) / frames,
+  });
+  return [
+    gait('walk', 0),
+    gait('walk-cracked', 1),
+    gait('limp', 2),
+    gait('crawl', 3),
+    stagger(1, 6),
+    stagger(2, 6),
+    stagger(3, 8),
+    {
+      name: 'death',
+      frames: COLOSSUS_DEATH_FRAMES.length,
+      pose: (m, t) => {
+        applyColossusDamage(m, t >= SUPER_BOSS_DEATH.blast ? 4 : 3);
+        applyColossusPose(m, deathPose(t));
+      },
+      u: (i) => COLOSSUS_DEATH_FRAMES[i],
+    },
+  ];
+}
+
 function animationsFor(kind, id) {
+  if (id === 'iron-colossus') return colossusAnimations();
   if (kind === 'monsters') {
     return [{ name: 'walk', frames: WALK_FRAMES, pose: (m, u) => animateModel(m, u * Math.PI * 2, 0.55, 0) }];
   }
@@ -131,27 +174,38 @@ function animationsFor(kind, id) {
   ];
 }
 
-/** Screen-space bounds (in tiles) of every pose and facing, to size the cell. */
+/**
+ * Screen-space bounds (in tiles) of every pose and facing, to size the cell. Measured on the
+ * vertices of what is shown: parts broken off a worn-down boss are hidden, not gone, and boxes
+ * turned with a facing would overstate it.
+ */
 function measure(holder, model, animations) {
-  const box = new THREE.Box3();
-  const corner = new THREE.Vector3();
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  const b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+  const v = new THREE.Vector3();
+  const visit = (object) => {
+    if (!object.visible) return;
+    if (object.isMesh) {
+      const position = object.geometry.getAttribute('position');
+      for (let i = 0; i < position.count; i++) {
+        v.fromBufferAttribute(position, i).applyMatrix4(object.matrixWorld);
+        const x = v.dot(right), y = v.dot(up);
+        b.minX = Math.min(b.minX, x); b.maxX = Math.max(b.maxX, x);
+        b.minY = Math.min(b.minY, y); b.maxY = Math.max(b.maxY, y);
+      }
+    }
+    object.children.forEach(visit);
+  };
   for (let d = 0; d < DIRECTIONS; d++) {
     holder.rotation.y = (d / DIRECTIONS) * Math.PI * 2;
     for (const anim of animations) {
       for (let i = 0; i < anim.frames; i++) {
         anim.pose(model, anim.u ? anim.u(i) : i / anim.frames);
         holder.updateMatrixWorld(true);
-        box.setFromObject(holder);
-        for (let c = 0; c < 8; c++) {
-          corner.set(c & 1 ? box.max.x : box.min.x, c & 2 ? box.max.y : box.min.y, c & 4 ? box.max.z : box.min.z);
-          const x = corner.dot(right), y = corner.dot(up);
-          minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-        }
+        visit(holder);
       }
     }
   }
-  return { minX, maxX, minY, maxY };
+  return b;
 }
 
 window.bake = async (kind, id, glb, settings) => {
@@ -166,8 +220,26 @@ window.bake = async (kind, id, glb, settings) => {
   const cellH = Math.ceil((above + below) / 4) * 4;
   const anchor = [cellW / 2, cellH - below];
 
-  const columns = Math.max(...animations.map((a) => a.frames));
-  const rows = animations.length * DIRECTIONS;
+  // One band of facings per animation, unless that would outgrow a texture: then animations
+  // sit side by side within each band
+  const stacked = animations.length * DIRECTIONS * cellH <= MAX_SHEET;
+  const maxColumns = stacked ? Infinity : Math.floor(MAX_SHEET / cellW);
+  let band = 0, col = 0;
+  const places = animations.map((anim) => {
+    if (stacked || col + anim.frames > maxColumns) {
+      if (col > 0) band++;
+      col = 0;
+    }
+    const place = { row: band * DIRECTIONS, col };
+    col += anim.frames;
+    if (stacked) { band++; col = 0; }
+    return place;
+  });
+  const columns = Math.max(...animations.map((a, i) => places[i].col + a.frames));
+  const rows = (Math.max(...places.map((p) => p.row)) + DIRECTIONS);
+  if (rows * cellH > MAX_SHEET || columns * cellW > MAX_SHEET) {
+    throw new Error(id + ': sheet ' + columns * cellW + '×' + rows * cellH + ' is past ' + MAX_SHEET + 'px');
+  }
   const atlas = document.createElement('canvas');
   atlas.width = columns * cellW;
   atlas.height = rows * cellH;
@@ -184,8 +256,10 @@ window.bake = async (kind, id, glb, settings) => {
 
   const meta = { cell: [cellW, cellH], anchor, directions: DIRECTIONS, animations: {} };
   animations.forEach((anim, a) => {
+    const place = places[a];
     meta.animations[anim.name] = {
-      row: a * DIRECTIONS,
+      row: place.row,
+      ...(place.col ? { col: place.col } : {}),
       frames: anim.frames,
       ...(anim.duration ? { duration: anim.duration, impact: anim.impact } : {}),
     };
@@ -194,7 +268,7 @@ window.bake = async (kind, id, glb, settings) => {
       for (let i = 0; i < anim.frames; i++) {
         anim.pose(model, anim.u ? anim.u(i) : i / anim.frames);
         renderer.render(scene, camera);
-        ctx.drawImage(renderer.domElement, i * cellW, (a * DIRECTIONS + d) * cellH);
+        ctx.drawImage(renderer.domElement, (place.col + i) * cellW, (place.row + d) * cellH);
       }
     }
   });

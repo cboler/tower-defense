@@ -61,6 +61,12 @@ const BESTIARY_DATA: Record<
       'Apex dragon boss possessing massive vitality. Steals 5 Sacred Crystals on breach! Maximize Ranger Sky Piercers and Lancer spears.',
     lore: 'The ancient apex wyrm of the Dragonpeak Caldera. Its wingbeats shake the foundation of the sanctuary, devouring entire crystal veins in one bite.',
   },
+  'iron-colossus': {
+    threatLevel: 'Crucial Boss',
+    counterAdvice:
+      'Super boss with heavy plate and a furnace heart. Every armor break staggers it in place: stack slows and stuns between breaks, and burn it with Elementalist fire. Shatters 10 crystals on breach!',
+    lore: 'A siege engine of a forgotten war, forged around a furnace that never cooled. When its legs fail it does not stop; it drags itself on toward the light of the crystals.',
+  },
 };
 
 @Component({

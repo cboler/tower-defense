@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { StoryDialogueStep, StoryNarrativeEvent } from '../models/story.model';
+import { WaveDefinition } from '../models/wave.model';
 import { AudioService } from './audio.service';
 
 @Injectable({
@@ -67,7 +68,27 @@ export class StoryService {
   /**
    * Generates authentic Crystal Defenders tactical alert events for key wave milestones.
    */
-  public getWaveAlertEvent(waveNumber: number): StoryNarrativeEvent | null {
+  public getWaveAlertEvent(waveNumber: number, wave?: WaveDefinition): StoryNarrativeEvent | null {
+    if (wave?.groups.some((group) => group.mobType === 'iron-colossus')) {
+      return {
+        id: 'iron-colossus-alert',
+        title: 'Super Boss • The Iron Colossus Awakens',
+        trigger: 'on-wave-start',
+        triggerWaveNumber: waveNumber,
+        autoPause: false,
+        steps: [
+          {
+            speaker: 'Warden Marshal Cedric',
+            avatar: 'assets/portraits/blade-warden.png',
+            title: 'Highland Vanguard Commander',
+            side: 'left',
+            emotion: 'urgent',
+            text: 'Those fissures were footsteps! An Iron Colossus marches on the sanctuary. Its plating breaks as it weakens, but it will crawl to the crystal on its last breath. Break it before it shatters ten crystals!',
+          },
+        ],
+      };
+    }
+
     if (waveNumber === 10) {
       return {
         id: 'wave-10-alert',

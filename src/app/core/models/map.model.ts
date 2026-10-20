@@ -1,4 +1,9 @@
-import { WaveDefinition, generateStandardWaves } from './wave.model';
+import {
+  IRON_COLOSSUS_FINALE,
+  WaveDefinition,
+  generateStandardWaves,
+  withFinale,
+} from './wave.model';
 
 export type TileCode =
   | 'P' // Ground Path
@@ -52,7 +57,7 @@ export const MAP_VERDANT_CROSSROADS: MapDefinition = {
     ['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'P', 'C', 'B', 'B'],
     ['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'],
   ],
-  waves: generateStandardWaves(31, 1.0),
+  waves: withFinale(generateStandardWaves(31, 1.0), IRON_COLOSSUS_FINALE, 1.0),
 };
 
 export const MAP_SUNKEN_SANCTUM: MapDefinition = {

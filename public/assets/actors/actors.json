@@ -198,6 +198,22 @@
       "anchor": [56, 92],
       "directions": 8,
       "animations": { "walk": { "row": 0, "frames": 8 } }
+    },
+    "iron-colossus": {
+      "file": "monsters/iron-colossus.png",
+      "cell": [148, 148],
+      "anchor": [74, 102],
+      "directions": 8,
+      "animations": {
+        "walk": { "row": 0, "frames": 8 },
+        "walk-cracked": { "row": 0, "col": 8, "frames": 8 },
+        "limp": { "row": 0, "col": 16, "frames": 8 },
+        "crawl": { "row": 8, "frames": 8 },
+        "stagger-1": { "row": 8, "col": 8, "frames": 6 },
+        "stagger-2": { "row": 8, "col": 14, "frames": 6 },
+        "stagger-3": { "row": 16, "frames": 8 },
+        "death": { "row": 16, "col": 8, "frames": 10 }
+      }
     }
   }
 }

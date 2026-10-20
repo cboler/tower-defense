@@ -24,6 +24,7 @@ import { CampaignModalComponent } from './campaign-modal/campaign-modal.componen
 import { BestiaryModalComponent } from './bestiary-modal/bestiary-modal.component';
 import { AboutModalComponent } from './about-modal/about-modal.component';
 import { StoryDialogueOverlayComponent } from './story-dialogue-overlay/story-dialogue-overlay.component';
+import { BossBarComponent } from './boss-bar/boss-bar.component';
 
 @Component({
   selector: 'app-game',
@@ -38,6 +39,7 @@ import { StoryDialogueOverlayComponent } from './story-dialogue-overlay/story-di
     BestiaryModalComponent,
     AboutModalComponent,
     StoryDialogueOverlayComponent,
+    BossBarComponent,
   ],
   template: `
     <div class="game-view" role="main" aria-label="Crystal Wardens Arena">
@@ -45,6 +47,7 @@ import { StoryDialogueOverlayComponent } from './story-dialogue-overlay/story-di
 
       <div class="arena-stage-area">
         <app-battle-map class="battle-map-stage" />
+        <app-boss-bar />
 
         <!-- Phones: in-flow drawer that shrinks the map. Landscape / desktop: side panel. -->
         <app-tower-panel

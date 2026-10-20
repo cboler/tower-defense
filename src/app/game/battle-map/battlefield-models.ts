@@ -3,6 +3,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { TowerClassId } from '../../core/models/tower.model';
 import { MobTypeId } from '../../core/models/mob.model';
+import { COLOSSUS_HIPS, COLOSSUS_REST } from './colossus';
 
 /*
  * Battlefield miniatures, sculpted from primitives to match the character art in
@@ -2171,6 +2172,275 @@ function skySovereign(root: THREE.Group, p: Palette): void {
   }
 }
 
+/** A part of the colossus that comes away when damage stage `stage` breaks (4: the last blast). */
+function breakable(parent: THREE.Object3D, name: string, at: Vec, stage: number): THREE.Group {
+  const group = joint(parent, name, at);
+  group.userData['breakStage'] = stage;
+  return group;
+}
+
+/** Glowing fissures that open on the colossus from damage stage `stage` on. */
+function fissures(parent: THREE.Object3D, stage: number): THREE.Group {
+  const group = joint(parent, `cracks-${stage}`, [0, 0, 0]);
+  group.userData['crackStage'] = stage;
+  return group;
+}
+
+/** A jagged crack of light along a surface facing `normal`, `length` long, turned by `angle`. */
+function fissure(
+  parent: THREE.Object3D,
+  mat: THREE.Material,
+  at: Vec,
+  normal: Vec,
+  length: number,
+  angle: number,
+): void {
+  const crack = new THREE.Group();
+  crack.position.set(...at);
+  crack.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 0, 1),
+    new THREE.Vector3(...normal).normalize(),
+  );
+  crack.rotateZ(angle);
+  parent.add(crack);
+  const points: [number, number][] = [
+    [0, -0.5],
+    [0.14, -0.22],
+    [-0.08, 0.05],
+    [0.12, 0.3],
+    [0.02, 0.5],
+  ];
+  for (let i = 0; i < points.length - 1; i++) {
+    const [x0, y0] = points[i];
+    const [x1, y1] = points[i + 1];
+    const dx = (x1 - x0) * length;
+    const dy = (y1 - y0) * length;
+    put(
+      crack,
+      block(0.016, Math.hypot(dx, dy) + 0.01, 0.014, 0.004),
+      mat,
+      [((x0 + x1) / 2) * length, ((y0 + y1) / 2) * length, 0],
+      [0, 0, -Math.atan2(dx, dy)],
+    );
+  }
+  // A short branch off the middle
+  put(crack, block(0.012, length * 0.22, 0.012, 0.003), mat, [-0.04 * length, 0, 0], [0, 0, 0.9]);
+}
+
+/**
+ * A walking fortress of riveted iron around a furnace heart, horned helm and visor aglow,
+ * dragging a cleaver of a greatsword. Its own rig (see colossus.ts) adds a pelvis to tip it
+ * prone and knees to fall onto; plates, an arm and the sword are tagged to come away as its
+ * damage stages break, and fissures of furnace light open beneath them.
+ */
+function ironColossus(root: THREE.Group, p: Palette): void {
+  const iron = p.paint(0x5d6675);
+  const dark = p.paint(0x3a404c);
+  const light = p.paint(0x8c97a7);
+  const brass = p.paint(0xb8893a);
+  const rust = p.paint(0x8a4a2c);
+  const furnace = p.glow(0xff8a1f);
+  const hot = p.glow(0xffc35a);
+  const pelvis = joint(root, 'pelvis', [0, COLOSSUS_HIPS, 0]);
+  // Faulds: a heavy plated skirt riveted in brass
+  put(pelvis, tube(0.2, 0.235, 0.13, 12), dark, [0, -0.01, 0]);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * TAU + 0.26;
+    put(
+      pelvis,
+      block(0.11, 0.15, 0.03, 0.01),
+      i % 2 ? iron : light,
+      [Math.sin(a) * 0.225, -0.075, Math.cos(a) * 0.225],
+      [-0.18, a, 0],
+    );
+    put(pelvis, ball(0.014), brass, [Math.sin(a) * 0.245, -0.02, Math.cos(a) * 0.245]);
+  }
+  // Pillar legs on knees that can buckle: cuisse, poleyn, greave and a broad sabaton
+  const legCracks = fissures(pelvis, 3);
+  for (const side of [-1, 1]) {
+    const leg = joint(pelvis, side < 0 ? 'leg-right' : 'leg-left', [side * 0.135, -0.03, 0]);
+    put(leg, limb(0.07, 0.1), dark, [0, -0.08, 0]);
+    put(leg, block(0.165, 0.15, 0.175, 0.04), iron, [0, -0.09, 0.01]);
+    put(leg, block(0.17, 0.03, 0.18, 0.01), brass, [0, -0.02, 0.012]);
+    const knee = joint(leg, side < 0 ? 'knee-right' : 'knee-left', [0, -0.19, 0]);
+    put(knee, ball(0.075), light, [0, 0, 0.04]);
+    put(knee, spike(0.035, 0.07, 6), light, [0, 0, 0.12], [Math.PI / 2, 0, 0]);
+    put(knee, tube(0.082, 0.098, 0.13, 10), iron, [0, -0.085, 0]);
+    put(knee, block(0.185, 0.075, 0.28, 0.03), dark, [0, -0.17, 0.04]);
+    put(knee, block(0.16, 0.045, 0.07, 0.015), light, [0, -0.145, 0.16], [0.35, 0, 0]);
+    // The left thigh splits once the arm above it is torn away, and it limps from then on
+    if (side > 0) {
+      fissure(fissures(leg, 2), furnace, [0, -0.09, 0.1], [0.2, 0, 1], 0.12, 0.3);
+    }
+    fissure(legCracks, furnace, [side * 0.135, -0.3, 0.11], [0, 0, 1], 0.1, side * 0.4);
+  }
+
+  // A barrel chest swelling over a narrow waist, banded and studded
+  const torso = joint(pelvis, 'torso', [0, 0.05, 0]);
+  rest(torso, COLOSSUS_REST.torso![0]);
+  put(torso, tube(0.3, 0.19, 0.36, 12), iron, [0, 0.2, 0]);
+  put(torso, tube(0.2, 0.2, 0.06, 12), dark, [0, 0.02, 0]);
+  for (const [y, r] of [
+    [0.1, 0.217],
+    [0.31, 0.282],
+  ]) {
+    put(torso, hoop(r + 0.008, 0.016), brass, [0, y, 0], [Math.PI / 2, 0, 0]);
+  }
+  // The breastplate and its rivets blow away in the final blast
+  const breast = breakable(torso, 'breastplate', [0, 0, 0], 4);
+  put(breast, ball(0.26), light, [0, 0.29, 0.04], undefined, [1.12, 0.78, 0.82]);
+  for (const side of [-1, 1]) {
+    for (const y of [0.24, 0.33]) {
+      put(breast, ball(0.016), brass, [side * 0.17, y, 0.2]);
+    }
+  }
+  // Furnace grille at the heart: a glow behind iron bars
+  put(torso, block(0.19, 0.14, 0.06, 0.015), dark, [0, 0.2, 0.235]);
+  put(torso, block(0.15, 0.1, 0.02, 0.006), furnace, [0, 0.2, 0.262]);
+  for (const x of [-0.05, 0, 0.05]) {
+    put(torso, block(0.02, 0.13, 0.025, 0.006), dark, [x, 0.2, 0.272]);
+  }
+  put(torso, tube(0.13, 0.17, 0.07, 12), dark, [0, 0.4, -0.01]);
+  // Twin smokestacks on its back
+  for (const side of [-1, 1]) {
+    put(torso, tube(0.034, 0.042, 0.18, 8), dark, [side * 0.1, 0.36, -0.24], [-0.45, 0, 0]);
+    put(torso, tube(0.044, 0.044, 0.03, 8), dark, [side * 0.1, 0.44, -0.28], [-0.45, 0, 0]);
+    put(torso, ball(0.026), hot, [side * 0.1, 0.45, -0.285], undefined, [1, 0.4, 1]);
+  }
+  joint(torso, 'smokestack', [0, 0.48, -0.3]);
+  // A plate over the right ribs falls away at stage 2, baring the furnace beneath
+  const ribPlate = breakable(torso, 'rib-plate', [-0.14, 0.17, 0.2], 2);
+  ribPlate.rotation.y = -0.55;
+  put(ribPlate, block(0.13, 0.15, 0.04, 0.012), iron, [0, 0, 0]);
+  put(ribPlate, ball(0.014), brass, [0.045, 0.05, 0.022]);
+  put(ribPlate, ball(0.014), brass, [-0.045, -0.05, 0.022]);
+  const ribGlow = fissures(torso, 2);
+  put(ribGlow, block(0.1, 0.11, 0.02, 0.008), hot, [-0.135, 0.17, 0.19], [0, -0.55, 0]);
+  // Rust weeps from the seams
+  put(torso, block(0.04, 0.08, 0.02, 0.008), rust, [0.2, 0.12, 0.16], [0, 0.85, 0.3]);
+  put(torso, block(0.03, 0.06, 0.02, 0.008), rust, [-0.08, 0.06, -0.2], [0, Math.PI, -0.2]);
+  // Fissures of furnace light, more with every stage
+  const chest1 = fissures(torso, 1);
+  fissure(chest1, furnace, [0.13, 0.25, 0.22], [0.5, 0, 0.85], 0.14, 0.5);
+  fissure(chest1, furnace, [-0.2, 0.3, -0.14], [-0.8, 0, -0.55], 0.12, -0.3);
+  const chest2 = fissures(torso, 2);
+  fissure(chest2, furnace, [0.05, 0.1, 0.21], [0.2, -0.2, 1], 0.12, -0.6);
+  fissure(chest2, furnace, [0.12, 0.3, -0.22], [0.4, 0, -0.9], 0.15, 0.2);
+  const chest3 = fissures(torso, 3);
+  fissure(chest3, hot, [-0.05, 0.31, 0.25], [0, 0.2, 1], 0.16, 0.9);
+  fissure(chest3, hot, [0.25, 0.2, 0.05], [1, 0, 0.2], 0.14, -0.4);
+  fissure(chest3, hot, [-0.24, 0.16, 0.05], [-1, 0, 0.2], 0.13, 0.3);
+
+  // A small horned helm for such a body, set low between the shoulders
+  const head = breakable(torso, 'head', [0, 0.5, 0.1], 4);
+  head.scale.setScalar(1.35);
+  rest(head, COLOSSUS_REST.head![0]);
+  put(head, tube(0.095, 0.105, 0.15, 12), iron, [0, 0.02, 0]);
+  put(head, dome(0.095), iron, [0, 0.095, 0]);
+  put(head, block(0.03, 0.05, 0.19, 0.01), brass, [0, 0.16, -0.01]);
+  put(head, block(0.215, 0.035, 0.06, 0.012), dark, [0, 0.035, 0.08]);
+  put(head, block(0.16, 0.065, 0.03, 0.012), dark, [0, -0.045, 0.09]);
+  // T-shaped visor slit with the furnace showing through
+  put(head, block(0.15, 0.022, 0.02, 0.005), hot, [0, 0.008, 0.103]);
+  put(head, block(0.024, 0.07, 0.02, 0.005), furnace, [0, -0.03, 0.103]);
+  const helmCracks = fissures(head, 2);
+  fissure(helmCracks, furnace, [0.05, 0.07, 0.085], [0.4, 0.3, 0.85], 0.08, 0.4);
+  for (const side of [-1, 1]) {
+    // The right horn snaps off when the armour first cracks
+    const horn = side < 0 ? breakable(head, 'horn', [0, 0, 0], 1) : head;
+    aim(horn, spike(0.034, 0.16, 7), light, [side * 0.09, 0.06, 0], [side, 0.65, -0.2], 0.16);
+    aim(horn, spike(0.02, 0.1, 6), light, [side * 0.21, 0.15, -0.03], [side * 0.25, 1, -0.35], 0.1);
+  }
+  // The snapped horn's jagged stub
+  put(fissures(head, 1), spike(0.03, 0.05, 5), light, [-0.11, 0.08, 0], [0, 0, 1.0]);
+
+  // Arms like siege rams; the sword arm is on the character's right (screen left, as the art)
+  for (const side of [-1, 1]) {
+    const name = side < 0 ? 'right' : 'left';
+    const arm = joint(torso, `arm-${name}`, [side * 0.335, 0.34, 0]);
+    const restTurn = COLOSSUS_REST[`arm-${name}`]!;
+    arm.rotation.set(...restTurn);
+    put(arm, ball(0.095), dark, [0, 0, 0]);
+    // Layered pauldrons; the left one is the first thing to go
+    const pauldron = breakable(arm, `pauldron-${name}`, [0, 0.03, 0], side > 0 ? 1 : 4);
+    put(pauldron, dome(0.17, Math.PI * 0.55), iron, [0, 0, 0], undefined, [1, 0.8, 1.05]);
+    put(
+      pauldron,
+      dome(0.15, Math.PI * 0.5),
+      light,
+      [side * 0.03, -0.05, 0],
+      undefined,
+      [1, 0.8, 1],
+    );
+    put(pauldron, hoop(0.152, 0.012), brass, [0, -0.005, 0], [Math.PI / 2, 0, 0], [1, 1.05, 1]);
+    for (const [dx, dz] of [
+      [0.35, 0],
+      [0.7, 0.5],
+      [0.7, -0.5],
+    ]) {
+      aim(
+        pauldron,
+        spike(0.026, 0.11, 6),
+        light,
+        [side * dx * 0.11, 0.08, dz * 0.1],
+        [side * dx, 1, dz],
+        0.11,
+      );
+    }
+    put(arm, limb(0.068, 0.12), dark, [0, -0.12, 0]);
+    put(arm, block(0.13, 0.13, 0.13, 0.03), iron, [0, -0.13, 0]);
+    const forearm = joint(arm, `forearm-${name}`, [0, -0.24, 0]);
+    forearm.rotation.x = COLOSSUS_REST[`forearm-${name}`]![0];
+    put(forearm, ball(0.075), light, [0, 0, 0.012]);
+    put(forearm, tube(0.085, 0.075, 0.15, 10), iron, [0, -0.09, 0]);
+    put(forearm, tube(0.1, 0.088, 0.04, 10), brass, [0, -0.155, 0]);
+    put(forearm, block(0.15, 0.13, 0.15, 0.04), dark, [0, -0.22, 0.01]);
+    put(forearm, block(0.15, 0.035, 0.05, 0.012), light, [0, -0.255, 0.065]);
+    if (side > 0) {
+      // Torn away at stage 2, leaving a ragged stump that spits sparks
+      forearm.userData['breakStage'] = 2;
+      const stump = fissures(arm, 2);
+      stump.name = 'stump';
+      put(stump, ball(0.06), hot, [0, -0.235, 0], undefined, [1, 0.45, 1]);
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * TAU;
+        aim(
+          stump,
+          spike(0.024, 0.07, 4),
+          dark,
+          [Math.sin(a) * 0.055, -0.22, Math.cos(a) * 0.055],
+          [Math.sin(a) * 0.5, -1, Math.cos(a) * 0.5],
+          0.07 + (i % 2) * 0.03,
+        );
+      }
+      continue;
+    }
+    // A cleaver of a greatsword, trailing behind with its point scraping the ground
+    forearm.userData['breakStage'] = 4;
+    const weapon = joint(forearm, 'weapon', [0, -0.24, 0.03]);
+    rest(weapon, -1.95);
+    const sword = breakable(weapon, 'sword', [0, 0, 0], 3);
+    put(sword, tube(0.026, 0.026, 0.17, 8), p.paint(LEATHER), [0, 0, 0]);
+    put(sword, ball(0.038), brass, [0, -0.1, 0]);
+    put(sword, block(0.26, 0.045, 0.07, 0.012), brass, [0, 0.095, 0]);
+    put(sword, ball(0.03), furnace, [0, 0.095, 0.035]);
+    const blade = slab(
+      [
+        [-0.07, 0],
+        [0.07, 0],
+        [0.085, 0.62],
+        [0.02, 0.8],
+        [-0.065, 0.7],
+      ],
+      0.035,
+    ).translate(0, 0.115, 0);
+    put(sword, blade, p.paint(0x9aa5b2), [0, 0, 0], [0, Math.PI / 2, 0]);
+    put(sword, block(0.04, 0.55, 0.03, 0.008), dark, [0, 0.42, 0], [0, Math.PI / 2, 0]);
+    put(sword, block(0.04, 0.07, 0.04, 0.01), rust, [0, 0.62, 0.02], [0, Math.PI / 2, 0.3]);
+    joint(sword, 'sword-tip', [0, 0.88, 0]);
+  }
+}
+
 const MONSTERS: Record<MobTypeId, (root: THREE.Group, p: Palette) => void> = {
   skulker,
   swiftbeak,
@@ -2180,6 +2450,7 @@ const MONSTERS: Record<MobTypeId, (root: THREE.Group, p: Palette) => void> = {
   bonewalker,
   'bramble-golem': brambleGolem,
   'sky-sovereign': skySovereign,
+  'iron-colossus': ironColossus,
 };
 
 /** Monsters are sculpted from their bestiary sprites; feet at y=0, facing +z. */

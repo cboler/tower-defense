@@ -1,4 +1,5 @@
 import { Injectable, signal } from '@angular/core';
+import { SUPER_BOSS_DEATH } from '../models/mob.model';
 
 @Injectable({ providedIn: 'root' })
 export class AudioService {
@@ -336,6 +337,117 @@ export class AudioService {
     gain.connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.04);
+  }
+
+  /** A super boss's footfall: a sub-bass thud with a crunch of gravel. */
+  public playStomp(weight = 1): void {
+    const ctx = this.initContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.thud(ctx, now, 0.26 * weight, 72, 0.42);
+    this.noiseBurst(ctx, now, 0.07 * weight, 900, 0.18);
+  }
+
+  /** Armour giving way: a deep impact, ringing iron and the scrape of falling plates. */
+  public playArmorBreak(stage: number): void {
+    const ctx = this.initContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.thud(ctx, now, 0.3, 90, 0.5);
+    this.clang(ctx, now, 0.12, 310 - stage * 40);
+    this.noiseBurst(ctx, now + 0.05, 0.12, 2400, 0.35);
+    // The fall to the ground lands a beat later
+    if (stage >= 3) this.thud(ctx, now + 0.9, 0.34, 60, 0.7);
+  }
+
+  /** The super boss's death: popping blasts, a last groan, the fall and a final explosion. */
+  public playColossusDeath(): void {
+    const ctx = this.initContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.clang(ctx, now, 0.16, 220);
+    for (const [i, at] of SUPER_BOSS_DEATH.pops.entries()) {
+      this.thud(ctx, now + at, 0.12 + i * 0.008, 140 - i * 4, 0.25);
+      this.noiseBurst(ctx, now + at, 0.08, 1600, 0.22);
+    }
+    // A failing furnace groan as it reaches out one last time
+    const groan = ctx.createOscillator();
+    const groanGain = ctx.createGain();
+    const start = now + SUPER_BOSS_DEATH.reach;
+    groan.type = 'sawtooth';
+    groan.frequency.setValueAtTime(95, start);
+    groan.frequency.exponentialRampToValueAtTime(38, start + 0.75);
+    groanGain.gain.setValueAtTime(0.0001, start);
+    groanGain.gain.exponentialRampToValueAtTime(0.09, start + 0.15);
+    groanGain.gain.exponentialRampToValueAtTime(0.0001, start + 0.8);
+    groan.connect(groanGain);
+    groanGain.connect(ctx.destination);
+    groan.start(start);
+    groan.stop(start + 0.8);
+    this.thud(ctx, now + SUPER_BOSS_DEATH.slump, 0.32, 58, 0.6);
+    this.thud(ctx, now + SUPER_BOSS_DEATH.blast, 0.4, 110, 1.2);
+    this.noiseBurst(ctx, now + SUPER_BOSS_DEATH.blast, 0.2, 1200, 1.1);
+  }
+
+  /** A falling sine: the body of every impact. */
+  private thud(ctx: AudioContext, at: number, volume: number, freq: number, length: number): void {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, at);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(20, freq * 0.35), at + length);
+    gain.gain.setValueAtTime(volume, at);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + length);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(at);
+    osc.stop(at + length);
+  }
+
+  /** Filtered white noise: grit, debris and blast. */
+  private noiseBurst(
+    ctx: AudioContext,
+    at: number,
+    volume: number,
+    cutoff: number,
+    length: number,
+  ): void {
+    const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * length), ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(cutoff, at);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(volume, at);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + length);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    source.start(at);
+    source.stop(at + length);
+  }
+
+  /** Struck iron: inharmonic partials ringing down. */
+  private clang(ctx: AudioContext, at: number, volume: number, freq: number): void {
+    for (const [ratio, share] of [
+      [1, 1],
+      [2.76, 0.5],
+      [5.4, 0.25],
+    ]) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq * ratio, at);
+      gain.gain.setValueAtTime(volume * share, at);
+      gain.gain.exponentialRampToValueAtTime(0.001, at + 0.9 / ratio + 0.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(at);
+      osc.stop(at + 1.2);
+    }
   }
 
   public playEarlyCallHorn(): void {

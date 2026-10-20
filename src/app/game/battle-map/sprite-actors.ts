@@ -11,6 +11,8 @@ import { ClipRole, PieceRig } from './miniature-rig';
 export interface SheetAnimation {
   /** First row; facings follow in order, 0 = toward the camera, then clockwise from above. */
   row: number;
+  /** First column, when animations sit side by side to keep a big sheet within texture limits. */
+  col?: number;
   frames: number;
   /** Seconds for one-shot animations (attacks); loops are paced by the caller. */
   duration?: number;
@@ -163,6 +165,10 @@ export class SpriteActor implements PieceRig {
   private lastAttackAt = -Infinity;
   private clock = 0;
   private walkPhase: number | null = null;
+  /** The walk cycle to loop: pieces that change as they are worn down swap in other gaits. */
+  public gait = 'walk';
+  /** A frame chosen by the caller (staggers, deaths), shown over everything else. */
+  public held: { name: string; frame: number } | null = null;
   private readonly yaw = new THREE.Quaternion();
   private readonly worldPosition = new THREE.Vector3();
   private readonly euler = new THREE.Euler();
@@ -308,14 +314,17 @@ export class SpriteActor implements PieceRig {
 
   private showCurrent(facing: number): void {
     const animations = this.sheet.animations;
-    if (this.action && animations[this.action]) {
+    if (this.held && animations[this.held.name]) {
+      const anim = animations[this.held.name];
+      this.show(this.held.name, facing, Math.min(anim.frames - 1, Math.max(0, this.held.frame)));
+    } else if (this.action && animations[this.action]) {
       const anim = animations[this.action];
       const u = this.actionTime / (anim.duration ?? 0.5);
       this.show(this.action, facing, Math.min(anim.frames - 1, Math.floor(u * anim.frames)));
-    } else if (animations['walk'] && this.walkPhase !== null) {
-      const frames = animations['walk'].frames;
+    } else if (animations[this.gait] && this.walkPhase !== null) {
+      const frames = animations[this.gait].frames;
       const cycle = (((this.walkPhase / (Math.PI * 2)) % 1) + 1) % 1;
-      this.show('walk', facing, Math.floor(cycle * frames) % frames);
+      this.show(this.gait, facing, Math.floor(cycle * frames) % frames);
     } else if (animations['idle']) {
       const frames = animations['idle'].frames;
       this.show('idle', facing, Math.floor((this.clock / IDLE_SECONDS) * frames) % frames);
@@ -330,7 +339,7 @@ export class SpriteActor implements PieceRig {
     const row = anim.row + facing;
     // Texture rows count up from the bottom
     const uniform = this.mesh.material.uniforms['frame'].value as THREE.Vector4;
-    uniform.x = frame / this.columns;
+    uniform.x = ((anim.col ?? 0) + frame) / this.columns;
     uniform.y = 1 - (row + 1) / this.rows;
   }
 

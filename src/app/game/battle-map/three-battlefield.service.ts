@@ -1,6 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import * as THREE from 'three';
 import { animateModel } from './battlefield-models';
+import { ColossusHost, ColossusShow, DebrisField } from './colossus-show';
 import { PieceRig } from './miniature-rig';
 import { ModelKind, ModelLibraryService } from './model-library.service';
 import { CLASS_ATTACK, attackDuration, leadArm, poseAttack } from './motions';
@@ -59,7 +60,8 @@ import {
 import type { Hd2dPost } from './hd2d-post';
 import { GameService } from '../../core/services/game.service';
 import { TOWER_CLASSES, TowerClassId } from '../../core/models/tower.model';
-import { MobInstance } from '../../core/models/mob.model';
+import { MOB_TYPES, MobInstance, SUPER_BOSS_DEATH_MS, mobScale } from '../../core/models/mob.model';
+import { AudioService } from '../../core/services/audio.service';
 import { ParticleFx, Projectile } from '../../core/models/game-state.model';
 import { TileCode } from '../../core/models/map.model';
 
@@ -212,13 +214,15 @@ interface MobVisual {
   lean: number;
   facing: number;
   color: THREE.Color;
+  /** Super bosses' footfalls, wounds and death; null for everything else. */
+  colossus: ColossusShow | null;
 }
 
 interface FadingVisual {
   group: THREE.Group;
   age: number;
   life: number;
-  kind: 'mob-death' | 'mob-escape' | 'tower-sell';
+  kind: 'mob-death' | 'mob-escape' | 'tower-sell' | 'boss-death';
   mob?: MobVisual;
 }
 
@@ -250,6 +254,21 @@ interface EffectVisual {
 export class ThreeBattlefieldService {
   private readonly models = inject(ModelLibraryService);
   private readonly sprites = inject(SpriteLibraryService);
+  private readonly audio = inject(AudioService);
+  /** Armour shed by super bosses, tumbling across the board. */
+  private debris: DebrisField | null = null;
+  private simPaused = false;
+  /** Effects, shake and sound for super bosses' shows. */
+  private readonly colossusHost: ColossusHost = {
+    burst: (x, y, z, color, count, opts) => this.spawnBurst(x, y, z, color, count, opts),
+    blast: (x, y, z, color, radius) => this.blastAt(x, y, z, color, radius),
+    dust: (x, z, radius) => {
+      if (this.look() === 'hd2d') this.pixelGroundRing(x, z, '#d6c7a1', radius, 0.55);
+      else this.groundRing(x, z, new THREE.Color(0xd6c7a1), radius, 0.55);
+    },
+    shake: (amount) => this.shake(amount),
+    stomp: (weight) => this.audio.playStomp(weight),
+  };
   /** Board look, remembered between visits. */
   public readonly look = signal<BoardLook>(storedLook());
   private post: Hd2dPost | null = null;
@@ -428,6 +447,7 @@ export class ThreeBattlefieldService {
     const height = canvas.clientHeight || 514;
 
     this.scene = new THREE.Scene();
+    this.debris = new DebrisField(this.scene);
     this.scene.background = new THREE.Color(0x060913);
     this.scene.fog = new THREE.FogExp2(0x0a1022, 0.015);
 
@@ -2097,6 +2117,7 @@ export class ThreeBattlefieldService {
 
     // Simulation-time delta: creature and attack motion freezes on pause and speeds up at 2x/4x
     const simRunning = !game.isPaused() && !game.isGameOver() && !game.isVictory();
+    this.simPaused = game.isPaused();
     const simDt = simRunning ? dt * game.gameSpeed() : 0;
     if (!this.reducedMotion) this.sceneryTime += simDt;
     for (let i = 0; i < this.breezeObjects.length; i++) {
@@ -2343,6 +2364,7 @@ export class ThreeBattlefieldService {
     this.syncEffects(game, halfW, halfH);
     this.updateEffects(dt);
     this.updateFadingVisuals(dt);
+    this.debris?.update(this.simPaused ? 0 : dt);
     this.updateParticles(dt);
   }
 
@@ -2848,7 +2870,9 @@ export class ThreeBattlefieldService {
 
       const yAlt = mob.isFlying ? 0.95 : 0.2;
       vis.group.position.set(wx, yAlt, wz);
-      this.mobHeights.set(mob.id, yAlt + vis.spriteSize * 0.45);
+      // Shots aim at the body: low once a super boss is down on its belly
+      const body = vis.colossus?.crawling ? 0.55 : vis.spriteSize * 0.45;
+      this.mobHeights.set(mob.id, yAlt + body);
 
       vis.spawnAge += simDt;
       vis.hitAge += simDt;
@@ -2862,7 +2886,9 @@ export class ThreeBattlefieldService {
 
       // Walk cycle advances with distance travelled, so slowed monsters visibly trudge
       const moved = Math.hypot(wx - vis.lastX, wz - vis.lastZ);
-      if (!stunned) vis.stride += moved * (mob.isFlying ? 3.2 : 7.5) + simDt * 1.5;
+      if (!stunned && !vis.colossus) {
+        vis.stride += moved * (mob.isFlying ? 3.2 : 7.5) + simDt * 1.5;
+      }
       const moveX = wx - vis.lastX;
       const moveZ = wz - vis.lastZ;
       vis.lastX = wx;
@@ -2886,7 +2912,11 @@ export class ThreeBattlefieldService {
         let bob: number;
         let rock: number;
         let squashY = 0;
-        if (stunned) {
+        if (vis.colossus) {
+          // Its own rig carries every sway and stomp
+          bob = 0;
+          rock = stunned ? Math.sin(vis.spawnAge * 18) * 0.04 : 0;
+        } else if (stunned) {
           bob = 0;
           rock = Math.sin(vis.spawnAge * 18) * 0.12;
         } else if (mob.isFlying) {
@@ -2901,7 +2931,11 @@ export class ThreeBattlefieldService {
         }
 
         // Hit reaction
-        const hitP = vis.hitAge < 0.18 ? 1 - vis.hitAge / 0.18 : 0;
+        // Super bosses only glint when struck, or they would glow white under constant fire
+        const hitP =
+          (vis.hitAge < 0.18 ? 1 - vis.hitAge / 0.18 : 0) *
+          (vis.colossus ? ColossusShow.HIT_FLASH : 1);
+        const flash = Math.max(hitP, vis.colossus?.flashAmount ?? 0);
         // Guarded: hitAge starts at Infinity and 0 * sin(Infinity) is NaN, which hides the sprite
         const jitter = hitP > 0 ? hitP * 0.05 * Math.sin(vis.hitAge * 90) : 0;
 
@@ -2911,7 +2945,17 @@ export class ThreeBattlefieldService {
 
         const actor = vis.rig instanceof SpriteActor ? vis.rig : null;
         sprite.rotation.z = this.reducedMotion || actor ? 0 : rock * 0.4 + vis.lean;
-        if (vis.rig.has('walk')) {
+        if (vis.colossus) {
+          vis.colossus.update(
+            mob,
+            vis.rig,
+            sprite,
+            vis.group,
+            stunned ? 0 : moved,
+            simDt,
+            this.reducedMotion,
+          );
+        } else if (vis.rig.has('walk')) {
           if (!this.reducedMotion) vis.rig.stride(vis.stride);
         } else {
           animateModel(
@@ -2928,7 +2972,7 @@ export class ThreeBattlefieldService {
         if (actor) {
           sprite.scale.setScalar(1);
           actor.squash(scaleX, scaleY);
-          actor.tint(hitP, slowed);
+          actor.tint(flash, slowed);
           actor.faceCamera(this.camera, this.sunYaw);
         } else {
           sprite.scale.set(scaleX, scaleY, 1);
@@ -2938,15 +2982,18 @@ export class ThreeBattlefieldService {
         for (const mat of vis.materials) {
           const original = mat.userData['baseEmissive'] as THREE.Color;
           mat.emissive.copy(original);
-          if (hitP > 0) mat.emissive.lerp(new THREE.Color(0xffffff), hitP);
+          if (flash > 0) mat.emissive.lerp(new THREE.Color(0xffffff), flash);
           else if (slowed) mat.emissive.lerp(new THREE.Color(0x216bbb), 0.5);
         }
 
-        vis.shadow.scale.setScalar(Math.max(0.001, emerge * (1 - bob * 1.5)));
+        const shadowSize = vis.colossus ? (vis.colossus.crawling ? 3.2 : 2.4) : 1;
+        vis.shadow.scale.setScalar(Math.max(0.001, emerge * shadowSize * (1 - bob * 1.5)));
 
-        // Health bar faces the camera
+        // Health bar faces the camera; super bosses get the HUD's boss bar instead
         vis.hpGroup.quaternion.copy(this.camera.quaternion);
-        vis.hpGroup.visible = spawnP >= 1;
+        vis.hpGroup.visible = spawnP >= 1 && !vis.colossus;
+        if (vis.colossus)
+          vis.stunStars.position.y = vis.colossus.crawling ? 1.1 : vis.spriteSize + 0.1;
         const ratio = Math.max(0, Math.min(1, mob.hp / mob.maxHp));
         vis.hpTrail = Math.max(ratio, vis.hpTrail - dt * 0.6);
         vis.hpFill.scale.set(Math.max(0.001, ratio), 1, 1);
@@ -2997,6 +3044,17 @@ export class ThreeBattlefieldService {
     this.mobVisuals.delete(id);
     vis.hpGroup.visible = false;
     vis.stunStars.visible = false;
+    if (vis.colossus) {
+      vis.colossus.beginDeath(vis.rig, vis.sprite, vis.group);
+      this.fadingVisuals.push({
+        group: vis.group,
+        age: 0,
+        life: SUPER_BOSS_DEATH_MS / 1000,
+        kind: 'boss-death',
+        mob: vis,
+      });
+      return;
+    }
     this.fadingVisuals.push({ group: vis.group, age: 0, life: 0.45, kind: 'mob-death', mob: vis });
     const p = vis.group.position;
     this.spawnBurst(p.x, p.y + vis.spriteSize * 0.4, p.z, vis.color, 14, { speed: 2.2 });
@@ -3015,8 +3073,7 @@ export class ThreeBattlefieldService {
     shadow.position.y = mob.isFlying ? -0.7 : 0.03;
     group.add(shadow);
 
-    const isBoss = mob.typeId === 'sky-sovereign' || mob.typeId === 'bramble-golem';
-    const sprSize = isBoss ? 1.35 : 0.95;
+    const sprSize = mobScale(mob.typeId);
 
     // Boss scale sits on the miniature inside the holder, so hit/spawn squash stays relative to 1
     const sprite = new THREE.Group();
@@ -3093,6 +3150,10 @@ export class ThreeBattlefieldService {
       lean: 0,
       facing: 0,
       color: new THREE.Color(mob.color),
+      colossus:
+        MOB_TYPES[mob.typeId].damageStages && this.debris
+          ? new ColossusShow(this.colossusHost, this.debris)
+          : null,
     };
   }
 
@@ -3100,10 +3161,37 @@ export class ThreeBattlefieldService {
   private updateFadingVisuals(dt: number): void {
     for (let i = this.fadingVisuals.length - 1; i >= 0; i--) {
       const f = this.fadingVisuals[i];
-      f.age += dt;
+      // A super boss's death plays out in step with the game, which holds the wave for it
+      const step = f.kind === 'boss-death' && this.simPaused ? 0 : dt;
+      f.age += step;
       const p = Math.min(1, f.age / f.life);
 
-      if (f.kind === 'mob-death' && f.mob) {
+      if (f.kind === 'boss-death' && f.mob?.colossus) {
+        const vis = f.mob;
+        const sprite = vis.sprite;
+        const { flash, sink } = vis.colossus!.updateDeath(step, vis.rig, sprite, vis.group);
+        vis.rig.update(0);
+        const actor = vis.rig instanceof SpriteActor ? vis.rig : null;
+        sprite.position.set(0, -sink * 0.25, 0);
+        if (actor && this.camera) {
+          actor.squash(1, 1);
+          actor.tint(flash, false);
+          if (sink > 0) actor.fade(sink);
+          actor.faceCamera(this.camera, this.sunYaw);
+        } else {
+          sprite.rotation.z = 0;
+          sprite.scale.set(1, 1, 1);
+          for (const mat of vis.materials) {
+            const original = mat.userData['baseEmissive'] as THREE.Color;
+            mat.emissive.copy(original).lerp(new THREE.Color(0xffffff), flash);
+            if (sink > 0) {
+              mat.transparent = true;
+              mat.opacity = 1 - sink;
+            }
+          }
+        }
+        (vis.shadow.material as THREE.MeshBasicMaterial).opacity = 0.42 * (1 - sink);
+      } else if (f.kind === 'mob-death' && f.mob) {
         // Flash white, flatten and float up as the spirit leaves
         const sprite = f.mob.sprite;
         sprite.position.y = p * 0.35;
@@ -3467,6 +3555,33 @@ export class ThreeBattlefieldService {
         break;
       }
     }
+  }
+
+  /** An explosion at any height, in either look: super bosses' blasts. */
+  private blastAt(x: number, y: number, z: number, color: string, radius: number): void {
+    if (this.look() === 'hd2d') {
+      const pixels = Math.max(5, Math.round((radius * 0.5) / PROP_PIXEL));
+      this.addSpriteEffect(
+        `boom-${color}-${pixels}`,
+        () => paintExplosion(color, pixels),
+        x,
+        y,
+        z,
+        0.45,
+      );
+    } else {
+      const mat = this.additiveMat(color, 0.75);
+      const core = new THREE.Mesh(this.fxSphereGeo, mat);
+      core.position.set(x, y, z);
+      this.addEffect(core, [mat], 0.4, (p, o) => {
+        o.scale.setScalar(Math.max(0.001, radius * 0.5 * this.easeOutCubic(p)));
+        mat.opacity = 0.75 * (1 - p) * (1 - p);
+      });
+    }
+    this.spawnBurst(x, y, z, color, Math.round(6 + radius * 4), {
+      speed: 1.6 + radius,
+      additive: true,
+    });
   }
 
   private groundRing(
@@ -3988,6 +4103,7 @@ export class ThreeBattlefieldService {
     this.mobVisuals.clear();
     this.projectileVisuals.clear();
     this.fadingVisuals = [];
+    this.debris = null;
     this.activeEffects = [];
     this.seenEffectIds.clear();
     this.activeParticles = [];

@@ -6,7 +6,7 @@ import {
   XP_PER_KILL_GOLD,
   XP_PER_UPGRADE_GOLD,
 } from '../models/tower.model';
-import { MobInstance } from '../models/mob.model';
+import { MOB_TYPES, MobInstance } from '../models/mob.model';
 import { StageModifier } from '../models/campaign.model';
 
 export interface DamageCalculationResult {
@@ -111,6 +111,13 @@ export class GameRulesService {
     if (mob.typeId === 'pyre-core' && mob.hp < mob.maxHp * 0.4) {
       speedFactor *= 1.5;
     }
+
+    // Super bosses reel where they stand as a stage breaks, then carry on at that stage's pace
+    const stage = mob.damageStage
+      ? MOB_TYPES[mob.typeId].damageStages?.[mob.damageStage - 1]
+      : null;
+    if (stage) speedFactor *= stage.speed;
+    if ((mob.staggerMs ?? 0) > 0) isStunned = true;
 
     if (isStunned) {
       return {
