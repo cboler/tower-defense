@@ -21,6 +21,7 @@ export interface Projectile {
   slowPercent?: number;
   slowDuration?: number;
   stunChance?: number;
+  stunDuration?: number; // in seconds
   goldPerHit?: number;
   isAirBonus?: boolean;
   visualType: 'arrow' | 'song-arrow' | 'fireball' | 'magic-spark' | 'time-orb' | 'spear' | 'dagger';

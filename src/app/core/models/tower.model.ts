@@ -36,6 +36,7 @@ export interface TowerLevelConfig {
   killGoldMultiplier?: number;
   pickpocketGold?: number;
   stunChance?: number;
+  stunDuration?: number; // in seconds
   specialDescription: string;
 }
 
@@ -349,71 +350,81 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
   oracle: {
     id: 'oracle',
     name: 'Oracle',
-    fantasyRole: 'Tower Haste & Damage Aura Buffer',
+    fantasyRole: 'Haste & Power Aura / Brief Halt',
     icon: '✨',
     badge: 'White Mage',
     color: '#e2e8f0',
     cost: 180,
-    damageType: 'buff',
-    targetsAir: false,
-    targetsGround: false,
+    damageType: 'magic',
+    targetsAir: true,
+    targetsGround: true,
     description:
-      'Channels divine auras. Passively grants nearby allied towers +25% to +50% attack speed and power.',
+      'Empowers nearby allies with haste and power. Fires a weak holy bolt at ground or flying foes, halting its target for 0.3s on every hit.',
     levels: [
       {
         level: 1,
         title: 'Acolyte',
         upgradeCost: 0,
-        damage: 0,
+        damage: 6,
         range: 2.2,
         cadence: 1.0,
         buffSpeedPercent: 0.25,
         buffDamagePercent: 0.15,
-        specialDescription: 'Adjacent allies gain +25% Speed & +15% Damage.',
+        stunDuration: 0.3,
+        specialDescription:
+          'Allies gain +25% Speed & +15% Damage. Holy bolt halts one foe for 0.3s.',
       },
       {
         level: 2,
         title: 'High Priest',
         upgradeCost: 190,
-        damage: 0,
+        damage: 10,
         range: 2.5,
         cadence: 1.0,
         buffSpeedPercent: 0.32,
         buffDamagePercent: 0.2,
-        specialDescription: 'Empowers more towers with +32% Speed / +20% Damage.',
+        stunDuration: 0.3,
+        specialDescription:
+          'Allies gain +32% Speed / +20% Damage. Holy bolt halts one foe for 0.3s.',
       },
       {
         level: 3,
         title: 'Diviner',
         upgradeCost: 350,
-        damage: 0,
+        damage: 16,
         range: 2.8,
         cadence: 1.0,
         buffSpeedPercent: 0.4,
         buffDamagePercent: 0.25,
-        specialDescription: 'Wide holy halo granting +40% Speed / +25% Damage.',
+        stunDuration: 0.3,
+        specialDescription:
+          'Wide halo grants +40% Speed / +25% Damage. Holy bolt halts one foe for 0.3s.',
       },
       {
         level: 4,
         title: 'Arch-Hierophant',
         upgradeCost: 580,
-        damage: 0,
+        damage: 24,
         range: 3.1,
         cadence: 1.0,
         buffSpeedPercent: 0.48,
         buffDamagePercent: 0.3,
-        specialDescription: 'Massive boost transforming towers into rapid batteries.',
+        stunDuration: 0.3,
+        specialDescription:
+          'Allies gain +48% Speed / +30% Damage. Holy bolt halts one foe for 0.3s.',
       },
       {
         level: 5,
         title: 'Celestial Avatar',
         upgradeCost: 950,
-        damage: 0,
+        damage: 36,
         range: 3.5,
         cadence: 1.0,
         buffSpeedPercent: 0.6,
         buffDamagePercent: 0.4,
-        specialDescription: '+60% Attack Speed & +40% Damage to all towers in radius.',
+        stunDuration: 0.3,
+        specialDescription:
+          'Allies gain +60% Speed & +40% Damage. Holy bolt halts one foe for 0.3s.',
       },
     ],
   },

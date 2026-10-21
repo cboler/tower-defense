@@ -441,7 +441,8 @@ export class GameService implements OnDestroy {
         this.spawnQueue.push({
           mobType: group.mobType,
           spawnTimeMs: this.gameTimeMs + delay + i * group.intervalMs,
-          hpMultiplier: group.hpMultiplier ?? 1.0,
+          // Linear wave growth: +5% of starting HP per wave, including finale bosses.
+          hpMultiplier: (group.hpMultiplier ?? 1.0) * (1 + waveIdx * 0.05),
         });
       }
     }
@@ -490,7 +491,7 @@ export class GameService implements OnDestroy {
 
   public cycleTargetPriorityForTower(towerId: string): void {
     const t = this.towers().find((tower) => tower.id === towerId);
-    if (!t || t.classId === 'barricade' || t.classId === 'oracle' || t.classId === 'rogue') return;
+    if (!t || t.classId === 'barricade' || t.classId === 'rogue') return;
     const priorities: TargetPriority[] = [
       'first',
       'strongest',
@@ -851,7 +852,7 @@ export class GameService implements OnDestroy {
     if (towers.length === 0 || mobs.length === 0) return;
 
     for (const tower of towers) {
-      if (tower.classId === 'barricade' || tower.classId === 'oracle') continue;
+      if (tower.classId === 'barricade') continue;
 
       if (tower.classId === 'rogue') {
         // Rogue / Thief: Passive economy catalyst and periodic pickpocketing
@@ -1031,6 +1032,27 @@ export class GameService implements OnDestroy {
           slowPercent: lvl.slowPercent ?? 0.4,
           slowDuration: lvl.slowDuration ?? 3.0,
           visualType: 'time-orb',
+        });
+        break;
+      }
+
+      case 'oracle': {
+        this.audio.playSlowPulse();
+        this.spawnProjectile({
+          sourceTowerId: tower.id,
+          targetMobId: target.id,
+          startX: tower.x,
+          startY: tower.y,
+          currentX: tower.x,
+          currentY: tower.y,
+          targetX: target.x,
+          targetY: target.y,
+          speed: 8.5,
+          damage,
+          damageType: 'magic',
+          stunChance: 1,
+          stunDuration: lvl.stunDuration,
+          visualType: 'magic-spark',
         });
         break;
       }
@@ -1254,8 +1276,8 @@ export class GameService implements OnDestroy {
           mob.statusEffects.push({
             type: 'stun',
             intensity: 1.0,
-            durationMs: 1200,
-            remainingMs: 1200,
+            durationMs: (proj.stunDuration ?? 1.2) * 1000,
+            remainingMs: (proj.stunDuration ?? 1.2) * 1000,
           });
         }
         this.dealDamage(mob, proj.damage, proj.damageType, tower ?? null);
@@ -1271,8 +1293,8 @@ export class GameService implements OnDestroy {
         target.statusEffects.push({
           type: 'stun',
           intensity: 1.0,
-          durationMs: 1200,
-          remainingMs: 1200,
+          durationMs: (proj.stunDuration ?? 1.2) * 1000,
+          remainingMs: (proj.stunDuration ?? 1.2) * 1000,
         });
         this.addFloatingText('STUNNED!', target.x, target.y, '#06b6d4', 'alert');
       }

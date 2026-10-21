@@ -92,7 +92,7 @@ const ATTACK_STYLE: Record<TowerClassId, AttackStyle> = {
   lancer: 'slam',
   juggernaut: 'slam',
   rogue: 'hop',
-  oracle: 'none',
+  oracle: 'cast',
   barricade: 'none',
 };
 

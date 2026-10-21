@@ -1,9 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { GameService } from './game.service';
-import { MAP_VERDANT_CROSSROADS } from '../models/map.model';
-import { MobInstance } from '../models/mob.model';
-import { ORACLE_XP_SHARE, XP_PER_KILL_GOLD } from '../models/tower.model';
+import { ALL_MAPS, MAP_VERDANT_CROSSROADS } from '../models/map.model';
+import { MOB_TYPES, MobInstance } from '../models/mob.model';
+import { ORACLE_XP_SHARE, TOWER_CLASSES, XP_PER_KILL_GOLD } from '../models/tower.model';
 
 describe('GameService', () => {
   let service: GameService;
@@ -19,6 +19,120 @@ describe('GameService', () => {
     expect(service.crystals()).toBe(20);
     expect(service.groundPath().length).toBeGreaterThan(0);
     expect(service.airPath().length).toBeGreaterThan(0);
+  });
+
+  describe('linear wave health', () => {
+    it.each(ALL_MAPS)('scales every group through the finale on $name', (map) => {
+      service.loadMap(map);
+      map.waves.forEach((wave, index) => {
+        service['spawnQueue'] = [];
+        service['enqueueWaveMobs'](index);
+        for (const group of wave.groups) {
+          const queued = service['spawnQueue'].filter((mob) => mob.mobType === group.mobType);
+          expect(queued).toHaveLength(group.count);
+          for (const mob of queued) {
+            expect(mob.hpMultiplier).toBeCloseTo((group.hpMultiplier ?? 1) * (1 + index * 0.05));
+          }
+        }
+      });
+    });
+
+    it("keeps each queued wave's health when waves overlap", () => {
+      service['enqueueWaveMobs'](0);
+      service['enqueueWaveMobs'](1);
+      service.currentWaveIndex.set(2);
+      const skulkers = service['spawnQueue'].filter((mob) => mob.mobType === 'skulker');
+      expect(skulkers.map((mob) => mob.hpMultiplier).sort()).toEqual([
+        ...Array(8).fill(1),
+        ...Array(5).fill(1.05),
+      ]);
+      for (const queued of skulkers) service['spawnMob'](queued.mobType, queued.hpMultiplier);
+      expect(
+        service
+          .mobs()
+          .map((mob) => mob.maxHp)
+          .sort((a, b) => a - b),
+      ).toEqual([...Array(8).fill(90), ...Array(5).fill(95)]);
+    });
+
+    it('applies the full 150% increase to the final super boss and its escorts', () => {
+      service['enqueueWaveMobs'](30);
+      for (const queued of service['spawnQueue']) {
+        service['spawnMob'](queued.mobType, queued.hpMultiplier);
+      }
+      const boss = service.mobs().find((mob) => mob.typeId === 'iron-colossus')!;
+      expect(boss.hp).toBe(Math.round(MOB_TYPES['iron-colossus'].baseHp * 1.5 * 2.5));
+      for (const mob of service.mobs()) {
+        expect(mob.hp).toBe(mob.maxHp);
+        expect(mob.baseSpeed).toBe(MOB_TYPES[mob.typeId].baseSpeed);
+        expect(mob.goldReward).toBe(MOB_TYPES[mob.typeId].goldReward);
+      }
+    });
+  });
+
+  describe('Oracle holy bolt', () => {
+    it.each([1, 2, 3, 4, 5])('attacks ground and air at level %i while buffing allies', (level) => {
+      service.gold.set(5000);
+      service.placeTower(0, 0, 'oracle');
+      service.placeTower(1, 0, 'blade-warden');
+      const [oracle, ally] = service.towers();
+      oracle.level = level;
+      const config = TOWER_CLASSES.oracle.levels[level - 1];
+      const buffs = service['calculateTowerBuffs']();
+      expect(buffs.get(ally.id)?.speedMult).toBeCloseTo(1 + config.buffSpeedPercent!);
+      expect(buffs.get(ally.id)?.damageMult).toBeCloseTo(1 + config.buffDamagePercent!);
+
+      for (const type of ['skulker', 'dread-gaze'] as const) {
+        service.mobs.set([]);
+        service['spawnMob'](type, 1);
+        const mob = service.mobs()[0];
+        Object.assign(mob, { x: 0, y: 1 });
+        service['gameTimeMs'] += 1000;
+        service['updateTowers'](buffs);
+        const bolt = service.projectiles().find((proj) => proj.sourceTowerId === oracle.id)!;
+        expect(bolt.targetMobId).toBe(mob.id);
+        expect(mob.statusEffects).toEqual([]); // The halt starts on impact, not on cast.
+        const hp = mob.hp;
+        service['updateProjectiles'](1);
+        const damage = Math.max(1, Math.round(config.damage * (1 - mob.magicResist)));
+        expect(hp - mob.hp).toBe(damage);
+        expect(mob.statusEffects).toContainEqual({
+          type: 'stun',
+          intensity: 1,
+          durationMs: 300,
+          remainingMs: 300,
+        });
+        // No second bolt before the one-second cadence has elapsed.
+        service['updateTowers'](buffs);
+        expect(service.projectiles().some((proj) => proj.sourceTowerId === oracle.id)).toBe(false);
+      }
+    });
+
+    it.each(['skulker', 'swiftbeak', 'dread-gaze', 'iron-colossus'] as const)(
+      'briefly stops %s, then lets it resume moving',
+      (type) => {
+        service.placeTower(0, 0, 'oracle');
+        service['spawnMob'](type, 1);
+        const mob = service.mobs()[0];
+        const position = { x: mob.x, y: mob.y, walked: mob.pathLengthWalked };
+        service['gameTimeMs'] = 1000;
+        service['updateTowers'](new Map());
+        service['updateProjectiles'](1);
+        service['updateMobs'](0.1);
+        expect({ x: mob.x, y: mob.y, walked: mob.pathLengthWalked }).toEqual(position);
+        expect(mob.effectiveSpeed).toBe(0);
+        service['updateMobs'](0.21);
+        expect(mob.statusEffects).toEqual([]);
+        expect(mob.pathLengthWalked).toBeGreaterThan(position.walked);
+      },
+    );
+
+    it('allows Oracle target priorities to be cycled', () => {
+      service.placeTower(0, 0, 'oracle');
+      const oracle = service.towers()[0];
+      service.cycleTargetPriorityForTower(oracle.id);
+      expect(service.towers()[0].targetPriority).toBe('strongest');
+    });
   });
 
   it('keeps Samurai locked with the old Warrior and Berserker pairing', () => {

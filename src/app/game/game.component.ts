@@ -739,7 +739,7 @@ export class GameComponent implements OnInit, OnDestroy {
 
       case 'toggle-speed': {
         const tower = this.game.selectedTower();
-        if (tower && tower.classId !== 'barricade' && tower.classId !== 'oracle') {
+        if (tower && tower.classId !== 'barricade') {
           // If a tower is inspected, [Y] cycles target priority!
           this.game.cycleTargetPriorityForTower(tower.id);
         } else {
@@ -896,7 +896,7 @@ export class GameComponent implements OnInit, OnDestroy {
 
     if (e.key === 'y' || e.key === 'Y') {
       const tower = this.game.selectedTower();
-      if (tower && tower.classId !== 'barricade' && tower.classId !== 'oracle') {
+      if (tower && tower.classId !== 'barricade') {
         this.game.cycleTargetPriorityForTower(tower.id);
       } else {
         this.game.cycleSpeed();

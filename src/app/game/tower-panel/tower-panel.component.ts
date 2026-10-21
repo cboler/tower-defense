@@ -128,8 +128,16 @@ import { IconComponent } from '../icon/icon.component';
                     <dd>{{ getCurLevel(tower).range }}</dd>
                   </div>
                   <div class="stat-cell">
-                    <dt>Role</dt>
-                    <dd>Support</dd>
+                    <dt>Bolt damage</dt>
+                    <dd>{{ getCurLevel(tower).damage }}</dd>
+                  </div>
+                  <div class="stat-cell">
+                    <dt>Halt</dt>
+                    <dd>{{ getCurLevel(tower).stunDuration }}s</dd>
+                  </div>
+                  <div class="stat-cell">
+                    <dt>Cadence</dt>
+                    <dd>{{ getCurLevel(tower).cadence }}s</dd>
                   </div>
                 } @else {
                   <div class="stat-cell">
@@ -187,11 +195,7 @@ import { IconComponent } from '../icon/icon.component';
               </p>
             }
 
-            @if (
-              tower.classId !== 'barricade' &&
-              tower.classId !== 'oracle' &&
-              tower.classId !== 'rogue'
-            ) {
+            @if (tower.classId !== 'barricade' && tower.classId !== 'rogue') {
               <div class="priority-selector">
                 <span class="section-label"> Target priority <span class="key-hint">Y</span> </span>
                 <div class="priority-buttons" role="radiogroup" aria-label="Target priority">
@@ -243,6 +247,12 @@ import { IconComponent } from '../icon/icon.component';
                       >
                     </li>
                   } @else if (tower.classId === 'oracle') {
+                    <li>
+                      <span>Bolt damage</span>
+                      <span
+                        >{{ getCurLevel(tower).damage }} <b>→ {{ nextLvl.damage }}</b></span
+                      >
+                    </li>
                     <li>
                       <span>Haste</span>
                       <span

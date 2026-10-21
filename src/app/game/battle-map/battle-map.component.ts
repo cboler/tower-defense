@@ -253,7 +253,7 @@ import { IconComponent } from '../icon/icon.component';
             <kbd class="key-badge">[X]</kbd>
             <span class="guide-desc">Dismiss (+Refund)</span>
           </div>
-          @if (tower.classId !== 'barricade' && tower.classId !== 'oracle') {
+          @if (tower.classId !== 'barricade') {
             <div class="guide-item active-action">
               <kbd class="key-badge">[Y]</kbd>
               <span class="guide-desc">Priority: {{ tower.targetPriority }}</span>
