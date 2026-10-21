@@ -116,6 +116,68 @@ describe('GameRulesService', () => {
     );
   });
 
+  it.each([1, 2, 3, 4, 5])(
+    'extends allied attack and aura ranges by 25%% at Bard level %i',
+    (level) => {
+      const bard = tower('bard', 'bard', level);
+      const ally = tower('ally', 'oracle', 1, 1);
+      const buffs = service.calculateTowerBuffs([bard, ally]);
+      expect(buffs.get(ally.id)?.rangeMult).toBe(1.25);
+      expect(buffs.get(bard.id)?.rangeMult).toBeUndefined();
+    },
+  );
+
+  it('does not stack Bard range bonuses and still combines haste with Oracle', () => {
+    const ally = tower('ally', 'ranger');
+    const bard = tower('bard', 'bard', 1, 1);
+    const stronger = tower('stronger', 'bard', 5, 2);
+    const oracle = tower('oracle', 'oracle', 1, 1);
+    const buffs = service.calculateTowerBuffs([ally, bard, stronger, oracle]);
+    expect(buffs.get(ally.id)?.rangeMult).toBe(1.25);
+    expect(buffs.get(ally.id)?.speedMult).toBeCloseTo(1.6);
+    expect(buffs.get(ally.id)?.damageMult).toBeCloseTo(1.15);
+  });
+
+  it.each(['oracle', 'paladin'] as const)(
+    'extends a %s aura to allies outside its original radius',
+    (classId) => {
+      const bard = tower('bard', 'bard');
+      const source = tower('source', classId, 1, 2);
+      const edge = tower('edge', 'ranger', 1, 4.75);
+      const outside = tower('outside', 'ranger', 1, 4.76);
+      const buffs = service.calculateTowerBuffs([bard, source, edge, outside]);
+      expect(buffs.get(edge.id)?.damageMult).toBeCloseTo(classId === 'oracle' ? 1.15 : 1.1);
+      expect(buffs.has(outside.id)).toBe(false);
+      expect(service.calculateTowerBuffs([source, edge]).has(edge.id)).toBe(false);
+    },
+  );
+
+  it('settles mutually extended Bard halos without stacking or depending on tower order', () => {
+    const towers = [
+      tower('a', 'bard'),
+      tower('b', 'bard', 1, 2.2),
+      tower('c', 'bard', 1, 4.8),
+      tower('edge', 'ranger', 1, 7.55),
+    ];
+    const forward = service.calculateTowerBuffs(towers);
+    const reverse = service.calculateTowerBuffs([...towers].reverse());
+    for (const target of towers) {
+      expect(forward.get(target.id)?.rangeMult).toBe(1.25);
+      expect(reverse.get(target.id)).toEqual(forward.get(target.id));
+    }
+  });
+
+  it.each(['rogue', 'ninja'] as const)(
+    'extends the %s loot aura without multiplying its payout again',
+    (classId) => {
+      const bard = tower('bard', 'bard');
+      const source = tower('source', classId, 1, 1);
+      const mob = createDummyMob({ x: 3.7, goldReward: 20 });
+      expect(service.calculateKillBounty(mob, [source]).earnedGold).toBe(20);
+      expect(service.calculateKillBounty(mob, [source, bard]).earnedGold).toBe(30);
+    },
+  );
+
   describe('calculateEffectiveDamage', () => {
     it('should reduce physical damage according to armor', () => {
       const mob = createDummyMob({ armor: 0.5 }); // 50% armor

@@ -941,8 +941,7 @@ export class BattleMapComponent implements AfterViewInit, OnDestroy {
 
     if (tower) {
       if (tower.classId === 'barricade') return null;
-      const def = TOWER_CLASSES[tower.classId];
-      range = def.levels[tower.level - 1].range;
+      range = this.game.towerRange(tower);
     } else {
       const cellType = map.tiles[tile.y]?.[tile.x];
       if (cellType === 'B') {

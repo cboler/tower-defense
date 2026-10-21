@@ -100,7 +100,7 @@ import { IconComponent } from '../icon/icon.component';
                   </div>
                   <div class="stat-cell">
                     <dt>Aura</dt>
-                    <dd>{{ getCurLevel(tower).range }}</dd>
+                    <dd>{{ buffedRange(tower, getCurLevel(tower).range) }}</dd>
                   </div>
                   <div class="stat-cell">
                     <dt>Pickpocket</dt>
@@ -125,7 +125,7 @@ import { IconComponent } from '../icon/icon.component';
                   </div>
                   <div class="stat-cell">
                     <dt>Halo</dt>
-                    <dd>{{ getCurLevel(tower).range }}</dd>
+                    <dd>{{ buffedRange(tower, getCurLevel(tower).range) }}</dd>
                   </div>
                   <div class="stat-cell">
                     <dt>Bolt damage</dt>
@@ -146,7 +146,7 @@ import { IconComponent } from '../icon/icon.component';
                   </div>
                   <div class="stat-cell">
                     <dt>Range</dt>
-                    <dd>{{ getCurLevel(tower).range }}</dd>
+                    <dd>{{ buffedRange(tower, getCurLevel(tower).range) }}</dd>
                   </div>
                   <div class="stat-cell">
                     <dt>Cadence</dt>
@@ -164,17 +164,29 @@ import { IconComponent } from '../icon/icon.component';
                   </div>
                   <div class="stat-cell">
                     <dt>Aura radius</dt>
-                    <dd>{{ getCurLevel(tower).auraRange }}</dd>
+                    <dd>
+                      {{
+                        buffedRange(tower, getCurLevel(tower).auraRange ?? getCurLevel(tower).range)
+                      }}
+                    </dd>
                   </div>
                 }
                 @if (tower.classId === 'bard') {
+                  <div class="stat-cell">
+                    <dt>Ally reach</dt>
+                    <dd>+25%</dd>
+                  </div>
                   <div class="stat-cell">
                     <dt>Ally haste</dt>
                     <dd>+{{ round((getCurLevel(tower).buffSpeedPercent ?? 0) * 100) }}%</dd>
                   </div>
                   <div class="stat-cell">
                     <dt>Aura radius</dt>
-                    <dd>{{ getCurLevel(tower).auraRange }}</dd>
+                    <dd>
+                      {{
+                        buffedRange(tower, getCurLevel(tower).auraRange ?? getCurLevel(tower).range)
+                      }}
+                    </dd>
                   </div>
                 }
                 @if (tower.classId === 'ninja') {
@@ -185,6 +197,12 @@ import { IconComponent } from '../icon/icon.component';
                   <div class="stat-cell">
                     <dt>Earned</dt>
                     <dd class="gold">{{ tower.goldGenerated }}G</dd>
+                  </div>
+                }
+                @if ((game.towerBuffs().get(tower.id)?.rangeMult ?? 1) > 1) {
+                  <div class="stat-cell">
+                    <dt>Bard reach</dt>
+                    <dd>+25%</dd>
                   </div>
                 }
               </dl>
@@ -243,7 +261,8 @@ import { IconComponent } from '../icon/icon.component';
                     <li>
                       <span>Aura</span>
                       <span
-                        >{{ getCurLevel(tower).range }} <b>→ {{ nextLvl.range }}</b></span
+                        >{{ buffedRange(tower, getCurLevel(tower).range) }}
+                        <b>→ {{ buffedRange(tower, nextLvl.range) }}</b></span
                       >
                     </li>
                   } @else if (tower.classId === 'oracle') {
@@ -270,7 +289,8 @@ import { IconComponent } from '../icon/icon.component';
                     <li>
                       <span>Halo</span>
                       <span
-                        >{{ getCurLevel(tower).range }} <b>→ {{ nextLvl.range }}</b></span
+                        >{{ buffedRange(tower, getCurLevel(tower).range) }}
+                        <b>→ {{ buffedRange(tower, nextLvl.range) }}</b></span
                       >
                     </li>
                   } @else {
@@ -283,7 +303,8 @@ import { IconComponent } from '../icon/icon.component';
                     <li>
                       <span>Range</span>
                       <span
-                        >{{ getCurLevel(tower).range }} <b>→ {{ nextLvl.range }}</b></span
+                        >{{ buffedRange(tower, getCurLevel(tower).range) }}
+                        <b>→ {{ buffedRange(tower, nextLvl.range) }}</b></span
                       >
                     </li>
                     <li>
@@ -292,7 +313,27 @@ import { IconComponent } from '../icon/icon.component';
                         >{{ getCurLevel(tower).cadence }}s <b>→ {{ nextLvl.cadence }}s</b></span
                       >
                     </li>
+                    @if (tower.classId === 'bard' || tower.classId === 'paladin') {
+                      <li>
+                        <span>Aura radius</span>
+                        <span
+                          >{{
+                            buffedRange(
+                              tower,
+                              getCurLevel(tower).auraRange ?? getCurLevel(tower).range
+                            )
+                          }}
+                          <b
+                            >→ {{ buffedRange(tower, nextLvl.auraRange ?? nextLvl.range) }}</b
+                          ></span
+                        >
+                      </li>
+                    }
                     @if (tower.classId === 'bard') {
+                      <li>
+                        <span>Ally attack / aura range</span>
+                        <span>+25% <b>→ +25%</b></span>
+                      </li>
                       <li>
                         <span>Ally haste</span>
                         <span
@@ -1237,6 +1278,10 @@ export class TowerPanelComponent {
   public readonly closePanel = output<void>();
   protected readonly game = inject(GameService);
   protected readonly round = Math.round;
+
+  protected buffedRange(tower: TowerInstance, range: number): number {
+    return Math.round(range * (this.game.towerBuffs().get(tower.id)?.rangeMult ?? 1) * 100) / 100;
+  }
 
   protected readonly activeTab = signal<'base' | 'advanced'>('base');
   protected readonly baseClasses = BASE_TOWER_CLASSES;

@@ -22,6 +22,15 @@ describe('GameService', () => {
   });
 
   describe('linear wave health', () => {
+    it.each([
+      ['bramble-golem', 3276],
+      ['sky-sovereign', 4056],
+      ['iron-colossus', 14040],
+    ] as const)('adds another 30%% to the previously boosted base HP of %s', (type, hp) => {
+      service['spawnMob'](type, 1);
+      expect(service.mobs()[0].hp).toBe(hp);
+      expect(service.mobs()[0].maxHp).toBe(hp);
+    });
     it.each(ALL_MAPS)('scales every group through the finale on $name', (map) => {
       service.loadMap(map);
       map.waves.forEach((wave, index) => {
@@ -31,7 +40,10 @@ describe('GameService', () => {
           const queued = service['spawnQueue'].filter((mob) => mob.mobType === group.mobType);
           expect(queued).toHaveLength(group.count);
           for (const mob of queued) {
-            expect(mob.hpMultiplier).toBeCloseTo((group.hpMultiplier ?? 1) * (1 + index * 0.05));
+            const lateMultiplier = index >= 9 ? 2 * (1 + (index - 9) * 0.15) : 1;
+            expect(mob.hpMultiplier).toBeCloseTo(
+              (group.hpMultiplier ?? 1) * (1 + index * 0.15) * lateMultiplier,
+            );
           }
         }
       });
@@ -44,7 +56,7 @@ describe('GameService', () => {
       const skulkers = service['spawnQueue'].filter((mob) => mob.mobType === 'skulker');
       expect(skulkers.map((mob) => mob.hpMultiplier).sort()).toEqual([
         ...Array(8).fill(1),
-        ...Array(5).fill(1.05),
+        ...Array(5).fill(1.15),
       ]);
       for (const queued of skulkers) service['spawnMob'](queued.mobType, queued.hpMultiplier);
       expect(
@@ -52,22 +64,98 @@ describe('GameService', () => {
           .mobs()
           .map((mob) => mob.maxHp)
           .sort((a, b) => a - b),
-      ).toEqual([...Array(8).fill(90), ...Array(5).fill(95)]);
+      ).toEqual([...Array(8).fill(90), ...Array(5).fill(Math.round(90 * 1.15))]);
     });
 
-    it('applies the full 150% increase to the final super boss and its escorts', () => {
+    it.each([
+      [0, 1],
+      [8, 2.2],
+      [9, 4.7],
+      [10, 5.75],
+      [19, 19.25],
+      [30, 45.65],
+    ])('uses the expected combined ramp at wave index %i', (index, multiplier) => {
+      service['enqueueWaveMobs'](index);
+      for (const group of service.activeMap().waves[index].groups) {
+        const queued = service['spawnQueue'].filter((mob) => mob.mobType === group.mobType);
+        for (const mob of queued) {
+          expect(mob.hpMultiplier).toBeCloseTo((group.hpMultiplier ?? 1) * multiplier);
+        }
+      }
+    });
+
+    it('preserves wave 9 HP when wave 10 is queued alongside it', () => {
+      service['enqueueWaveMobs'](8);
+      const earlierWave = [...service['spawnQueue']];
+      service['enqueueWaveMobs'](9);
+      for (const queued of earlierWave) expect(queued.hpMultiplier).toBeCloseTo(2.2);
+      const boss = service['spawnQueue'].find((mob) => mob.mobType === 'bramble-golem')!;
+      expect(boss.hpMultiplier).toBeCloseTo(4.7);
+      service['spawnMob'](boss.mobType, boss.hpMultiplier);
+      expect(service.mobs()[0].hp).toBe(Math.round(3276 * 4.7));
+    });
+
+    it('applies both ramps to the final super boss and its escorts', () => {
       service['enqueueWaveMobs'](30);
       for (const queued of service['spawnQueue']) {
         service['spawnMob'](queued.mobType, queued.hpMultiplier);
       }
       const boss = service.mobs().find((mob) => mob.typeId === 'iron-colossus')!;
-      expect(boss.hp).toBe(Math.round(MOB_TYPES['iron-colossus'].baseHp * 1.5 * 2.5));
+      expect(boss.hp).toBe(Math.round(MOB_TYPES['iron-colossus'].baseHp * 1.5 * 45.65));
       for (const mob of service.mobs()) {
         expect(mob.hp).toBe(mob.maxHp);
         expect(mob.baseSpeed).toBe(MOB_TYPES[mob.typeId].baseSpeed);
         expect(mob.goldReward).toBe(MOB_TYPES[mob.typeId].goldReward);
       }
     });
+  });
+
+  it.each(['ranger', 'juggernaut', 'samurai', 'rogue'] as const)(
+    'extends %s attacks with Bard and removes the range bonus when Bard is sold',
+    (classId) => {
+      service.gold.set(5000);
+      service.unlockedJobIds.set(new Set(['bard', 'samurai']));
+      service.placeTower(0, 0, 'bard');
+      service.placeTower(1, 0, classId);
+      const [bard, ally] = service.towers();
+      const baseRange = TOWER_CLASSES[classId].levels[0].range;
+      service['spawnMob']('skulker', 1);
+      const mob = service.mobs()[0];
+      Object.assign(mob, { x: 1 + baseRange * 1.2, y: 0, hp: 1000, armor: 0 });
+      service['gameTimeMs'] = bard.lastActionTime = 10000;
+      const gold = service.gold();
+      expect(service.towerRange(ally)).toBeCloseTo(baseRange * 1.25);
+      service['updateTowers'](service['calculateTowerBuffs']());
+      service['updateProjectiles'](1);
+      if (classId === 'rogue') expect(service.gold()).toBe(gold + 2);
+      else expect(mob.hp).toBeLessThan(1000);
+
+      service.sellTower(bard.id);
+      expect(service.towerRange(ally)).toBe(baseRange);
+      const hpAfterHit = mob.hp;
+      const goldAfterSale = service.gold();
+      service['gameTimeMs'] = 20000;
+      service['updateTowers'](service['calculateTowerBuffs']());
+      service['updateProjectiles'](1);
+      expect(mob.hp).toBe(hpAfterHit);
+      expect(service.gold()).toBe(goldAfterSale);
+    },
+  );
+
+  it('shares hero experience through an Oracle halo extended by Bard', () => {
+    service.gold.set(5000);
+    service.unlockedJobIds.set(new Set(['bard']));
+    service.placeTower(0, 0, 'bard');
+    service.placeTower(2, 0, 'oracle');
+    service.placeTower(5, 0, 'blade-warden');
+    const [, oracle, hero] = service.towers();
+    hero.x = 4.75;
+    service['spawnMob']('skulker', 1);
+    const mob = service.mobs()[0];
+    mob.hp = 1000;
+    expect(service.towerRange(oracle, true)).toBe(2.75);
+    service.dealDamage(mob, 100, 'pure', hero);
+    expect(oracle.xp).toBe(100 * ORACLE_XP_SHARE);
   });
 
   describe('Oracle holy bolt', () => {

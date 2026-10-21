@@ -31,6 +31,7 @@ export interface KillBountyResult {
 export interface TowerBuff {
   speedMult: number;
   damageMult: number;
+  rangeMult?: number;
 }
 
 @Injectable({
@@ -151,11 +152,30 @@ export class GameRulesService {
   public calculateTowerBuffs(towers: TowerInstance[]): Map<string, TowerBuff> {
     const buffs = new Map<string, TowerBuff>();
 
+    // Range bonuses never stack. Let allied Bards extend each other's halos to a stable
+    // boundary; every recipient gains the same 25%, so this terminates after at most N grants.
+    let extended = true;
+    while (extended) {
+      extended = false;
+      for (const bard of towers) {
+        if (bard.classId !== 'bard') continue;
+        const level = TOWER_CLASSES.bard.levels[bard.level - 1];
+        const radius = level.auraRange! * (buffs.get(bard.id)?.rangeMult ?? 1);
+        for (const target of towers) {
+          if (target.id === bard.id || target.classId === 'barricade') continue;
+          if (buffs.has(target.id)) continue;
+          if (Math.hypot(target.x - bard.x, target.y - bard.y) > radius) continue;
+          buffs.set(target.id, { speedMult: 1, damageMult: 1, rangeMult: 1.25 });
+          extended = true;
+        }
+      }
+    }
+
     for (const oracle of towers) {
       if (oracle.classId !== 'oracle') continue;
       const def = TOWER_CLASSES.oracle;
       const lvl = def.levels[oracle.level - 1];
-      const range = lvl.range;
+      const range = lvl.range * (buffs.get(oracle.id)?.rangeMult ?? 1);
 
       for (const target of towers) {
         if (target.id === oracle.id) continue;
@@ -178,7 +198,8 @@ export class GameRulesService {
         if (source.classId !== 'paladin' && source.classId !== 'bard') continue;
         const level = TOWER_CLASSES[source.classId].levels[source.level - 1];
         if (
-          Math.hypot(target.x - source.x, target.y - source.y) > (level.auraRange ?? level.range)
+          Math.hypot(target.x - source.x, target.y - source.y) >
+          (level.auraRange ?? level.range) * (buffs.get(source.id)?.rangeMult ?? 1)
         ) {
           continue;
         }
@@ -206,6 +227,7 @@ export class GameRulesService {
     mob: MobInstance,
     allTowers: TowerInstance[],
     modifiers: StageModifier[] = [],
+    buffs = this.calculateTowerBuffs(allTowers),
   ): KillBountyResult {
     let bestMultiplier = 1.0;
     let plunderTower: TowerInstance | null = null;
@@ -215,7 +237,7 @@ export class GameRulesService {
       const def = TOWER_CLASSES[rogue.classId];
       const lvl = def.levels[rogue.level - 1];
       const dist = Math.hypot(mob.x - rogue.x, mob.y - rogue.y);
-      if (dist <= lvl.range) {
+      if (dist <= lvl.range * (buffs.get(rogue.id)?.rangeMult ?? 1)) {
         const mult = lvl.killGoldMultiplier ?? 1.5;
         if (mult > bestMultiplier) {
           bestMultiplier = mult;

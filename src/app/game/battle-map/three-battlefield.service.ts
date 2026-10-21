@@ -2284,7 +2284,8 @@ export class ThreeBattlefieldService {
     if (this.supportRangeMesh) {
       const classId = selTower?.classId ?? game.selectedClassId();
       const level = TOWER_CLASSES[classId].levels[(selTower?.level ?? 1) - 1];
-      const radius = level.auraRange;
+      const radius =
+        level.auraRange && (selTower ? game.towerRange(selTower, true) : level.auraRange);
       this.supportRangeMesh.visible = !!(
         sel &&
         radius &&
@@ -2302,8 +2303,7 @@ export class ThreeBattlefieldService {
     if (this.rangeMesh) {
       let rangeRadius = 0;
       if (selTower && selTower.classId !== 'barricade') {
-        const def = TOWER_CLASSES[selTower.classId];
-        rangeRadius = def.levels[selTower.level - 1].range * this.TILE_SIZE;
+        rangeRadius = game.towerRange(selTower) * this.TILE_SIZE;
       } else if (sel && map.tiles[sel.y]?.[sel.x] === 'B') {
         const curClass = TOWER_CLASSES[game.selectedClassId()];
         if (curClass.id !== 'barricade') {

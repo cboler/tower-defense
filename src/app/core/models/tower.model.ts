@@ -897,7 +897,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         auraRange: 2.2,
         buffDamagePercent: 0.1,
         specialDescription:
-          'Stasis Sword: heavy radiant slash with 35% chance to stun for 1.4s. Allies within 2.2 tiles gain +10% damage.',
+          'Stasis Sword: heavy radiant slash with 35% chance to stun for 1.4s. Allies in the aura gain +10% damage.',
       },
       {
         level: 2,
@@ -910,7 +910,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         auraRange: 2.4,
         buffDamagePercent: 0.15,
         specialDescription:
-          'Increased holy impact with 40% stun chance. Allies within 2.4 tiles gain +15% damage.',
+          'Increased holy impact with 40% stun chance. Allies in the aura gain +15% damage.',
       },
       {
         level: 3,
@@ -923,7 +923,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         auraRange: 2.6,
         buffDamagePercent: 0.2,
         specialDescription:
-          'Judgment Blade: celestial shockwave with 45% stun chance. Allies within 2.6 tiles gain +20% damage.',
+          'Judgment Blade: celestial shockwave with 45% stun chance. Allies in the aura gain +20% damage.',
       },
       {
         level: 4,
@@ -936,7 +936,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         auraRange: 2.8,
         buffDamagePercent: 0.25,
         specialDescription:
-          'Cleansing smite locking tough enemies in stasis. Allies within 2.8 tiles gain +25% damage.',
+          'Cleansing smite locking tough enemies in stasis. Allies in the aura gain +25% damage.',
       },
       {
         level: 5,
@@ -949,7 +949,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         auraRange: 3,
         buffDamagePercent: 0.3,
         specialDescription:
-          'Divine stasis judgment; immovable fortress against boss waves. Allies within 3 tiles gain +30% damage.',
+          'Divine stasis judgment; immovable fortress against boss waves. Allies in the aura gain +30% damage.',
       },
     ],
   },
@@ -1045,7 +1045,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
     targetsAir: true,
     targetsGround: true,
     description:
-      'Archer-minstrel who looses song-strung arrows at ground and air foes while a battle hymn quickens nearby allies. The strongest Bard hymn adds to Oracle haste; it does not affect its own source.',
+      'Archer-minstrel whose battle hymn quickens nearby allies and extends their attack and aura ranges by 25%. Combines with Oracle buffs; overlapping Bard bonuses do not stack. Does not affect its own source.',
     levels: [
       {
         level: 1,
@@ -1057,7 +1057,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         auraRange: 2.2,
         buffSpeedPercent: 0.15,
         specialDescription:
-          'Song arrows strike ground and air. Allies within 2.2 tiles gain +15% attack speed.',
+          'Allies in the aura gain +15% attack speed and +25% attack and aura range. Bard bonuses do not stack.',
       },
       {
         level: 2,
@@ -1069,7 +1069,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         auraRange: 2.4,
         buffSpeedPercent: 0.2,
         specialDescription:
-          'Livelier tempo and longer volleys. Allies within 2.4 tiles gain +20% attack speed.',
+          'Allies in the aura gain +20% attack speed and +25% attack and aura range. Bard bonuses do not stack.',
       },
       {
         level: 3,
@@ -1081,7 +1081,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         auraRange: 2.6,
         buffSpeedPercent: 0.25,
         specialDescription:
-          'Rousing war ballad carries across the lanes. Allies within 2.6 tiles gain +25% attack speed.',
+          'Allies in the aura gain +25% attack speed and +25% attack and aura range. Bard bonuses do not stack.',
       },
       {
         level: 4,
@@ -1093,7 +1093,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         auraRange: 2.8,
         buffSpeedPercent: 0.3,
         specialDescription:
-          'Thundering anthem drives the whole line into a frenzy. Allies within 2.8 tiles gain +30% attack speed.',
+          'Allies in the aura gain +30% attack speed and +25% attack and aura range. Bard bonuses do not stack.',
       },
       {
         level: 5,
@@ -1105,7 +1105,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         auraRange: 3,
         buffSpeedPercent: 0.35,
         specialDescription:
-          'Legendary symphony that sets the tempo of battle. Allies within 3 tiles gain +35% attack speed.',
+          'Allies in the aura gain +35% attack speed and +25% attack and aura range. Bard bonuses do not stack.',
       },
     ],
   },

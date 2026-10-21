@@ -23,7 +23,7 @@ import { PathfindingService } from './pathfinding.service';
 import { AudioService } from './audio.service';
 import { CampaignService } from './campaign.service';
 import { CampaignMission } from '../models/campaign.model';
-import { GameRulesService } from './game-rules.service';
+import { GameRulesService, TowerBuff } from './game-rules.service';
 import { StoryService } from './story.service';
 
 interface SpawnQueueItem {
@@ -133,6 +133,15 @@ export class GameService implements OnDestroy {
 
   // Entities
   public readonly towers = signal<TowerInstance[]>([]);
+  public readonly towerBuffs = computed(() => this.rules.calculateTowerBuffs(this.towers()));
+
+  public towerRange(tower: TowerInstance, aura = false): number {
+    const level = TOWER_CLASSES[tower.classId].levels[tower.level - 1];
+    return (
+      (aura ? (level.auraRange ?? level.range) : level.range) *
+      (this.towerBuffs().get(tower.id)?.rangeMult ?? 1)
+    );
+  }
   public readonly mobs = signal<MobInstance[]>([]);
   public readonly projectiles = signal<Projectile[]>([]);
   public readonly floatingTexts = signal<FloatingText[]>([]);
@@ -434,6 +443,8 @@ export class GameService implements OnDestroy {
   private enqueueWaveMobs(waveIdx: number): void {
     const wave = this.activeMap().waves[waveIdx];
     if (!wave) return;
+    // From wave 10, double HP and add another linear 15% of that doubled baseline per wave.
+    const lateWaveMultiplier = waveIdx >= 9 ? 2 * (1 + (waveIdx - 9) * 0.15) : 1;
 
     for (const group of wave.groups) {
       const delay = group.spawnDelayMs;
@@ -441,8 +452,8 @@ export class GameService implements OnDestroy {
         this.spawnQueue.push({
           mobType: group.mobType,
           spawnTimeMs: this.gameTimeMs + delay + i * group.intervalMs,
-          // Linear wave growth: +5% of starting HP per wave, including finale bosses.
-          hpMultiplier: (group.hpMultiplier ?? 1.0) * (1 + waveIdx * 0.05),
+          // Linear wave growth: +15% of starting HP per wave, including finale bosses.
+          hpMultiplier: (group.hpMultiplier ?? 1.0) * (1 + waveIdx * 0.15) * lateWaveMultiplier,
         });
       }
     }
@@ -726,8 +737,8 @@ export class GameService implements OnDestroy {
     this.flushTowerExperience();
   }
 
-  private calculateTowerBuffs(): Map<string, { speedMult: number; damageMult: number }> {
-    return this.rules.calculateTowerBuffs(this.towers());
+  private calculateTowerBuffs(): Map<string, TowerBuff> {
+    return this.towerBuffs();
   }
 
   private spawnMob(typeId: MobTypeId, hpMultiplier: number): void {
@@ -846,7 +857,7 @@ export class GameService implements OnDestroy {
     this.mobs.set(survivingMobs);
   }
 
-  private updateTowers(towerBuffs: Map<string, { speedMult: number; damageMult: number }>): void {
+  private updateTowers(towerBuffs: Map<string, TowerBuff>): void {
     const towers = this.towers();
     const mobs = this.mobs();
     if (towers.length === 0 || mobs.length === 0) return;
@@ -868,7 +879,7 @@ export class GameService implements OnDestroy {
               !m.isDead &&
               !m.hasEscaped &&
               !m.isFlying &&
-              Math.hypot(m.x - tower.x, m.y - tower.y) <= lvl.range,
+              Math.hypot(m.x - tower.x, m.y - tower.y) <= this.towerRange(tower),
           );
           if (target) {
             tower.lastActionTime = this.gameTimeMs;
@@ -902,14 +913,15 @@ export class GameService implements OnDestroy {
       }
 
       // Find valid target in range
-      const target = this.acquireTarget(tower, lvl.range, def.targetsAir, def.targetsGround);
+      const range = this.towerRange(tower);
+      const target = this.acquireTarget(tower, range, def.targetsAir, def.targetsGround);
       if (!target) continue;
 
       tower.lastActionTime = this.gameTimeMs;
       tower.attackAngleRad = Math.atan2(target.y - tower.y, target.x - tower.x);
 
       // Execute attack based on class
-      this.executeTowerAttack(tower, target, lvl, effectiveDamage);
+      this.executeTowerAttack(tower, target, lvl, effectiveDamage, range);
     }
   }
 
@@ -963,6 +975,7 @@ export class GameService implements OnDestroy {
     target: MobInstance,
     lvl: TowerLevelConfig,
     damage: number,
+    range: number,
   ): void {
     switch (tower.classId) {
       case 'blade-warden': {
@@ -1080,9 +1093,9 @@ export class GameService implements OnDestroy {
       case 'juggernaut': {
         // Ground tremor slam (hits all in range)
         this.audio.playExplosion();
-        this.addParticle(tower.x, tower.y, '#e11d48', lvl.range, 'tremor');
+        this.addParticle(tower.x, tower.y, '#e11d48', range, 'tremor');
         const inRangeGround = this.mobs().filter(
-          (m) => !m.isFlying && !m.isDead && Math.hypot(m.x - tower.x, m.y - tower.y) <= lvl.range,
+          (m) => !m.isFlying && !m.isDead && Math.hypot(m.x - tower.x, m.y - tower.y) <= range,
         );
         for (const mob of inRangeGround) {
           this.dealDamage(mob, damage, 'physical', tower);
@@ -1139,9 +1152,9 @@ export class GameService implements OnDestroy {
       case 'samurai': {
         // Iaido Blade Master: 360-degree spirit katana slash sundering armor
         this.audio.playSlash();
-        this.addParticle(tower.x, tower.y, '#f43f5e', lvl.range, 'slash');
+        this.addParticle(tower.x, tower.y, '#f43f5e', range, 'slash');
         const inRange = this.mobs().filter(
-          (m) => !m.isFlying && !m.isDead && Math.hypot(m.x - tower.x, m.y - tower.y) <= lvl.range,
+          (m) => !m.isFlying && !m.isDead && Math.hypot(m.x - tower.x, m.y - tower.y) <= range,
         );
         for (const mob of inRange) {
           this.dealDamage(mob, damage, 'physical', tower);
@@ -1367,6 +1380,7 @@ export class GameService implements OnDestroy {
       mob,
       this.towers(),
       this.activeMission().modifiers,
+      this.towerBuffs(),
     );
     const earnedGold = bounty.earnedGold;
     const bonusGold = bounty.bonusGold;
@@ -1489,7 +1503,7 @@ export class GameService implements OnDestroy {
     if (!shareWithOracles || tower.classId === 'oracle') return;
     for (const oracle of this.towers()) {
       if (oracle.classId !== 'oracle') continue;
-      const range = TOWER_CLASSES.oracle.levels[oracle.level - 1].range;
+      const range = this.towerRange(oracle, true);
       if (Math.hypot(tower.x - oracle.x, tower.y - oracle.y) <= range) {
         this.grantXp(oracle, amount * ORACLE_XP_SHARE, false);
       }
