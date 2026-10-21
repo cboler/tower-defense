@@ -49,7 +49,7 @@ export class GameService implements OnDestroy {
   public readonly maxCrystals = signal<number>(20);
   public readonly score = signal<number>(0);
   public readonly currentWaveIndex = signal<number>(0); // 0-based
-  public readonly totalWaves = signal<number>(31);
+  public readonly totalWaves = signal<number>(32);
   public readonly waveActive = signal<boolean>(false);
   public readonly gameSpeed = signal<GameSpeed>(1);
   public readonly isPaused = signal<boolean>(true);
@@ -1492,10 +1492,10 @@ export class GameService implements OnDestroy {
 
         this.campaign.recordMissionResult(
           this.activeMission().id,
-          31,
+          this.totalWaves(),
           totalHonorScore,
           this.crystals(),
-          31,
+          this.totalWaves(),
         );
       } else {
         this.currentWaveIndex.set(nextIdx);

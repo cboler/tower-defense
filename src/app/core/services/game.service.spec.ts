@@ -438,6 +438,7 @@ describe('GameService', () => {
       [10, 5.75],
       [19, 19.25],
       [30, 45.65],
+      [31, 48.59],
     ])('uses the expected combined ramp at wave index %i', (index, multiplier) => {
       service['enqueueWaveMobs'](index);
       for (const group of service.activeMap().waves[index].groups) {
@@ -460,12 +461,12 @@ describe('GameService', () => {
     });
 
     it('applies both ramps to the final super boss and its escorts', () => {
-      service['enqueueWaveMobs'](30);
+      service['enqueueWaveMobs'](31);
       for (const queued of service['spawnQueue']) {
         service['spawnMob'](queued.mobType, queued.hpMultiplier);
       }
       const boss = service.mobs().find((mob) => mob.typeId === 'iron-colossus')!;
-      expect(boss.hp).toBe(Math.round(MOB_TYPES['iron-colossus'].baseHp * 1.5 * 45.65));
+      expect(boss.hp).toBe(Math.round(MOB_TYPES['iron-colossus'].baseHp * 1.5 * 48.59));
       for (const mob of service.mobs()) {
         expect(mob.hp).toBe(mob.maxHp);
         expect(mob.baseSpeed).toBe(MOB_TYPES[mob.typeId].baseSpeed);
@@ -783,8 +784,8 @@ describe('GameService', () => {
     expect(service.gameSpeed()).toBe(1);
   });
 
-  it('initializes with 31 waves, active countdown, and starts out paused until user engages', () => {
-    expect(service.totalWaves()).toBe(31);
+  it('initializes with 32 waves, active countdown, and starts out paused until user engages', () => {
+    expect(service.totalWaves()).toBe(32);
     expect(service.isCountdownActive()).toBe(true);
     expect(service.countdownRemainingMs()).toBe(20000);
     expect(service.secondsRemaining()).toBe(20);

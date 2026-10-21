@@ -442,9 +442,9 @@ export function generateStandardWaves(count = 31, difficultyMultiplier = 1.0): W
     },
     {
       waveNumber: 31,
-      name: 'FINAL APEX GAUNTLET',
+      name: 'APEX GAUNTLET',
       intel:
-        'The ultimate battle! Ancient Sky Sovereign, Elder Titan, and endless hordes. Save the Crystals!',
+        'Ancient Sky Sovereigns, Elder Titans, and endless hordes. Hold fast: something heavier shakes the ground behind them!',
       bonusGold: 1000,
       recommendedClass: 'Max Level Defenders Roster',
       threatBadge: 'Apex Boss',
@@ -480,11 +480,11 @@ export function generateStandardWaves(count = 31, difficultyMultiplier = 1.0): W
 }
 
 /**
- * Every stage ends on its super boss instead of the apex gauntlet: the Iron Colossus,
- * with a Bonewalker screen ahead of it and Swiftbeaks running in its shadow.
+ * Every stage ends on its super boss after the apex gauntlet: the Iron Colossus, with a
+ * Bonewalker screen ahead of it and Swiftbeaks running in its shadow.
  */
 export const IRON_COLOSSUS_FINALE: WaveDefinition = {
-  waveNumber: 31,
+  waveNumber: 32,
   name: 'SUPER BOSS: The Iron Colossus',
   intel:
     'The ground itself shakes! A walking fortress of iron reels as its armor breaks at 75%, 50% and 25% health, then crawls on. It shatters 10 crystals on breach.',
@@ -499,17 +499,17 @@ export const IRON_COLOSSUS_FINALE: WaveDefinition = {
   ],
 };
 
-/** Swaps a map's last wave for its own finale, scaled by the map's difficulty. */
+/** Adds a map's finale after its last wave, scaled by the map's difficulty. */
 export function withFinale(
   waves: WaveDefinition[],
   finale: WaveDefinition,
   difficultyMultiplier = 1.0,
 ): WaveDefinition[] {
   return [
-    ...waves.slice(0, -1),
+    ...waves,
     {
       ...finale,
-      waveNumber: waves.length,
+      waveNumber: waves.length + 1,
       groups: finale.groups.map((group) => ({
         ...group,
         hpMultiplier: (group.hpMultiplier ?? 1.0) * difficultyMultiplier,

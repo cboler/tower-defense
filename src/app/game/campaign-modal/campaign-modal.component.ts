@@ -110,7 +110,10 @@ import { TOWER_CLASSES } from '../../core/models/tower.model';
                   </div>
                   <div class="hero-stat-pill">
                     <span class="pill-label">BEST WAVE</span>
-                    <span class="pill-val">{{ record?.highestWave ?? 0 }} / 31</span>
+                    <span class="pill-val"
+                      >{{ record?.highestWave ?? 0 }} /
+                      {{ mission.mapDefinition.waves.length }}</span
+                    >
                   </div>
                 </div>
               </div>

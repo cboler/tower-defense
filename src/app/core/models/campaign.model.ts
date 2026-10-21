@@ -159,7 +159,7 @@ export const CAMPAIGN_MISSIONS: CampaignMission[] = [
       avatar: 'assets/portraits/lancer.png',
       lines: [
         'By the light of the Crystals, the Iron Colossus has fallen into the magma!',
-        'You have defended the realm through all 31 waves of terror.',
+        'You have defended the realm through all 32 waves of terror.',
         'Your name is etched into the Crystal Wardens codex for eternity, Grand Tactician!',
       ],
     },

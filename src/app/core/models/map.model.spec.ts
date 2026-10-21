@@ -89,7 +89,9 @@ describe.each(ALL_MAPS.map((map) => [map.name, map] as const))('%s layout', (_, 
     expect(all!.length).toBeGreaterThan(open);
   });
 
-  it('ends on the Iron Colossus, scaled like the rest of its waves', () => {
+  it('ends on the Iron Colossus as wave 32, after the apex gauntlet', () => {
+    expect(map.waves.length).toBe(32);
+    expect(map.waves[30].name).toBe('APEX GAUNTLET');
     const finale = map.waves.at(-1)!;
     const colossus = finale.groups.find((group) => group.mobType === 'iron-colossus');
     expect(finale.waveNumber).toBe(map.waves.length);
