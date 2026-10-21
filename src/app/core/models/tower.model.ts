@@ -71,6 +71,8 @@ export interface TowerInstance {
   xp: number; // experience banked toward the next level
   attackAngleRad?: number;
   isAttackingAnimation?: boolean;
+  /** Next learned spell in an Elementalist's fire / ice / lightning rotation. */
+  spellIndex?: number;
 }
 
 /**
@@ -221,7 +223,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
     targetsAir: true,
     targetsGround: true,
     description:
-      'Hurls fiery arcane spheres that explode on impact. Magic damage completely bypasses physical armor.',
+      'Casts explosive fire, learns slowing ice at Lv. 2 and lightning that stuns for 1s at Lv. 3. Automatically cycles learned spells; magic bypasses physical armor.',
     levels: [
       {
         level: 1,
@@ -231,7 +233,8 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 2.6,
         cadence: 1.45,
         splashRadius: 0.75,
-        specialDescription: 'Small explosion; completely ignores physical armor.',
+        specialDescription:
+          'Fire explodes on impact and ignores physical armor. Learns ice at Lv. 2.',
       },
       {
         level: 2,
@@ -241,7 +244,8 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 2.8,
         cadence: 1.35,
         splashRadius: 0.9,
-        specialDescription: 'Wider blast radius and enhanced fire damage.',
+        specialDescription:
+          'Alternates fire and ice. Ice explosions slow by 30% for 2s. Learns lightning at Lv. 3.',
       },
       {
         level: 3,
@@ -251,7 +255,8 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 3.0,
         cadence: 1.25,
         splashRadius: 1.1,
-        specialDescription: 'Heavy impact scorches clustered monster packs.',
+        specialDescription:
+          'Cycles fire, ice and lightning. Ice slows by 30% for 2s; lightning stuns for 1s. All spells splash.',
       },
       {
         level: 4,
@@ -261,7 +266,8 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 3.3,
         cadence: 1.15,
         splashRadius: 1.3,
-        specialDescription: 'Massive arcane cataclysm destroying armored hordes.',
+        specialDescription:
+          'Wider, stronger fire / ice / lightning explosions. Ice slows by 30% for 2s; lightning stuns for 1s.',
       },
       {
         level: 5,
@@ -271,7 +277,8 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 3.6,
         cadence: 1.0,
         splashRadius: 1.6,
-        specialDescription: 'Huge apocalyptic detonations melting any obstacle.',
+        specialDescription:
+          'Master elemental explosions. Cycles fire, 30% ice slow for 2s, and lightning with a 1s stun.',
       },
     ],
   },
@@ -1166,7 +1173,7 @@ export const JOB_UNLOCK_RULES: Record<string, JobUnlockRule> = {
       { classId: 'lancer', minLevel: 2 },
       { classId: 'juggernaut', minLevel: 2 },
     ],
-    hint: 'Upgrade a Lancer (Dragoon) to Lv. 2 and a Juggernaut (Berserker) to Lv. 2',
+    hint: 'Upgrade a Lancer to Lv. 2 and a Juggernaut to Lv. 2',
     lore: 'Wields ancestral katanas through Iaido draw-out spirit arts, sundering enemy defenses in a flashing circle.',
   },
   paladin: {

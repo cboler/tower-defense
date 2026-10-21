@@ -1008,7 +1008,9 @@ export class GameService implements OnDestroy {
       }
 
       case 'elementalist': {
-        // Exploding fireball
+        const spellCount = tower.level >= 3 ? 3 : tower.level >= 2 ? 2 : 1;
+        const spell = (tower.spellIndex ?? 0) % spellCount;
+        tower.spellIndex = (spell + 1) % spellCount;
         this.spawnProjectile({
           sourceTowerId: tower.id,
           targetMobId: target.id,
@@ -1018,11 +1020,15 @@ export class GameService implements OnDestroy {
           currentY: tower.y,
           targetX: target.x,
           targetY: target.y,
-          speed: 7.5,
+          speed: spell === 2 ? 12 : spell === 1 ? 9 : 7.5,
           damage,
           damageType: 'magic',
           splashRadius: lvl.splashRadius ?? 0.8,
-          visualType: 'fireball',
+          slowPercent: spell === 1 ? 0.3 : undefined,
+          slowDuration: spell === 1 ? 2 : undefined,
+          stunChance: spell === 2 ? 1 : undefined,
+          stunDuration: spell === 2 ? 1 : undefined,
+          visualType: spell === 2 ? 'lightning-bolt' : spell === 1 ? 'ice-shard' : 'fireball',
         });
         break;
       }
@@ -1260,7 +1266,13 @@ export class GameService implements OnDestroy {
     if (proj.splashRadius && proj.splashRadius > 0) {
       // Splash damage
       this.audio.playExplosion();
-      this.addParticle(proj.targetX, proj.targetY, '#f97316', proj.splashRadius, 'explosion');
+      const color =
+        proj.visualType === 'ice-shard'
+          ? '#7dd3fc'
+          : proj.visualType === 'lightning-bolt'
+            ? '#facc15'
+            : '#f97316';
+      this.addParticle(proj.targetX, proj.targetY, color, proj.splashRadius, 'explosion');
 
       const affected = this.mobs().filter(
         (m) =>
@@ -1313,8 +1325,8 @@ export class GameService implements OnDestroy {
   private applyStun(mob: MobInstance, durationMs: number): boolean {
     if (this.gameTimeMs < (mob.stunImmuneUntilMs ?? 0)) return false;
     mob.statusEffects.push({ type: 'stun', intensity: 1, durationMs, remainingMs: durationMs });
-    const recoveryMs = MOB_TYPES[mob.typeId].stunRecoveryMs;
-    if (recoveryMs) mob.stunImmuneUntilMs = this.gameTimeMs + durationMs + recoveryMs;
+    const recoveryMs = MOB_TYPES[mob.typeId].stunRecoveryMs ?? 1000;
+    mob.stunImmuneUntilMs = this.gameTimeMs + durationMs + recoveryMs;
     return true;
   }
 
@@ -1369,12 +1381,10 @@ export class GameService implements OnDestroy {
     mob.damageStage = stage;
     const broken = def.damageStages![stage - 1];
     mob.staggerMs = broken.staggerMs;
-    if (def.stunRecoveryMs) {
-      mob.stunImmuneUntilMs = Math.max(
-        mob.stunImmuneUntilMs ?? 0,
-        this.gameTimeMs + broken.staggerMs + def.stunRecoveryMs,
-      );
-    }
+    mob.stunImmuneUntilMs = Math.max(
+      mob.stunImmuneUntilMs ?? 0,
+      this.gameTimeMs + broken.staggerMs + (def.stunRecoveryMs ?? 1000),
+    );
     this.audio.playArmorBreak(stage);
     this.addFloatingText(broken.callout, mob.x, mob.y - 0.8, '#fb923c', 'alert');
   }

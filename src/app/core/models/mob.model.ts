@@ -26,7 +26,7 @@ export interface MobTypeDefinition {
   goldReward: number;
   description: string;
   specialTrait: string;
-  /** Immunity to further stuns after a stun ends, in game milliseconds. */
+  /** Immunity after a stun ends, in game milliseconds. Defaults to 1000 for regular enemies. */
   stunRecoveryMs?: number;
   /** Board scale of the miniature; rank and file stand at 0.95. */
   scale?: number;
@@ -234,8 +234,8 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
     description:
       'Towering living monolith of ancient timber and stone. Consumes 3 crystals on breach.',
     specialTrait:
-      'Boss: Colossal health pool. Immune to further stuns for 6s after each stun ends; Chronomancer slows still work.',
-    stunRecoveryMs: 6000,
+      'Boss: Colossal health pool. Immune to further stuns for 4s after each stun ends; Chronomancer slows still work.',
+    stunRecoveryMs: 4000,
     scale: 1.35,
   },
 
@@ -254,8 +254,8 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
     goldReward: 80,
     description: 'Legendary winged apex predator. Ignores terrain and steals 5 crystals on escape.',
     specialTrait:
-      'Flying Apex Boss: Extreme health, bypasses barricades. Immune to further stuns for 6s after each stun ends.',
-    stunRecoveryMs: 6000,
+      'Flying Apex Boss: Extreme health, bypasses barricades. Immune to further stuns for 4s after each stun ends.',
+    stunRecoveryMs: 4000,
     scale: 1.35,
   },
 
@@ -275,8 +275,8 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
     description:
       'A walking fortress of riveted iron around a furnace heart. The ground shakes with every step, and it shatters 10 crystals on breach.',
     specialTrait:
-      'Super Boss: reels at 75%, 50% and 25% health, then crawls on. Immune to further stuns for 6s after each stun or armor-break stagger ends.',
-    stunRecoveryMs: 6000,
+      'Super Boss: reels at 75%, 50% and 25% health, then crawls on. Immune to further stuns for 4s after each stun or armor-break stagger ends.',
+    stunRecoveryMs: 4000,
     scale: 2.1,
     damageStages: [
       { at: 0.75, staggerMs: 1400, speed: 1, callout: 'Armor Cracked!' },

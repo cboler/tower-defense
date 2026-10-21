@@ -16,6 +16,132 @@ describe('GameService', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
+  describe('Elementalist spell progression', () => {
+    it.each([
+      [1, ['fireball', 'fireball', 'fireball', 'fireball', 'fireball', 'fireball']],
+      [2, ['fireball', 'ice-shard', 'fireball', 'ice-shard', 'fireball', 'ice-shard']],
+      [3, ['fireball', 'ice-shard', 'lightning-bolt', 'fireball', 'ice-shard', 'lightning-bolt']],
+      [4, ['fireball', 'ice-shard', 'lightning-bolt', 'fireball', 'ice-shard', 'lightning-bolt']],
+      [5, ['fireball', 'ice-shard', 'lightning-bolt', 'fireball', 'ice-shard', 'lightning-bolt']],
+    ] as const)('cycles only spells learned at level %i', (level, expected) => {
+      service.placeTower(0, 0, 'elementalist');
+      const caster = service.towers()[0];
+      caster.level = level;
+      service['spawnMob']('skulker', 1);
+      const target = service.mobs()[0];
+      const config = TOWER_CLASSES.elementalist.levels[level - 1];
+      for (const type of expected) {
+        service.projectiles.set([]);
+        service['executeTowerAttack'](caster, target, config, config.damage, config.range);
+        const shot = service.projectiles()[0];
+        expect(shot.visualType).toBe(type);
+        expect(shot.splashRadius).toBe(config.splashRadius);
+        expect(shot.damageType).toBe('magic');
+        expect(shot.damage).toBe(config.damage);
+        expect(shot.stunDuration).toBe(type === 'lightning-bolt' ? 1 : undefined);
+      }
+    });
+
+    it('learns ice and lightning through paid and experience promotions', () => {
+      service.gold.set(5000);
+      service.placeTower(0, 0, 'elementalist');
+      service['spawnMob']('skulker', 1);
+      const target = service.mobs()[0];
+      const cast = () => {
+        service.projectiles.set([]);
+        const tower = service.towers()[0];
+        const level = TOWER_CLASSES.elementalist.levels[tower.level - 1];
+        service['executeTowerAttack'](tower, target, level, level.damage, level.range);
+        return service.projectiles()[0].visualType;
+      };
+      expect(cast()).toBe('fireball');
+      service.upgradeTower(service.towers()[0].id);
+      expect(cast()).toBe('fireball');
+      expect(cast()).toBe('ice-shard');
+      const caster = service.towers()[0];
+      service['grantXp'](caster, service.rules.xpToNextLevel(caster)!);
+      service['flushTowerExperience']();
+      expect(service.towers()[0].level).toBe(3);
+      expect([cast(), cast(), cast()]).toEqual(['fireball', 'ice-shard', 'lightning-bolt']);
+    });
+
+    it('slows ground and flying targets in an ice explosion without harming targets outside it', () => {
+      service.placeTower(0, 0, 'elementalist');
+      const caster = service.towers()[0];
+      caster.level = 2;
+      caster.spellIndex = 1;
+      for (const type of ['skulker', 'dread-gaze', 'bonewalker'] as const)
+        service['spawnMob'](type, 1);
+      service.mobs().forEach((mob, index) =>
+        Object.assign(mob, {
+          x: index === 2 ? 3 : index * 0.3,
+          y: 1,
+          hp: 1000,
+          armor: 1,
+          magicResist: 0,
+        }),
+      );
+      const level = TOWER_CLASSES.elementalist.levels[1];
+      service['executeTowerAttack'](caster, service.mobs()[0], level, level.damage, level.range);
+      service['updateProjectiles'](1);
+      for (const mob of service.mobs().slice(0, 2)) {
+        expect(mob.hp).toBe(915);
+        expect(mob.statusEffects).toContainEqual({
+          type: 'slow',
+          intensity: 0.3,
+          durationMs: 2000,
+          remainingMs: 2000,
+        });
+        expect(service.rules.resolveMobSpeed(mob, 0.1).effectiveSpeed).toBeCloseTo(
+          mob.baseSpeed * 0.7,
+        );
+      }
+      expect(service.mobs()[2].hp).toBe(1000);
+      expect(service.mobs()[2].statusEffects).toEqual([]);
+      expect(service.particles().some((effect) => effect.color === '#7dd3fc')).toBe(true);
+    });
+
+    it.each(Object.values(MOB_TYPES))(
+      'lightning stuns $name for 1s and respects its recovery window',
+      (def) => {
+        service.placeTower(0, 0, 'elementalist');
+        const caster = service.towers()[0];
+        caster.level = 3;
+        service['spawnMob'](def.id, 1);
+        const target = service.mobs()[0];
+        Object.assign(target, { hp: 100000, maxHp: 100000, magicResist: 0 });
+        const level = TOWER_CLASSES.elementalist.levels[2];
+        const cast = () => {
+          caster.spellIndex = 2;
+          service['executeTowerAttack'](caster, target, level, level.damage, level.range);
+          service['updateProjectiles'](1);
+        };
+        service['gameTimeMs'] = 1000;
+        cast();
+        const deadline = 2000 + (def.stunRecoveryMs ?? 1000);
+        expect(target.statusEffects).toContainEqual({
+          type: 'stun',
+          intensity: 1,
+          durationMs: 1000,
+          remainingMs: 1000,
+        });
+        expect(service.rules.resolveMobSpeed(target, 0.1).effectiveSpeed).toBe(0);
+        expect(target.stunImmuneUntilMs).toBe(deadline);
+        service['gameTimeMs'] = 2000;
+        service['updateMobs'](1);
+        service['gameTimeMs'] = deadline - 1;
+        cast();
+        expect(target.statusEffects).toEqual([]);
+        expect(target.hp).toBe(100000 - level.damage * 2);
+        expect(target.stunImmuneUntilMs).toBe(deadline);
+        service['gameTimeMs'] = deadline;
+        cast();
+        expect(target.statusEffects.some((effect) => effect.type === 'stun')).toBe(true);
+        expect(service.particles().some((effect) => effect.color === '#facc15')).toBe(true);
+      },
+    );
+  });
+
   describe('Bard critical aura', () => {
     it.each([
       ['physical', 120],
@@ -136,26 +262,26 @@ describe('GameService', () => {
     });
 
     it.each(['bramble-golem', 'sky-sovereign', 'iron-colossus'] as const)(
-      'protects %s throughout its stun and for six seconds afterward',
+      'protects %s throughout its stun and for four seconds afterward',
       (type) => {
         service['spawnMob'](type, 1);
         const boss = service.mobs()[0];
         service['gameTimeMs'] = 1000;
         expect(service['applyStun'](boss, 300)).toBe(true);
-        expect(boss.stunImmuneUntilMs).toBe(7300);
+        expect(boss.stunImmuneUntilMs).toBe(5300);
         service['gameTimeMs'] = 1100;
         expect(service['applyStun'](boss, 1400)).toBe(false);
         expect(boss.statusEffects).toHaveLength(1);
-        expect(boss.stunImmuneUntilMs).toBe(7300);
+        expect(boss.stunImmuneUntilMs).toBe(5300);
         service['gameTimeMs'] = 1300;
         service['updateMobs'](0.3);
         expect(boss.statusEffects).toEqual([]);
         expect(service['applyStun'](boss, 1200)).toBe(false);
-        service['gameTimeMs'] = 7299;
+        service['gameTimeMs'] = 5299;
         expect(service['applyStun'](boss, 1200)).toBe(false);
-        service['gameTimeMs'] = 7300;
+        service['gameTimeMs'] = 5300;
         expect(service['applyStun'](boss, 1200)).toBe(true);
-        expect(boss.stunImmuneUntilMs).toBe(14500);
+        expect(boss.stunImmuneUntilMs).toBe(10500);
       },
     );
 
@@ -186,7 +312,7 @@ describe('GameService', () => {
         };
         service['gameTimeMs'] = 1000;
         attack();
-        expect(boss.stunImmuneUntilMs).toBe(1000 + duration + 6000);
+        expect(boss.stunImmuneUntilMs).toBe(1000 + duration + 4000);
         const hp = boss.hp;
         const alertCount = service
           .floatingTexts()
@@ -212,12 +338,12 @@ describe('GameService', () => {
       service.dealDamage(boss, boss.maxHp * 0.3, 'pure', null);
       expect(boss.damageStage).toBe(1);
       expect(boss.staggerMs).toBe(1400);
-      expect(boss.stunImmuneUntilMs).toBe(8500);
+      expect(boss.stunImmuneUntilMs).toBe(6500);
       service['gameTimeMs'] = 1200;
       service.dealDamage(boss, boss.maxHp * 0.25, 'pure', null);
       expect(boss.damageStage).toBe(2);
       expect(boss.staggerMs).toBe(1600);
-      expect(boss.stunImmuneUntilMs).toBe(8800);
+      expect(boss.stunImmuneUntilMs).toBe(6800);
       expect(service['applyStun'](boss, 1200)).toBe(false);
       expect(service.rules.resolveMobSpeed(boss, 0.1).isStunned).toBe(true);
       service['gameTimeMs'] = 2800;
@@ -226,15 +352,30 @@ describe('GameService', () => {
       expect(service['applyStun'](boss, 1200)).toBe(false);
     });
 
-    it('keeps regular monsters susceptible to repeated stuns', () => {
-      service['spawnMob']('skulker', 1);
-      const mob = service.mobs()[0];
-      expect(service['applyStun'](mob, 300)).toBe(true);
-      expect(service['applyStun'](mob, 1200)).toBe(true);
-      expect(mob.statusEffects).toHaveLength(2);
-      expect(mob.stunImmuneUntilMs).toBeUndefined();
-      expect(mob.baseSpeed).toBe(1.15);
-    });
+    it.each(Object.values(MOB_TYPES).filter((def) => !def.stunRecoveryMs))(
+      'protects $name throughout its stun and for one second afterward',
+      (def) => {
+        service['spawnMob'](def.id, 1);
+        const mob = service.mobs()[0];
+        service['gameTimeMs'] = 1000;
+        expect(service['applyStun'](mob, 300)).toBe(true);
+        expect(mob.stunImmuneUntilMs).toBe(2300);
+        service['gameTimeMs'] = 1100;
+        expect(service['applyStun'](mob, 1200)).toBe(false);
+        expect(mob.statusEffects).toHaveLength(1);
+        expect(mob.stunImmuneUntilMs).toBe(2300);
+        service['gameTimeMs'] = 1300;
+        service['updateMobs'](0.3);
+        expect(mob.statusEffects).toEqual([]);
+        expect(service['applyStun'](mob, 1200)).toBe(false);
+        service['gameTimeMs'] = 2299;
+        expect(service['applyStun'](mob, 1200)).toBe(false);
+        service['gameTimeMs'] = 2300;
+        expect(service['applyStun'](mob, 1200)).toBe(true);
+        expect(mob.stunImmuneUntilMs).toBe(4500);
+        expect(mob.baseSpeed).toBe(def.baseSpeed);
+      },
+    );
   });
 
   it('initializes with starting gold, crystals, and paths', () => {

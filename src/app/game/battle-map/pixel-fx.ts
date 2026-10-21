@@ -82,6 +82,33 @@ export function paintSpear(): PropArt {
   return strip([art], [Math.floor(art.width / 2), Math.floor(art.height / 2)], 1);
 }
 
+/** A faceted shard of ice, pointing right with a bright frozen tip. */
+export function paintIceShard(): PropArt {
+  const art = fromRows(
+    ['..........l....', '......llllLL...', '..ddddLLLLWWt..', '......ddddLL...', '..........d....'],
+    { d: 0x0369a1, l: 0x38bdf8, L: 0x7dd3fc, W: 0xe0f2fe, t: 0xffffff },
+  );
+  outline(art);
+  return strip([art], [Math.floor(art.width / 2), Math.floor(art.height / 2)], 1);
+}
+
+/** A bright, jagged lightning bolt pointing along its flight. */
+export function paintLightningBolt(): PropArt {
+  const art = fromRows(
+    [
+      '.....LL........',
+      '..LLLLL........',
+      '.LLLWWLLLL.....',
+      '....LLWWLLLL...',
+      '.......LLWWLLt.',
+      '..........LL...',
+    ],
+    { L: 0xfacc15, W: 0xfef9c3, t: 0xffffff },
+  );
+  outline(art);
+  return strip([art], [Math.floor(art.width / 2), Math.floor(art.height / 2)], 1);
+}
+
 /** Keeps only what is joined to (x, y), so flickering flame never breaks off into specks. */
 function keepJoined(out: Raster, x: number, y: number): void {
   const joined = new Uint8Array(out.width * out.height);

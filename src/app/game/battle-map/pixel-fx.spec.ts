@@ -11,6 +11,8 @@ import {
   paintCursorGem,
   paintExplosion,
   paintFireball,
+  paintIceShard,
+  paintLightningBolt,
   paintLightPillar,
   paintSlash,
   paintSpark,
@@ -23,6 +25,8 @@ const ALL: [string, () => PropArt][] = [
   ['song arrow', () => paintArrow(true)],
   ['spear', paintSpear],
   ['fireball', paintFireball],
+  ['ice shard', paintIceShard],
+  ['lightning bolt', paintLightningBolt],
   ['time orb', paintTimeOrb],
   ['blade star', paintBladeStar],
   ['spark', () => paintSpark()],
@@ -51,7 +55,13 @@ describe('pixel effects', () => {
   });
 
   it('draws shots pointing right, so a roll can aim them along their flight', () => {
-    for (const art of [paintArrow(), paintSpear(), paintFireball()]) {
+    for (const art of [
+      paintArrow(),
+      paintSpear(),
+      paintFireball(),
+      paintIceShard(),
+      paintLightningBolt(),
+    ]) {
       const [w, h] = art.cell;
       // The brightest pixels (steel tips, the white-hot core) sit in the right half
       let sum = 0;

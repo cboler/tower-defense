@@ -14,6 +14,8 @@ import {
   paintCursorGem,
   paintExplosion,
   paintFireball,
+  paintIceShard,
+  paintLightningBolt,
   paintLightPillar,
   paintSlash,
   paintSpark,
@@ -101,6 +103,8 @@ const PROJECTILE_ARC: Record<Projectile['visualType'], number> = {
   arrow: 0.12,
   'song-arrow': 0.14,
   fireball: 0.28,
+  'ice-shard': 0.12,
+  'lightning-bolt': 0.02,
   'magic-spark': 0.1,
   'time-orb': 0.12,
   spear: 0.35,
@@ -113,6 +117,8 @@ const PIXEL_SHOTS: Record<Projectile['visualType'], [() => PropArt, boolean]> = 
   'song-arrow': [() => paintArrow(true), true],
   spear: [paintSpear, true],
   fireball: [paintFireball, true],
+  'ice-shard': [paintIceShard, true],
+  'lightning-bolt': [paintLightningBolt, true],
   'time-orb': [paintTimeOrb, false],
   dagger: [paintBladeStar, false],
   'magic-spark': [() => paintSpark(), false],
@@ -124,6 +130,8 @@ const SHOT_COLOURS: Record<Projectile['visualType'], { trail: number | null; imp
   'song-arrow': { trail: 0xf472b6, impact: 0xf9a8d4 },
   spear: { trail: 0x7dd3fc, impact: 0x38bdf8 },
   fireball: { trail: 0xf97316, impact: 0xfb923c },
+  'ice-shard': { trail: 0x38bdf8, impact: 0x7dd3fc },
+  'lightning-bolt': { trail: 0xfacc15, impact: 0xfef08a },
   'time-orb': { trail: 0xa855f7, impact: 0xc084fc },
   dagger: { trail: null, impact: 0x22d3ee },
   'magic-spark': { trail: 0x7dd3fc, impact: 0x38bdf8 },
@@ -3343,6 +3351,30 @@ export class ThreeBattlefieldService {
       const glow = new THREE.Mesh(this.fxSphereGeo, this.additiveMat(0xf97316, 0.55));
       glow.scale.setScalar(0.24);
       body.add(glow);
+    } else if (type === 'ice-shard') {
+      const shard = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.15, 0),
+        new THREE.MeshBasicMaterial({ color: 0x7dd3fc }),
+      );
+      shard.scale.set(0.65, 0.65, 1.8);
+      body.add(shard);
+    } else if (type === 'lightning-bolt') {
+      const points = [
+        new THREE.Vector3(0, 0, -0.3),
+        new THREE.Vector3(0.08, 0, -0.1),
+        new THREE.Vector3(-0.06, 0, 0.05),
+        new THREE.Vector3(0.06, 0, 0.15),
+        new THREE.Vector3(0, 0, 0.3),
+      ];
+      const path = new THREE.CurvePath<THREE.Vector3>();
+      for (let i = 1; i < points.length; i++)
+        path.add(new THREE.LineCurve3(points[i - 1], points[i]));
+      body.add(
+        new THREE.Mesh(
+          new THREE.TubeGeometry(path, 16, 0.025, 4, false),
+          new THREE.MeshBasicMaterial({ color: 0xfde047 }),
+        ),
+      );
     } else if (type === 'time-orb') {
       body.add(new THREE.Mesh(this.fxSphereGeo, new THREE.MeshBasicMaterial({ color: 0xf5d0fe })));
       body.children[0].scale.setScalar(0.1);

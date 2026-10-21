@@ -52,19 +52,19 @@ const BESTIARY_DATA: Record<
   'bramble-golem': {
     threatLevel: 'High',
     counterAdvice:
-      'A fast living titan with physical and magic resistance. Focus fire and use Chronomancer slows; after each stun ends, it is immune to further stuns for 6 seconds.',
+      'A fast living titan with physical and magic resistance. Focus fire and use Chronomancer slows; after each stun ends, it is immune to further stuns for 4 seconds.',
     lore: 'A lumbering juggernaut of moss and granite. Ordinary weapons shatter against its hide; only pure arcane thermal cataclysms can melt it down.',
   },
   'sky-sovereign': {
     threatLevel: 'Crucial Boss',
     counterAdvice:
-      'Fast aerial boss with massive vitality. Maximize Rangers and Lancers; after each stun ends, it is immune to further stuns for 6 seconds. Steals 5 crystals on breach!',
+      'Fast aerial boss with massive vitality. Maximize Rangers and Lancers; after each stun ends, it is immune to further stuns for 4 seconds. Steals 5 crystals on breach!',
     lore: 'The ancient apex wyrm of the Dragonpeak Caldera. Its wingbeats shake the foundation of the sanctuary, devouring entire crystal veins in one bite.',
   },
   'iron-colossus': {
     threatLevel: 'Crucial Boss',
     counterAdvice:
-      'Every armor break staggers this walking fortress. After each stun or stagger ends, it is immune to further stuns for 6 seconds. Use Chronomancer slows and sustained damage. Shatters 10 crystals on breach!',
+      'Every armor break staggers this walking fortress. After each stun or stagger ends, it is immune to further stuns for 4 seconds. Use Chronomancer slows and sustained damage. Shatters 10 crystals on breach!',
     lore: 'A siege engine of a forgotten war, forged around a furnace that never cooled. When its legs fail it does not stop; it drags itself on toward the light of the crystals.',
   },
 };
@@ -171,6 +171,12 @@ const BESTIARY_DATA: Record<
                   <p class="special-trait-line">
                     <strong>Special Trait:</strong> {{ def.specialTrait }}
                   </p>
+                  @if (!def.stunRecoveryMs) {
+                    <p class="special-trait-line">
+                      <strong>Stun recovery:</strong> Immune to further stuns for
+                      {{ (def.stunRecoveryMs ?? 1000) / 1000 }}s after each stun ends.
+                    </p>
+                  }
                 </div>
               </div>
 

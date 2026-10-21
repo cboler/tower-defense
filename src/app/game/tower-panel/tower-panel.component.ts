@@ -1380,7 +1380,7 @@ export class TowerPanelComponent {
       const currentLevel = highestTower ? highestTower.level : 0;
       const def = TOWER_CLASSES[req.classId];
       return {
-        reqName: def.badge,
+        reqName: def.name,
         neededLevel: req.minLevel,
         currentLevel,
         met: currentLevel >= req.minLevel,

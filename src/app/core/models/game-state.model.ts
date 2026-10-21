@@ -25,7 +25,16 @@ export interface Projectile {
   stunDuration?: number; // in seconds
   goldPerHit?: number;
   isAirBonus?: boolean;
-  visualType: 'arrow' | 'song-arrow' | 'fireball' | 'magic-spark' | 'time-orb' | 'spear' | 'dagger';
+  visualType:
+    | 'arrow'
+    | 'song-arrow'
+    | 'fireball'
+    | 'ice-shard'
+    | 'lightning-bolt'
+    | 'magic-spark'
+    | 'time-orb'
+    | 'spear'
+    | 'dagger';
 }
 
 export interface FloatingText {
