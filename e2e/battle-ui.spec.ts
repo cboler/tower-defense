@@ -48,6 +48,8 @@ async function stageEncounter(page: Page) {
 test('the super boss bar and enemy inspection show current HP and the matching bestiary entry', async ({
   page,
 }, testInfo) => {
+  // Four bosses on CI's software-rendered WebGL run close to the default 30s at desktop size
+  test.slow();
   await page.goto('/');
   await expect(page.locator('#battlefield-map')).toBeVisible();
   await stageEncounter(page);
