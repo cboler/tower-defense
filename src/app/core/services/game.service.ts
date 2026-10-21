@@ -434,7 +434,7 @@ export class GameService implements OnDestroy {
     this.spawnQueue = [];
     this.enqueueWaveMobs(waveIdx);
 
-    const alertEvent = this.story.getWaveAlertEvent(waveIdx + 1, wave);
+    const alertEvent = this.story.getWaveAlertEvent(waveIdx + 1, wave, this.activeMap().id);
     if (alertEvent) {
       this.story.startSequence(alertEvent);
     }

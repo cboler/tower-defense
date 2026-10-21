@@ -480,7 +480,7 @@ export function generateStandardWaves(count = 31, difficultyMultiplier = 1.0): W
 }
 
 /**
- * Verdant Crossroads ends on its super boss instead of the apex gauntlet: the Iron Colossus,
+ * Every stage ends on its super boss instead of the apex gauntlet: the Iron Colossus,
  * with a Bonewalker screen ahead of it and Swiftbeaks running in its shadow.
  */
 export const IRON_COLOSSUS_FINALE: WaveDefinition = {

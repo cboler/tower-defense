@@ -3,6 +3,34 @@ import { StoryDialogueStep, StoryNarrativeEvent } from '../models/story.model';
 import { WaveDefinition } from '../models/wave.model';
 import { AudioService } from './audio.service';
 
+/** Each stage's commander warns of the Iron Colossus in their own words. */
+const COLOSSUS_ALERTS: Record<string, StoryDialogueStep> = {
+  'verdant-crossroads': {
+    speaker: 'Warden Marshal Cedric',
+    avatar: 'assets/portraits/blade-warden.png',
+    title: 'Highland Vanguard Commander',
+    side: 'left',
+    emotion: 'urgent',
+    text: 'Those fissures were footsteps! An Iron Colossus marches on the sanctuary. Its plating breaks as it weakens, but it will crawl to the crystal on its last breath. Break it before it shatters ten crystals!',
+  },
+  'sunken-sanctum': {
+    speaker: 'High Diviner Lyra',
+    avatar: 'assets/portraits/oracle.png',
+    title: 'Keeper of the Aether Altar',
+    side: 'left',
+    emotion: 'urgent',
+    text: 'The colonnades are crumbling! Another Iron Colossus wades through the drowned halls. Weave it through the barricades, burn through its plating, and do not let it reach the altar. Ten crystals hang on this!',
+  },
+  'molten-caldera': {
+    speaker: 'Dragoon Knight Valerius',
+    avatar: 'assets/portraits/lancer.png',
+    title: 'Dragonpeak Vanguard',
+    side: 'left',
+    emotion: 'urgent',
+    text: 'The forge-heart of the caldera has woken! An Iron Colossus climbs from the magma, glowing hotter than ever. Break its armor and hold the ridge. If it reaches the crystal, ten will shatter!',
+  },
+};
+
 @Injectable({
   providedIn: 'root',
 })
@@ -68,7 +96,11 @@ export class StoryService {
   /**
    * Generates authentic Crystal Defenders tactical alert events for key wave milestones.
    */
-  public getWaveAlertEvent(waveNumber: number, wave?: WaveDefinition): StoryNarrativeEvent | null {
+  public getWaveAlertEvent(
+    waveNumber: number,
+    wave?: WaveDefinition,
+    mapId?: string,
+  ): StoryNarrativeEvent | null {
     if (wave?.groups.some((group) => group.mobType === 'iron-colossus')) {
       return {
         id: 'iron-colossus-alert',
@@ -76,16 +108,7 @@ export class StoryService {
         trigger: 'on-wave-start',
         triggerWaveNumber: waveNumber,
         autoPause: false,
-        steps: [
-          {
-            speaker: 'Warden Marshal Cedric',
-            avatar: 'assets/portraits/blade-warden.png',
-            title: 'Highland Vanguard Commander',
-            side: 'left',
-            emotion: 'urgent',
-            text: 'Those fissures were footsteps! An Iron Colossus marches on the sanctuary. Its plating breaks as it weakens, but it will crawl to the crystal on its last breath. Break it before it shatters ten crystals!',
-          },
-        ],
+        steps: [COLOSSUS_ALERTS[mapId ?? ''] ?? COLOSSUS_ALERTS['verdant-crossroads']],
       };
     }
 

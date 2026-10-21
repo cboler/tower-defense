@@ -158,7 +158,7 @@ export const CAMPAIGN_MISSIONS: CampaignMission[] = [
       speaker: 'Dragoon Knight Valerius',
       avatar: 'assets/portraits/lancer.png',
       lines: [
-        'By the light of the Crystals, the Sky Sovereign has crashed into the abyss!',
+        'By the light of the Crystals, the Iron Colossus has fallen into the magma!',
         'You have defended the realm through all 31 waves of terror.',
         'Your name is etched into the Crystal Wardens codex for eternity, Grand Tactician!',
       ],

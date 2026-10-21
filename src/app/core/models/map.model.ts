@@ -82,7 +82,7 @@ export const MAP_SUNKEN_SANCTUM: MapDefinition = {
     ['C', 'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', 'B'],
     ['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'],
   ],
-  waves: generateStandardWaves(31, 1.25),
+  waves: withFinale(generateStandardWaves(31, 1.25), IRON_COLOSSUS_FINALE, 1.25),
 };
 
 export const MAP_MOLTEN_CALDERA: MapDefinition = {
@@ -107,7 +107,7 @@ export const MAP_MOLTEN_CALDERA: MapDefinition = {
     ['B', 'B', 'B', 'B', 'P', 'P', 'P', 'P', 'P', 'P', 'B', 'B', 'C', 'B'],
     ['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'],
   ],
-  waves: generateStandardWaves(31, 1.5),
+  waves: withFinale(generateStandardWaves(31, 1.5), IRON_COLOSSUS_FINALE, 1.5),
 };
 
 export const ALL_MAPS: MapDefinition[] = [

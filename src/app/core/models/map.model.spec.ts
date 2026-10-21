@@ -88,4 +88,14 @@ describe.each(ALL_MAPS.map((map) => [map.name, map] as const))('%s layout', (_, 
     expect(all).not.toBeNull();
     expect(all!.length).toBeGreaterThan(open);
   });
+
+  it('ends on the Iron Colossus, scaled like the rest of its waves', () => {
+    const finale = map.waves.at(-1)!;
+    const colossus = finale.groups.find((group) => group.mobType === 'iron-colossus');
+    expect(finale.waveNumber).toBe(map.waves.length);
+    expect(finale.threatBadge).toBe('Super Boss');
+    // The first wave's multiplier is the map's difficulty; the finale keeps its own 1.5x on top
+    const difficulty = map.waves[0].groups[0].hpMultiplier!;
+    expect(colossus?.hpMultiplier).toBeCloseTo(1.5 * difficulty);
+  });
 });
