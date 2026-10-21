@@ -26,6 +26,8 @@ export interface MobTypeDefinition {
   goldReward: number;
   description: string;
   specialTrait: string;
+  /** Immunity to further stuns after a stun ends, in game milliseconds. */
+  stunRecoveryMs?: number;
   /** Board scale of the miniature; rank and file stand at 0.95. */
   scale?: number;
   /**
@@ -82,6 +84,8 @@ export interface MobInstance {
   damageStage?: number;
   /** Time left reeling from the last broken stage. */
   staggerMs?: number;
+  /** Game time through which another stun cannot be applied. */
+  stunImmuneUntilMs?: number;
 }
 
 /** Real time a fallen super boss spends dying before its wave can end. */
@@ -221,7 +225,7 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
     badge: 'Boss',
     color: '#84cc16',
     baseHp: 3276,
-    baseSpeed: 0.55,
+    baseSpeed: 1.1,
     armor: 0.35,
     magicResist: 0.35,
     isFlying: false,
@@ -229,7 +233,9 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
     goldReward: 60,
     description:
       'Towering living monolith of ancient timber and stone. Consumes 3 crystals on breach.',
-    specialTrait: 'Boss: Colossal health pool. Stun and Chronomancer slows are essential.',
+    specialTrait:
+      'Boss: Colossal health pool. Immune to further stuns for 6s after each stun ends; Chronomancer slows still work.',
+    stunRecoveryMs: 6000,
     scale: 1.35,
   },
 
@@ -240,14 +246,16 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
     badge: 'Apex Boss',
     color: '#ec4899',
     baseHp: 4056,
-    baseSpeed: 0.75,
+    baseSpeed: 1.5,
     armor: 0.25,
     magicResist: 0.25,
     isFlying: true,
     crystalLoss: 5,
     goldReward: 80,
     description: 'Legendary winged apex predator. Ignores terrain and steals 5 crystals on escape.',
-    specialTrait: 'Flying Apex Boss: Extreme health, bypasses barricades, tests your air defense.',
+    specialTrait:
+      'Flying Apex Boss: Extreme health, bypasses barricades. Immune to further stuns for 6s after each stun ends.',
+    stunRecoveryMs: 6000,
     scale: 1.35,
   },
 
@@ -258,7 +266,7 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
     badge: 'Super Boss',
     color: '#c2410c',
     baseHp: 14040,
-    baseSpeed: 0.42,
+    baseSpeed: 0.84,
     armor: 0.45,
     magicResist: 0.3,
     isFlying: false,
@@ -267,7 +275,8 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
     description:
       'A walking fortress of riveted iron around a furnace heart. The ground shakes with every step, and it shatters 10 crystals on breach.',
     specialTrait:
-      'Super Boss: breaks apart as it is worn down, reeling at 75%, 50% and 25% health, and crawls on to the end.',
+      'Super Boss: reels at 75%, 50% and 25% health, then crawls on. Immune to further stuns for 6s after each stun or armor-break stagger ends.',
+    stunRecoveryMs: 6000,
     scale: 2.1,
     damageStages: [
       { at: 0.75, staggerMs: 1400, speed: 1, callout: 'Armor Cracked!' },

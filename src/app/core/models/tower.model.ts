@@ -31,6 +31,7 @@ export interface TowerLevelConfig {
   slowDuration?: number; // in seconds
   auraRange?: number; // optional support radius, separate from attack range
   buffSpeedPercent?: number;
+  buffCritChance?: number;
   buffDamagePercent?: number;
   goldPerHit?: number;
   killGoldMultiplier?: number;
@@ -450,10 +451,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 0,
         range: 2.2,
         cadence: 1.8,
-        killGoldMultiplier: 1.5,
+        killGoldMultiplier: 1.25,
         pickpocketGold: 2,
         specialDescription:
-          '+50% Gold for any monster slain in aura. Siphons +2G from passing creeps.',
+          '+25% Gold for any monster slain in aura. Siphons +2G from passing creeps.',
       },
       {
         level: 2,
@@ -462,9 +463,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 0,
         range: 2.5,
         cadence: 1.6,
-        killGoldMultiplier: 1.75,
+        killGoldMultiplier: 1.375,
         pickpocketGold: 3,
-        specialDescription: '+75% Gold for kills in aura (1.75x). Siphons +3G from passing creeps.',
+        specialDescription:
+          '+37.5% Gold for kills in aura (1.375x). Siphons +3G from passing creeps.',
       },
       {
         level: 3,
@@ -473,10 +475,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 12,
         range: 2.8,
         cadence: 1.4,
-        killGoldMultiplier: 2.0,
+        killGoldMultiplier: 1.5,
         pickpocketGold: 5,
         specialDescription:
-          'DOUBLES all Gold earned in aura (2.0x!). Siphons +5G and deals 12 physical damage with Mug.',
+          '+50% Gold earned in aura (1.5x). Siphons +5G and deals 12 physical damage with Mug.',
       },
       {
         level: 4,
@@ -485,10 +487,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 20,
         range: 3.2,
         cadence: 1.2,
-        killGoldMultiplier: 2.5,
+        killGoldMultiplier: 1.75,
         pickpocketGold: 8,
         specialDescription:
-          '+150% Gold earned in aura (2.5x!). Siphons +8G and deals 20 physical damage with Mug.',
+          '+75% Gold earned in aura (1.75x). Siphons +8G and deals 20 physical damage with Mug.',
       },
       {
         level: 5,
@@ -497,10 +499,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 32,
         range: 3.6,
         cadence: 1.0,
-        killGoldMultiplier: 3.0,
+        killGoldMultiplier: 2,
         pickpocketGold: 14,
         specialDescription:
-          'TRIPLES all Gold earned in aura (3.0x!). Mug steals +14G and deals 32 physical damage.',
+          '+100% Gold earned in aura (2x). Mug steals +14G and deals 32 physical damage.',
       },
     ],
   },
@@ -753,9 +755,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 38,
         range: 2.6,
         cadence: 0.48,
-        killGoldMultiplier: 1.5,
+        killGoldMultiplier: 1.25,
         specialDescription:
-          'Dual-Throw: flings two shurikens per volley with 20% crit chance. Loot aura: ×1.5 kill Gold; strongest aura wins.',
+          'Dual-Throw: flings two shurikens per volley with 20% crit chance. Loot aura: ×1.25 kill Gold; strongest aura wins.',
       },
       {
         level: 2,
@@ -764,9 +766,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 64,
         range: 2.8,
         cadence: 0.44,
-        killGoldMultiplier: 1.75,
+        killGoldMultiplier: 1.375,
         specialDescription:
-          'Swifter throws with 25% critical strike multiplier. Loot aura: ×1.75 kill Gold; strongest aura wins.',
+          'Swifter throws with 25% critical strike multiplier. Loot aura: ×1.375 kill Gold; strongest aura wins.',
       },
       {
         level: 3,
@@ -775,9 +777,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 106,
         range: 3.0,
         cadence: 0.4,
-        killGoldMultiplier: 2,
+        killGoldMultiplier: 1.5,
         specialDescription:
-          'Dual heavy shadow stars with 30% critical strike chance. Loot aura: ×2 kill Gold; strongest aura wins.',
+          'Dual heavy shadow stars with 30% critical strike chance. Loot aura: ×1.5 kill Gold; strongest aura wins.',
       },
       {
         level: 4,
@@ -786,9 +788,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 172,
         range: 3.2,
         cadence: 0.36,
-        killGoldMultiplier: 2.5,
+        killGoldMultiplier: 1.75,
         specialDescription:
-          'Hyper-speed shuriken barrage tearing through fast targets. Loot aura: ×2.5 kill Gold; strongest aura wins.',
+          'Hyper-speed shuriken barrage tearing through fast targets. Loot aura: ×1.75 kill Gold; strongest aura wins.',
       },
       {
         level: 5,
@@ -797,9 +799,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 275,
         range: 3.4,
         cadence: 0.32,
-        killGoldMultiplier: 3,
+        killGoldMultiplier: 2,
         specialDescription:
-          'Supreme assassination arts; unrivaled single-target physical DPS. Loot aura: ×3 kill Gold; strongest aura wins.',
+          'Supreme assassination arts; unrivaled single-target physical DPS. Loot aura: ×2 kill Gold; strongest aura wins.',
       },
     ],
   },
@@ -1045,7 +1047,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
     targetsAir: true,
     targetsGround: true,
     description:
-      'Archer-minstrel whose battle hymn quickens nearby allies and extends their attack and aura ranges by 25%. Combines with Oracle buffs; overlapping Bard bonuses do not stack. Does not affect its own source.',
+      'Archer-minstrel whose battle hymn quickens nearby allies and extends their attack and aura ranges by 25%, and grants 15% to 35% critical chance for 1.5x damage. Combines with Oracle buffs; overlapping Bard bonuses do not stack. Does not affect its own source.',
     levels: [
       {
         level: 1,
@@ -1056,8 +1058,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         cadence: 0.8,
         auraRange: 2.2,
         buffSpeedPercent: 0.15,
+        buffCritChance: 0.15,
         specialDescription:
-          'Allies in the aura gain +15% attack speed and +25% attack and aura range. Bard bonuses do not stack.',
+          'Allies in the aura gain +15% attack speed, +15% crit chance (1.5x damage), and +25% attack and aura range. Bard bonuses do not stack.',
       },
       {
         level: 2,
@@ -1068,8 +1071,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         cadence: 0.75,
         auraRange: 2.4,
         buffSpeedPercent: 0.2,
+        buffCritChance: 0.2,
         specialDescription:
-          'Allies in the aura gain +20% attack speed and +25% attack and aura range. Bard bonuses do not stack.',
+          'Allies in the aura gain +20% attack speed, +20% crit chance (1.5x damage), and +25% attack and aura range. Bard bonuses do not stack.',
       },
       {
         level: 3,
@@ -1080,8 +1084,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         cadence: 0.7,
         auraRange: 2.6,
         buffSpeedPercent: 0.25,
+        buffCritChance: 0.25,
         specialDescription:
-          'Allies in the aura gain +25% attack speed and +25% attack and aura range. Bard bonuses do not stack.',
+          'Allies in the aura gain +25% attack speed, +25% crit chance (1.5x damage), and +25% attack and aura range. Bard bonuses do not stack.',
       },
       {
         level: 4,
@@ -1092,8 +1097,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         cadence: 0.65,
         auraRange: 2.8,
         buffSpeedPercent: 0.3,
+        buffCritChance: 0.3,
         specialDescription:
-          'Allies in the aura gain +30% attack speed and +25% attack and aura range. Bard bonuses do not stack.',
+          'Allies in the aura gain +30% attack speed, +30% crit chance (1.5x damage), and +25% attack and aura range. Bard bonuses do not stack.',
       },
       {
         level: 5,
@@ -1104,8 +1110,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         cadence: 0.6,
         auraRange: 3,
         buffSpeedPercent: 0.35,
+        buffCritChance: 0.35,
         specialDescription:
-          'Allies in the aura gain +35% attack speed and +25% attack and aura range. Bard bonuses do not stack.',
+          'Allies in the aura gain +35% attack speed, +35% crit chance (1.5x damage), and +25% attack and aura range. Bard bonuses do not stack.',
       },
     ],
   },

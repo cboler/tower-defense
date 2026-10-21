@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GameService } from './game.service';
 import { ALL_MAPS, MAP_VERDANT_CROSSROADS } from '../models/map.model';
 import { MOB_TYPES, MobInstance } from '../models/mob.model';
@@ -12,6 +12,229 @@ describe('GameService', () => {
     TestBed.configureTestingModule({});
     service = TestBed.inject(GameService);
     service.loadMap(MAP_VERDANT_CROSSROADS);
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  describe('Bard critical aura', () => {
+    it.each([
+      ['physical', 120],
+      ['magic', 90],
+      ['pure', 150],
+    ] as const)('applies a 1.5x critical before %s mitigation', (type, expected) => {
+      service.gold.set(5000);
+      service.unlockedJobIds.set(new Set(['bard']));
+      service.placeTower(0, 0, 'bard');
+      service.placeTower(1, 0, 'blade-warden');
+      service['spawnMob']('skulker', 1);
+      const mob = service.mobs()[0];
+      Object.assign(mob, { hp: 1000, armor: 0.2, magicResist: 0.4 });
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      service.dealDamage(mob, 100, type, service.towers()[1]);
+      expect(mob.hp).toBe(1000 - expected);
+      expect(
+        service.floatingTexts().some((t) => t.style === 'crit' && t.text === `CRIT! -${expected}`),
+      ).toBe(true);
+    });
+
+    it.each([
+      ['ranger', 1, 36],
+      ['juggernaut', 1, 83],
+      ['rogue', 3, 18],
+    ] as const)(
+      'allows %s attacks to crit through their normal damage path',
+      (classId, level, damage) => {
+        service.gold.set(5000);
+        service.unlockedJobIds.set(new Set(['bard']));
+        service.placeTower(0, 0, 'bard');
+        service.placeTower(1, 0, classId);
+        const [bard, ally] = service.towers();
+        ally.level = level;
+        service['spawnMob']('skulker', 1);
+        const mob = service.mobs()[0];
+        Object.assign(mob, { x: 1, y: 1, hp: 1000, armor: 0 });
+        service['gameTimeMs'] = bard.lastActionTime = 10000;
+        vi.spyOn(Math, 'random').mockReturnValue(0);
+        const gold = service.gold();
+        service['updateTowers'](service['calculateTowerBuffs']());
+        service['updateProjectiles'](1);
+        expect(mob.hp).toBe(1000 - damage);
+        if (classId === 'rogue') expect(service.gold()).toBe(gold + 5);
+      },
+    );
+
+    it('combines an Oracle damage buff with a Bard critical', () => {
+      service.gold.set(5000);
+      service.unlockedJobIds.set(new Set(['bard']));
+      service.placeTower(0, 0, 'bard');
+      service.placeTower(1, 0, 'blade-warden');
+      service.placeTower(2, 0, 'oracle');
+      const [bard, , oracle] = service.towers();
+      service['spawnMob']('skulker', 1);
+      const mob = service.mobs()[0];
+      Object.assign(mob, { x: 1, y: 1, hp: 1000, armor: 0 });
+      service['gameTimeMs'] = bard.lastActionTime = oracle.lastActionTime = 10000;
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      service['updateTowers'](service['calculateTowerBuffs']());
+      expect(mob.hp).toBe(944); // round(round(32 * 1.15) * 1.5)
+    });
+
+    it.each([
+      [0.149, 150],
+      [0.15, 100],
+    ])('respects the critical chance boundary at roll %s', (roll, damage) => {
+      service.gold.set(5000);
+      service.unlockedJobIds.set(new Set(['bard']));
+      service.placeTower(0, 0, 'bard');
+      service.placeTower(1, 0, 'blade-warden');
+      service['spawnMob']('skulker', 1);
+      const mob = service.mobs()[0];
+      mob.hp = 1000;
+      vi.spyOn(Math, 'random').mockReturnValue(roll);
+      service.dealDamage(mob, 100, 'pure', service.towers()[1]);
+      expect(mob.hp).toBe(1000 - damage);
+    });
+
+    it('preserves stronger Ninja criticals without multiplying critical bonuses', () => {
+      service.gold.set(5000);
+      service.unlockedJobIds.set(new Set(['bard', 'ninja']));
+      service.placeTower(0, 0, 'bard');
+      service.placeTower(1, 0, 'ninja');
+      service['spawnMob']('skulker', 1);
+      const mob = service.mobs()[0];
+      Object.assign(mob, { hp: 1000, armor: 0 });
+      const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+      const ninja = service.towers()[1];
+      const level = TOWER_CLASSES.ninja.levels[0];
+      const attack = () => service['executeTowerAttack'](ninja, mob, level, 100, level.range);
+      attack();
+      service['updateProjectiles'](1);
+      expect(mob.hp).toBe(825);
+      random.mockReturnValue(0.1).mockReturnValueOnce(0.9);
+      attack();
+      service['updateProjectiles'](1);
+      expect(mob.hp).toBe(675);
+      random.mockReturnValue(0);
+      attack();
+      service.sellTower(ninja.id);
+      service['updateProjectiles'](1);
+      expect(mob.hp).toBe(500);
+    });
+  });
+
+  describe('boss speed and stun recovery', () => {
+    it.each([
+      ['bramble-golem', 1.1],
+      ['sky-sovereign', 1.5],
+      ['iron-colossus', 0.84],
+    ] as const)('moves %s at twice its previous speed', (type, speed) => {
+      service['spawnMob'](type, 1);
+      const boss = service.mobs()[0];
+      service['updateMobs'](0.5);
+      expect(boss.baseSpeed).toBe(speed);
+      expect(boss.pathLengthWalked).toBeCloseTo(speed * 0.5);
+    });
+
+    it.each(['bramble-golem', 'sky-sovereign', 'iron-colossus'] as const)(
+      'protects %s throughout its stun and for six seconds afterward',
+      (type) => {
+        service['spawnMob'](type, 1);
+        const boss = service.mobs()[0];
+        service['gameTimeMs'] = 1000;
+        expect(service['applyStun'](boss, 300)).toBe(true);
+        expect(boss.stunImmuneUntilMs).toBe(7300);
+        service['gameTimeMs'] = 1100;
+        expect(service['applyStun'](boss, 1400)).toBe(false);
+        expect(boss.statusEffects).toHaveLength(1);
+        expect(boss.stunImmuneUntilMs).toBe(7300);
+        service['gameTimeMs'] = 1300;
+        service['updateMobs'](0.3);
+        expect(boss.statusEffects).toEqual([]);
+        expect(service['applyStun'](boss, 1200)).toBe(false);
+        service['gameTimeMs'] = 7299;
+        expect(service['applyStun'](boss, 1200)).toBe(false);
+        service['gameTimeMs'] = 7300;
+        expect(service['applyStun'](boss, 1200)).toBe(true);
+        expect(boss.stunImmuneUntilMs).toBe(14500);
+      },
+    );
+
+    it.each([
+      ['oracle', 300, false],
+      ['lancer', 1200, false],
+      ['paladin', 1400, false],
+      ['oracle', 300, true],
+    ] as const)(
+      'blocks repeated %s stuns lasting %ims (splash: %s) without blocking damage',
+      (classId, duration, splash) => {
+        service.gold.set(5000);
+        service.unlockedJobIds.set(new Set(['paladin']));
+        service.placeTower(0, 0, classId);
+        service['spawnMob']('bramble-golem', 1);
+        const boss = service.mobs()[0];
+        const tower = service.towers()[0];
+        const level = TOWER_CLASSES[classId].levels[0];
+        vi.spyOn(Math, 'random').mockReturnValue(0);
+        const attack = () => {
+          service['executeTowerAttack'](tower, boss, level, 1, level.range);
+          if (splash) {
+            const projectile = service.projectiles()[0];
+            projectile.splashRadius = 1;
+            projectile.slowPercent = 0.4;
+          }
+          service['updateProjectiles'](1);
+        };
+        service['gameTimeMs'] = 1000;
+        attack();
+        expect(boss.stunImmuneUntilMs).toBe(1000 + duration + 6000);
+        const hp = boss.hp;
+        const alertCount = service
+          .floatingTexts()
+          .filter((t) => t.text === 'STUNNED!' || t.text === 'STASIS!').length;
+        service['gameTimeMs'] += duration;
+        service['updateMobs'](duration / 1000);
+        attack();
+        expect(boss.statusEffects.some((effect) => effect.type === 'stun')).toBe(false);
+        expect(boss.hp).toBe(hp - 1);
+        expect(
+          service.floatingTexts().filter((t) => t.text === 'STUNNED!' || t.text === 'STASIS!'),
+        ).toHaveLength(alertCount);
+        if (splash) expect(boss.statusEffects.some((effect) => effect.type === 'slow')).toBe(true);
+      },
+    );
+
+    it('lets the Colossus break armor during immunity and recover after its stagger', () => {
+      service['spawnMob']('iron-colossus', 1);
+      const boss = service.mobs()[0];
+      service['gameTimeMs'] = 1000;
+      service['applyStun'](boss, 300);
+      service['gameTimeMs'] = 1100;
+      service.dealDamage(boss, boss.maxHp * 0.3, 'pure', null);
+      expect(boss.damageStage).toBe(1);
+      expect(boss.staggerMs).toBe(1400);
+      expect(boss.stunImmuneUntilMs).toBe(8500);
+      service['gameTimeMs'] = 1200;
+      service.dealDamage(boss, boss.maxHp * 0.25, 'pure', null);
+      expect(boss.damageStage).toBe(2);
+      expect(boss.staggerMs).toBe(1600);
+      expect(boss.stunImmuneUntilMs).toBe(8800);
+      expect(service['applyStun'](boss, 1200)).toBe(false);
+      expect(service.rules.resolveMobSpeed(boss, 0.1).isStunned).toBe(true);
+      service['gameTimeMs'] = 2800;
+      service['updateMobs'](1.6);
+      expect(boss.effectiveSpeed).toBeCloseTo(0.84 * 0.9);
+      expect(service['applyStun'](boss, 1200)).toBe(false);
+    });
+
+    it('keeps regular monsters susceptible to repeated stuns', () => {
+      service['spawnMob']('skulker', 1);
+      const mob = service.mobs()[0];
+      expect(service['applyStun'](mob, 300)).toBe(true);
+      expect(service['applyStun'](mob, 1200)).toBe(true);
+      expect(mob.statusEffects).toHaveLength(2);
+      expect(mob.stunImmuneUntilMs).toBeUndefined();
+      expect(mob.baseSpeed).toBe(1.15);
+    });
   });
 
   it('initializes with starting gold, crystals, and paths', () => {
@@ -290,9 +513,9 @@ describe('GameService', () => {
     Object.assign(mob, { x: 0, y: 1, hp: 1, goldReward: 20 });
     const gold = service.gold();
     service.dealDamage(mob, 100, 'pure', ally);
-    expect(service.gold()).toBe(gold + 30);
-    expect(ninja.goldGenerated).toBe(10);
-    expect(ninja.xp).toBe(100);
+    expect(service.gold()).toBe(gold + 25);
+    expect(ninja.goldGenerated).toBe(5);
+    expect(ninja.xp).toBe(50);
   });
 
   it('lets a Bard loose song arrows at flyers while its hymn hastens nearby allies', () => {
@@ -534,10 +757,9 @@ describe('GameService', () => {
     // Deal lethal damage
     service.dealDamage(testMob, 20, 'physical', null);
 
-    // Lv 1 rogue has killGoldMultiplier = 1.5 => 20 * 1.5 = 30G
-    expect(service.gold()).toBe(initialGold + 30);
-    // rogue.goldGenerated tracks bonus (30 - 20 = 10)
-    expect(rogue.goldGenerated).toBe(10);
+    // Lv 1 rogue grants half the old bonus: 20 * 1.25 = 25G.
+    expect(service.gold()).toBe(initialGold + 25);
+    expect(rogue.goldGenerated).toBe(5);
   });
 
   it('does not multiply kill gold when monster defeated outside Rogue plunder aura', () => {

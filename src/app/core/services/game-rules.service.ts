@@ -32,6 +32,7 @@ export interface TowerBuff {
   speedMult: number;
   damageMult: number;
   rangeMult?: number;
+  critChance?: number;
 }
 
 @Injectable({
@@ -193,6 +194,7 @@ export class GameRulesService {
       if (target.classId === 'barricade') continue;
       let paladinBonus = 0;
       let bardBonus = 0;
+      let bardCritChance = 0;
       for (const source of towers) {
         if (source.id === target.id) continue;
         if (source.classId !== 'paladin' && source.classId !== 'bard') continue;
@@ -207,12 +209,14 @@ export class GameRulesService {
           paladinBonus = Math.max(paladinBonus, level.buffDamagePercent ?? 0);
         } else {
           bardBonus = Math.max(bardBonus, level.buffSpeedPercent ?? 0);
+          bardCritChance = Math.max(bardCritChance, level.buffCritChance ?? 0);
         }
       }
       if (paladinBonus > 0 || bardBonus > 0) {
         const current = buffs.get(target.id) ?? { speedMult: 1, damageMult: 1 };
         current.damageMult += paladinBonus;
         current.speedMult += bardBonus;
+        if (bardCritChance > 0) current.critChance = bardCritChance;
         buffs.set(target.id, current);
       }
     }
@@ -238,7 +242,7 @@ export class GameRulesService {
       const lvl = def.levels[rogue.level - 1];
       const dist = Math.hypot(mob.x - rogue.x, mob.y - rogue.y);
       if (dist <= lvl.range * (buffs.get(rogue.id)?.rangeMult ?? 1)) {
-        const mult = lvl.killGoldMultiplier ?? 1.5;
+        const mult = lvl.killGoldMultiplier ?? 1.25;
         if (mult > bestMultiplier) {
           bestMultiplier = mult;
           plunderTower = rogue;

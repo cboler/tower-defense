@@ -1125,13 +1125,9 @@ export class GameService implements OnDestroy {
       }
 
       case 'ninja': {
-        // Dual-Throw Shinobi: Swift shurikens with lethal critical hit chance
+        // Keep the innate critical on the projectile, even if its source is later sold.
         this.audio.playSlash();
-        const isCrit = Math.random() < 0.25;
-        const finalDamage = isCrit ? Math.round(damage * 1.75) : damage;
-        if (isCrit) {
-          this.addFloatingText('CRIT!', target.x, target.y - 0.2, '#06b6d4', 'crit');
-        }
+        const isCritical = Math.random() < 0.25;
         this.spawnProjectile({
           sourceTowerId: tower.id,
           targetMobId: target.id,
@@ -1142,7 +1138,8 @@ export class GameService implements OnDestroy {
           targetX: target.x,
           targetY: target.y,
           speed: 15.0,
-          damage: finalDamage,
+          damage: isCritical ? Math.round(damage * 1.75) : damage,
+          isCritical,
           damageType: 'physical',
           visualType: 'dagger',
         });
@@ -1166,13 +1163,7 @@ export class GameService implements OnDestroy {
         // Holy Stasis Sword: Celestial strike with high chance to lock in stasis
         this.audio.playSlash();
         this.addParticle(target.x, target.y, '#f59e0b', 1.4, 'slash');
-        if (lvl.stunChance && Math.random() < lvl.stunChance) {
-          target.statusEffects.push({
-            type: 'stun',
-            intensity: 1.0,
-            durationMs: 1400,
-            remainingMs: 1400,
-          });
+        if (lvl.stunChance && Math.random() < lvl.stunChance && this.applyStun(target, 1400)) {
           this.addFloatingText('STASIS!', target.x, target.y, '#f59e0b', 'alert');
         }
         this.dealDamage(target, damage, 'physical', tower);
@@ -1286,14 +1277,9 @@ export class GameService implements OnDestroy {
           });
         }
         if (proj.stunChance && Math.random() < proj.stunChance) {
-          mob.statusEffects.push({
-            type: 'stun',
-            intensity: 1.0,
-            durationMs: (proj.stunDuration ?? 1.2) * 1000,
-            remainingMs: (proj.stunDuration ?? 1.2) * 1000,
-          });
+          this.applyStun(mob, (proj.stunDuration ?? 1.2) * 1000);
         }
-        this.dealDamage(mob, proj.damage, proj.damageType, tower ?? null);
+        this.dealDamage(mob, proj.damage, proj.damageType, tower ?? null, proj.isCritical);
       }
     } else if (target && !target.isDead) {
       // Single target hit
@@ -1302,13 +1288,11 @@ export class GameService implements OnDestroy {
         finalDamage = Math.round(finalDamage * 1.5);
       }
 
-      if (proj.stunChance && Math.random() < proj.stunChance) {
-        target.statusEffects.push({
-          type: 'stun',
-          intensity: 1.0,
-          durationMs: (proj.stunDuration ?? 1.2) * 1000,
-          remainingMs: (proj.stunDuration ?? 1.2) * 1000,
-        });
+      if (
+        proj.stunChance &&
+        Math.random() < proj.stunChance &&
+        this.applyStun(target, (proj.stunDuration ?? 1.2) * 1000)
+      ) {
         this.addFloatingText('STUNNED!', target.x, target.y, '#06b6d4', 'alert');
       }
 
@@ -1322,8 +1306,16 @@ export class GameService implements OnDestroy {
         this.addParticle(target.x, target.y, '#a855f7', 0.8, 'time-pulse');
       }
 
-      this.dealDamage(target, finalDamage, proj.damageType, tower ?? null);
+      this.dealDamage(target, finalDamage, proj.damageType, tower ?? null, proj.isCritical);
     }
+  }
+
+  private applyStun(mob: MobInstance, durationMs: number): boolean {
+    if (this.gameTimeMs < (mob.stunImmuneUntilMs ?? 0)) return false;
+    mob.statusEffects.push({ type: 'stun', intensity: 1, durationMs, remainingMs: durationMs });
+    const recoveryMs = MOB_TYPES[mob.typeId].stunRecoveryMs;
+    if (recoveryMs) mob.stunImmuneUntilMs = this.gameTimeMs + durationMs + recoveryMs;
+    return true;
   }
 
   public dealDamage(
@@ -1331,9 +1323,15 @@ export class GameService implements OnDestroy {
     rawDamage: number,
     damageType: DamageType,
     tower: TowerInstance | null,
+    isCritical = false,
   ): void {
+    const bardCritChance = tower ? (this.towerBuffs().get(tower.id)?.critChance ?? 0) : 0;
+    const bardCrit = !isCritical && bardCritChance > 0 && Math.random() < bardCritChance;
+    // A Ninja's stronger innate critical takes precedence; critical multipliers never multiply.
+    const critMultiplier = bardCrit ? 1.5 : 1;
+    isCritical ||= bardCrit;
     const dmg = this.rules.calculateEffectiveDamage(
-      rawDamage,
+      Math.round(rawDamage * critMultiplier),
       damageType,
       mob,
       this.activeMission().modifiers,
@@ -1348,11 +1346,11 @@ export class GameService implements OnDestroy {
     }
 
     this.addFloatingText(
-      `-${effectiveDamage}`,
+      `${isCritical ? 'CRIT! ' : ''}-${effectiveDamage}`,
       mob.x + (Math.random() - 0.5) * 0.4,
       mob.y - 0.2,
-      dmg.textColor,
-      dmg.textType,
+      isCritical ? '#facc15' : dmg.textColor,
+      isCritical ? 'crit' : dmg.textType,
     );
 
     if (mob.hp <= 0 && !mob.isDead) {
@@ -1371,6 +1369,12 @@ export class GameService implements OnDestroy {
     mob.damageStage = stage;
     const broken = def.damageStages![stage - 1];
     mob.staggerMs = broken.staggerMs;
+    if (def.stunRecoveryMs) {
+      mob.stunImmuneUntilMs = Math.max(
+        mob.stunImmuneUntilMs ?? 0,
+        this.gameTimeMs + broken.staggerMs + def.stunRecoveryMs,
+      );
+    }
     this.audio.playArmorBreak(stage);
     this.addFloatingText(broken.callout, mob.x, mob.y - 0.8, '#fb923c', 'alert');
   }

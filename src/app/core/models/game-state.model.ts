@@ -17,6 +17,7 @@ export interface Projectile {
   speed: number; // grid tiles per second
   damage: number;
   damageType: DamageType;
+  isCritical?: boolean;
   splashRadius?: number;
   slowPercent?: number;
   slowDuration?: number;

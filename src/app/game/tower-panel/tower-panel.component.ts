@@ -96,7 +96,7 @@ import { IconComponent } from '../icon/icon.component';
                 @if (tower.classId === 'rogue') {
                   <div class="stat-cell">
                     <dt>Plunder</dt>
-                    <dd class="gold">×{{ getCurLevel(tower).killGoldMultiplier ?? 1.5 }}</dd>
+                    <dd class="gold">×{{ getCurLevel(tower).killGoldMultiplier ?? 1.25 }}</dd>
                   </div>
                   <div class="stat-cell">
                     <dt>Aura</dt>
@@ -173,6 +173,10 @@ import { IconComponent } from '../icon/icon.component';
                 }
                 @if (tower.classId === 'bard') {
                   <div class="stat-cell">
+                    <dt>Ally crit</dt>
+                    <dd>{{ round((getCurLevel(tower).buffCritChance ?? 0) * 100) }}% / 1.5×</dd>
+                  </div>
+                  <div class="stat-cell">
                     <dt>Ally reach</dt>
                     <dd>+25%</dd>
                   </div>
@@ -203,6 +207,12 @@ import { IconComponent } from '../icon/icon.component';
                   <div class="stat-cell">
                     <dt>Bard reach</dt>
                     <dd>+25%</dd>
+                  </div>
+                }
+                @if (game.towerBuffs().get(tower.id)?.critChance; as chance) {
+                  <div class="stat-cell">
+                    <dt>Bard crit</dt>
+                    <dd>{{ round(chance * 100) }}% / 1.5×</dd>
                   </div>
                 }
               </dl>
@@ -247,8 +257,8 @@ import { IconComponent } from '../icon/icon.component';
                     <li>
                       <span>Plunder</span>
                       <span
-                        >×{{ getCurLevel(tower).killGoldMultiplier ?? 1.5 }}
-                        <b>→ ×{{ nextLvl.killGoldMultiplier ?? 1.75 }}</b></span
+                        >×{{ getCurLevel(tower).killGoldMultiplier ?? 1.25 }}
+                        <b>→ ×{{ nextLvl.killGoldMultiplier ?? 1.375 }}</b></span
                       >
                     </li>
                     <li>
@@ -330,6 +340,13 @@ import { IconComponent } from '../icon/icon.component';
                       </li>
                     }
                     @if (tower.classId === 'bard') {
+                      <li>
+                        <span>Ally crit (1.5×)</span>
+                        <span
+                          >{{ round((getCurLevel(tower).buffCritChance ?? 0) * 100) }}%
+                          <b>→ {{ round((nextLvl.buffCritChance ?? 0) * 100) }}%</b></span
+                        >
+                      </li>
                       <li>
                         <span>Ally attack / aura range</span>
                         <span>+25% <b>→ +25%</b></span>

@@ -107,12 +107,12 @@ describe('GameRulesService', () => {
     const rogue = tower('rogue', 'rogue', 2);
     const ninja = tower('ninja', 'ninja', 3);
     const result = service.calculateKillBounty(mob, [rogue, ninja]);
-    expect(result.earnedGold).toBe(40);
+    expect(result.earnedGold).toBe(30);
     expect(result.plunderTower?.id).toBe('ninja');
-    expect(service.calculateKillBounty(mob, [ninja, { ...rogue, level: 5 }]).earnedGold).toBe(60);
+    expect(service.calculateKillBounty(mob, [ninja, { ...rogue, level: 5 }]).earnedGold).toBe(40);
     expect(service.calculateKillBounty(mob, [{ ...ninja, x: 3.01 }]).earnedGold).toBe(20);
     expect(service.calculateKillBounty(mob, [ninja, { ...ninja, id: 'second' }]).earnedGold).toBe(
-      40,
+      30,
     );
   });
 
@@ -136,6 +136,23 @@ describe('GameRulesService', () => {
     expect(buffs.get(ally.id)?.rangeMult).toBe(1.25);
     expect(buffs.get(ally.id)?.speedMult).toBeCloseTo(1.6);
     expect(buffs.get(ally.id)?.damageMult).toBeCloseTo(1.15);
+    expect(buffs.get(ally.id)?.critChance).toBe(0.35);
+  });
+
+  it.each([
+    [1, 0.15],
+    [2, 0.2],
+    [3, 0.25],
+    [4, 0.3],
+    [5, 0.35],
+  ])('grants a %s-level Bard critical chance of %s to allies only', (level, chance) => {
+    const bard = tower('bard', 'bard', level);
+    const ally = tower('ally', 'ranger', 1, 1);
+    const outside = tower('outside', 'ranger', 1, 10);
+    const buffs = service.calculateTowerBuffs([bard, ally, outside]);
+    expect(buffs.get(ally.id)?.critChance).toBe(chance);
+    expect(buffs.get(bard.id)?.critChance).toBeUndefined();
+    expect(buffs.get(outside.id)?.critChance).toBeUndefined();
   });
 
   it.each(['oracle', 'paladin'] as const)(
@@ -174,7 +191,7 @@ describe('GameRulesService', () => {
       const source = tower('source', classId, 1, 1);
       const mob = createDummyMob({ x: 3.7, goldReward: 20 });
       expect(service.calculateKillBounty(mob, [source]).earnedGold).toBe(20);
-      expect(service.calculateKillBounty(mob, [source, bard]).earnedGold).toBe(30);
+      expect(service.calculateKillBounty(mob, [source, bard]).earnedGold).toBe(25);
     },
   );
 
@@ -280,6 +297,17 @@ describe('GameRulesService', () => {
   });
 
   describe('calculateKillBounty', () => {
+    it.each(['rogue', 'ninja'] as const)('halves %s bonus gold at every level', (classId) => {
+      const mob = createDummyMob({ goldReward: 80 });
+      const expectedBonus = [20, 30, 40, 60, 80];
+      expectedBonus.forEach((bonus, index) => {
+        const source = tower('source', classId, index + 1);
+        const result = service.calculateKillBounty(mob, [source, { ...source, id: 'overlap' }]);
+        expect(result.earnedGold).toBe(80 + bonus);
+        expect(result.bonusGold).toBe(bonus);
+      });
+    });
+
     it('should return base gold reward when no Rogue is in range', () => {
       const mob = createDummyMob({ goldReward: 20 });
       const result = service.calculateKillBounty(mob, []);
@@ -295,7 +323,7 @@ describe('GameRulesService', () => {
         classId: 'rogue',
         x: 2,
         y: 2,
-        level: 1, // 1.5x multiplier, range 1.8
+        level: 1, // 1.25x multiplier, range 2.2
         totalInvested: 25,
         targetPriority: 'first',
         lastActionTime: 0,
@@ -305,8 +333,8 @@ describe('GameRulesService', () => {
         xp: 0,
       };
       const result = service.calculateKillBounty(mob, [rogue]);
-      expect(result.earnedGold).toBe(30);
-      expect(result.bonusGold).toBe(10);
+      expect(result.earnedGold).toBe(25);
+      expect(result.bonusGold).toBe(5);
       expect(result.plunderTower?.id).toBe('rogue-1');
     });
   });

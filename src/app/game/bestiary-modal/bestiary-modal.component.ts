@@ -52,19 +52,19 @@ const BESTIARY_DATA: Record<
   'bramble-golem': {
     threatLevel: 'High',
     counterAdvice:
-      'Colossal stone titan with 75% physical armor! Physical attacks do almost nothing; Elementalist magic fire is mandatory!',
+      'A fast living titan with physical and magic resistance. Focus fire and use Chronomancer slows; after each stun ends, it is immune to further stuns for 6 seconds.',
     lore: 'A lumbering juggernaut of moss and granite. Ordinary weapons shatter against its hide; only pure arcane thermal cataclysms can melt it down.',
   },
   'sky-sovereign': {
     threatLevel: 'Crucial Boss',
     counterAdvice:
-      'Apex dragon boss possessing massive vitality. Steals 5 Sacred Crystals on breach! Maximize Ranger Sky Piercers and Lancer spears.',
+      'Fast aerial boss with massive vitality. Maximize Rangers and Lancers; after each stun ends, it is immune to further stuns for 6 seconds. Steals 5 crystals on breach!',
     lore: 'The ancient apex wyrm of the Dragonpeak Caldera. Its wingbeats shake the foundation of the sanctuary, devouring entire crystal veins in one bite.',
   },
   'iron-colossus': {
     threatLevel: 'Crucial Boss',
     counterAdvice:
-      'Super boss with heavy plate and a furnace heart. Every armor break staggers it in place: stack slows and stuns between breaks, and burn it with Elementalist fire. Shatters 10 crystals on breach!',
+      'Every armor break staggers this walking fortress. After each stun or stagger ends, it is immune to further stuns for 6 seconds. Use Chronomancer slows and sustained damage. Shatters 10 crystals on breach!',
     lore: 'A siege engine of a forgotten war, forged around a furnace that never cooled. When its legs fail it does not stop; it drags itself on toward the light of the crystals.',
   },
 };
