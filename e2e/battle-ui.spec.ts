@@ -45,14 +45,26 @@ async function stageEncounter(page: Page) {
   });
 }
 
-test('boss bars and enemy inspection show current HP and the matching bestiary entry', async ({
+test('the super boss bar and enemy inspection show current HP and the matching bestiary entry', async ({
   page,
 }, testInfo) => {
   await page.goto('/');
   await expect(page.locator('#battlefield-map')).toBeVisible();
   await stageEncounter(page);
-  await expect(page.locator('.boss-bar')).toHaveCount(2);
-  await expect(page.locator('.boss-bar').first()).toContainText('1638 / 3276');
+  // Ordinary bosses keep their over-head bars; only a super boss gets the top-of-board bar
+  await expect(page.locator('.boss-bar')).toHaveCount(0);
+  await page.evaluate(() => {
+    const inspector = (
+      window as unknown as { ng: { getComponent(el: Element): { game: GameService } } }
+    ).ng;
+    const { game } = inspector.getComponent(document.querySelector('app-game')!);
+    game['spawnMob']('iron-colossus', 1);
+    game.mobs.update((mobs) =>
+      mobs.map((m) => (m.typeId === 'iron-colossus' ? { ...m, hp: Math.ceil(m.maxHp / 2) } : m)),
+    );
+  });
+  await expect(page.locator('.boss-bar')).toHaveCount(1);
+  await expect(page.locator('.boss-bar')).toContainText('Iron Colossus');
   const gauge = await page.locator('.boss-gauge').first().boundingBox();
   expect(gauge!.width).toBeGreaterThan(200);
   await expect
@@ -65,7 +77,12 @@ test('boss bars and enemy inspection show current HP and the matching bestiary e
   const cameraBounds = await page.locator('.camera-fab').boundingBox();
   expect(bossBounds!.x + bossBounds!.width).toBeLessThanOrEqual(cameraBounds!.x);
   await page.screenshot({ path: testInfo.outputPath('boss-bars.png') });
-  await page.getByRole('button', { name: /Inspect Bramble Golem, health/ }).click();
+  await page.getByRole('button', { name: /Inspect Iron Colossus, health/ }).click();
+  await expect(page.locator('.active-mob-name')).toHaveText('Iron Colossus');
+  await page
+    .getByRole('navigation', { name: 'Enemies on battlefield' })
+    .getByRole('button', { name: /Bramble Golem/ })
+    .click();
   await expect(page.locator('.active-mob-name')).toHaveText('Bramble Golem');
   await expect(page.getByRole('progressbar', { name: 'Bramble Golem health' })).toHaveAttribute(
     'aria-valuenow',

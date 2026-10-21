@@ -112,7 +112,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         upgradeCost: 0,
         damage: 32,
         range: 1.35,
-        cadence: 0.65,
+        cadence: 0.6,
         specialDescription: 'Quick single-target physical slashes.',
       },
       {

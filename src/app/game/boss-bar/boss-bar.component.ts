@@ -6,7 +6,8 @@ import { MOB_TYPES } from '../../core/models/mob.model';
 const STAGE_STATES = ['Intact', 'Armor cracked', 'Arm torn away', 'Crawling'];
 
 /**
- * Every living boss gets a top-of-board health bar; super bosses also get armour-break notches.
+ * Super bosses (the Iron Colossus) get a top-of-board health bar with armour-break notches;
+ * ordinary bosses keep only the health bar over their heads.
  */
 @Component({
   selector: 'app-boss-bar',
@@ -162,7 +163,7 @@ export class BossBarComponent {
   protected readonly bosses = computed(() =>
     this.game
       .mobs()
-      .filter((m) => !m.isDead && !m.hasEscaped && MOB_TYPES[m.typeId].isBoss)
+      .filter((m) => !m.isDead && !m.hasEscaped && MOB_TYPES[m.typeId].damageStages)
       .map((mob) => {
         const stage = mob.damageStage ?? 0;
         return {
