@@ -96,17 +96,22 @@ export class GameRulesService {
   ): MobMovementResult {
     let speedFactor = 1.0;
     let isStunned = false;
+    const slows = new Map<string, number>();
 
     for (const effect of mob.statusEffects) {
       if (effect.remainingMs > 0) {
-        if (effect.type === 'slow') {
-          // Swiftbeak Celerity cuts slow intensity in half
-          const reduction = mob.typeId === 'swiftbeak' ? effect.intensity * 0.5 : effect.intensity;
-          speedFactor *= 1 - reduction;
+        if (effect.type === 'slow' || effect.type === 'unsteady') {
+          // Each class contributes only its strongest active slow, regardless of tower count.
+          const source = effect.slowSource ?? effect.type;
+          slows.set(source, Math.max(slows.get(source) ?? 0, effect.intensity));
         } else if (effect.type === 'stun') {
           isStunned = true;
         }
       }
+    }
+
+    for (const intensity of slows.values()) {
+      speedFactor *= 1 - (mob.typeId === 'swiftbeak' ? intensity * 0.5 : intensity);
     }
 
     // Pyre Core enrage sprint below 40% health

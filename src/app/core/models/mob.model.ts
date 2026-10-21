@@ -35,6 +35,7 @@ export interface MobTypeDefinition {
    * in place, then they carry on at that stage's speed (at the last, a crawl).
    */
   damageStages?: DamageStage[];
+  isBoss?: boolean;
 }
 
 export interface DamageStage {
@@ -49,7 +50,8 @@ export interface DamageStage {
 }
 
 export interface StatusEffect {
-  type: 'slow' | 'burn' | 'stun' | 'plundered';
+  type: 'slow' | 'unsteady' | 'burn' | 'stun' | 'plundered';
+  slowSource?: 'chronomancer' | 'elementalist' | 'astrologian' | 'juggernaut';
   intensity: number; // e.g. 0.4 for 40% slow
   durationMs: number;
   remainingMs: number;
@@ -223,6 +225,7 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
     name: 'Bramble Golem',
     icon: '🪵',
     badge: 'Boss',
+    isBoss: true,
     color: '#84cc16',
     baseHp: 3276,
     baseSpeed: 1.1,
@@ -244,6 +247,7 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
     name: 'Sky Sovereign',
     icon: '🐉',
     badge: 'Apex Boss',
+    isBoss: true,
     color: '#ec4899',
     baseHp: 4056,
     baseSpeed: 1.5,
@@ -264,6 +268,7 @@ export const MOB_TYPES: Record<MobTypeId, MobTypeDefinition> = {
     name: 'Iron Colossus',
     icon: '🗿',
     badge: 'Super Boss',
+    isBoss: true,
     color: '#c2410c',
     baseHp: 14040,
     baseSpeed: 0.84,

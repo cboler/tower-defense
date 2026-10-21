@@ -1,6 +1,7 @@
 import { Component, computed, inject, output, signal } from '@angular/core';
-import { MOB_TYPES, MobTypeDefinition, MobTypeId } from '../../core/models/mob.model';
+import { MOB_TYPES, MobTypeDefinition, MobTypeId, StatusEffect } from '../../core/models/mob.model';
 import { AudioService } from '../../core/services/audio.service';
+import { GameService } from '../../core/services/game.service';
 
 interface MonsterTacticalEntry {
   mobType: MobTypeDefinition;
@@ -22,14 +23,14 @@ const BESTIARY_DATA: Record<
   swiftbeak: {
     threatLevel: 'Medium',
     counterAdvice:
-      'Celerity runner that cuts Chronomancer slow duration in half! Group physical defenders to burst down quickly.',
+      'Celerity halves slow strength, including Unsteady. Group physical defenders to burst it down quickly.',
     lore: 'A fiercely fast avian biped roaming the highlands. Possesses supernatural equilibrium that shrugs off temporal and frost impediments.',
   },
   'prismatic-ooze': {
     threatLevel: 'Medium',
     counterAdvice:
-      'Spongy slime with 50% Magic Resistance. Avoid wasting Elementalist fireballs; employ Blade Wardens and Rangers.',
-    lore: 'An amorphous protoplasm that refracts magical energies into harmless light. Only cold steel and piercing arrows can sever its core.',
+      '80% physical armor and a 30% vulnerability to magic. Use Elementalist explosions to melt its core.',
+    lore: 'An amorphous protoplasm in a dense crystalline shell. Its armor turns aside blades, but arcane heat fractures its core.',
   },
   'pyre-core': {
     threatLevel: 'High',
@@ -46,7 +47,7 @@ const BESTIARY_DATA: Record<
   bonewalker: {
     threatLevel: 'High',
     counterAdvice:
-      'Armored skeleton shrugging off 50% physical damage. Obliterate with Elementalist explosions which bypass physical armor completely.',
+      'Fragile skeletons arrive in dense swarms. Use Juggernaut quakes or Elementalist explosions to catch the whole pack.',
     lore: 'The cursed remains of ancient temple wardens. Their bleached bone plating deflects swords and arrows with resounding clangs.',
   },
   'bramble-golem': {
@@ -80,14 +81,16 @@ const BESTIARY_DATA: Record<
       aria-modal="true"
       aria-labelledby="bestiary-title"
       (click)="onBackdropClick($event)"
-      (keydown.escape)="onClose()"
+      (keydown.escape)="$event.stopPropagation(); onClose()"
       tabindex="-1"
     >
       <div class="bestiary-modal-card" role="document">
         <!-- Header -->
         <div class="modal-header">
           <div class="header-titles">
-            <span class="header-pretitle">TACTICAL CODEX • FIEND COMPENDIUM</span>
+            <span class="header-pretitle">{{
+              liveMob() ? 'ENEMY SIGHTED · BATTLE HELD' : 'WARDEN FIELD JOURNAL'
+            }}</span>
             <h2 id="bestiary-title" class="header-title">Monster Bestiary</h2>
           </div>
           <button
@@ -101,6 +104,59 @@ const BESTIARY_DATA: Record<
             ✕
           </button>
         </div>
+
+        @if (liveMob(); as mob) {
+          <section class="live-vitals" aria-label="Selected enemy health">
+            <div class="vitals-heading">
+              <strong>{{ mob.name }}</strong
+              ><span>{{ ceil(mob.hp) }} / {{ mob.maxHp }} HP</span>
+            </div>
+            <div
+              class="vitals-track"
+              role="progressbar"
+              [attr.aria-label]="mob.name + ' health'"
+              aria-valuemin="0"
+              [attr.aria-valuemax]="mob.maxHp"
+              [attr.aria-valuenow]="ceil(mob.hp)"
+            >
+              <span [style.width.%]="(mob.hp / mob.maxHp) * 100"></span>
+            </div>
+            <div class="vitals-effects">
+              <span
+                >{{ mob.isFlying ? 'Airborne' : 'Ground' }} ·
+                {{ mob.effectiveSpeed.toFixed(2) }} tiles/s</span
+              >
+              @for (effect of activeEffects(); track $index) {
+                @if (effect.remainingMs > 0) {
+                  <span class="effect-chip"
+                    >{{
+                      effect.type === 'unsteady' ? 'Unsteady' : (effect.slowSource ?? effect.type)
+                    }}
+                    ·
+                    @if (effect.type === 'slow' || effect.type === 'unsteady') {
+                      {{ effect.intensity * 100 }}% ·
+                    }
+                    {{ (effect.remainingMs / 1000).toFixed(1) }}s</span
+                  >
+                }
+              }
+            </div>
+          </section>
+        }
+
+        @if (livingMobs().length) {
+          <nav class="battle-roster" aria-label="Enemies on battlefield">
+            @for (mob of livingMobs(); track mob.id) {
+              <button
+                type="button"
+                [class.active]="game.selectedMobId() === mob.id"
+                (click)="inspect(mob.id)"
+              >
+                {{ mob.name }} <small>{{ ceil(mob.hp) }} HP</small>
+              </button>
+            }
+          </nav>
+        }
 
         <!-- Body Grid -->
         <div class="bestiary-grid">
@@ -234,6 +290,65 @@ const BESTIARY_DATA: Record<
   `,
   styles: [
     `
+      .live-vitals {
+        padding: 14px 20px;
+        background: linear-gradient(90deg, #30261c, #161e2b);
+        border-bottom: 1px solid #9a7b43;
+        flex-shrink: 0;
+      }
+      .vitals-heading,
+      .vitals-effects {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .vitals-heading {
+        font-family: var(--font-tactical);
+        color: #fde6b3;
+      }
+      .vitals-track {
+        height: 10px;
+        background: #090e18;
+        border: 1px solid #7e6138;
+        margin: 8px 0;
+      }
+      .vitals-track > span {
+        display: block;
+        height: 100%;
+        background: linear-gradient(90deg, #a22c37, #f78566);
+      }
+      .vitals-effects {
+        justify-content: flex-start;
+        font-size: var(--font-size-xs);
+        color: var(--text-secondary);
+      }
+      .effect-chip {
+        color: #f9d88f;
+        text-transform: capitalize;
+      }
+      .battle-roster {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        padding: 8px 16px;
+        flex-shrink: 0;
+        border-bottom: 1px solid var(--border-muted);
+      }
+      .battle-roster button {
+        flex-shrink: 0;
+        display: flex;
+        gap: 6px;
+        padding: 8px;
+        background: #141e2b;
+        border: 1px solid #415163;
+        color: #e2e8f0;
+        font-size: var(--font-size-xs);
+      }
+      .battle-roster button.active {
+        border-color: #efc879;
+        color: #efc879;
+      }
       :host {
         display: contents;
       }
@@ -698,15 +813,88 @@ const BESTIARY_DATA: Record<
           grid-template-columns: repeat(2, 1fr);
         }
       }
+
+      .bestiary-modal-card {
+        border: 1px solid #b49356;
+        border-radius: 6px;
+        box-shadow:
+          0 24px 80px #000b,
+          0 0 0 4px #121a24;
+        background: linear-gradient(135deg, #202d3d, #101c2a 65%);
+      }
+      .header-title,
+      .active-mob-name {
+        font-family: var(--font-display);
+        color: #f4d59d;
+      }
+      .header-pretitle {
+        color: #c8a86d;
+      }
+      .modal-header {
+        border-color: #8c744a;
+      }
+      .close-btn {
+        width: 44px;
+        height: 44px;
+        flex-shrink: 0;
+      }
+      @media (orientation: landscape) and (max-height: 519px) {
+        .modal-header {
+          padding: 6px 14px;
+        }
+        .header-pretitle {
+          display: none;
+        }
+        .live-vitals {
+          padding: 6px 16px;
+        }
+        .vitals-track {
+          margin: 5px 0;
+          height: 8px;
+        }
+        .battle-roster {
+          padding: 5px 12px;
+        }
+      }
     `,
   ],
 })
 export class BestiaryModalComponent {
   public readonly closeModal = output<void>();
   protected readonly audio = inject(AudioService);
+  protected readonly game = inject(GameService);
+  protected readonly ceil = Math.ceil;
+  protected readonly livingMobs = computed(() =>
+    this.game.mobs().filter((m) => !m.isDead && !m.hasEscaped),
+  );
+  protected readonly liveMob = computed(() => {
+    const mob = this.game.selectedMob();
+    return mob?.typeId === this.selectedMobId() ? mob : null;
+  });
+  protected readonly activeEffects = computed(() => {
+    const effects = new Map<string, StatusEffect>();
+    for (const effect of this.liveMob()?.statusEffects ?? []) {
+      if (effect.remainingMs <= 0) continue;
+      const key = effect.slowSource ?? effect.type;
+      const current = effects.get(key);
+      if (
+        !current ||
+        effect.intensity > current.intensity ||
+        (effect.intensity === current.intensity && effect.remainingMs > current.remainingMs)
+      ) {
+        effects.set(key, effect);
+      }
+    }
+    return [...effects.values()];
+  });
 
   public readonly roster: MobTypeDefinition[] = Object.values(MOB_TYPES);
-  public readonly selectedMobId = signal<MobTypeId>('skulker');
+  public readonly selectedMobId = signal<MobTypeId>(this.game.bestiaryTypeId());
+
+  protected inspect(id: string): void {
+    this.game.selectMob(id);
+    this.selectedMobId.set(this.game.bestiaryTypeId());
+  }
 
   public readonly activeMobEntry = computed<MonsterTacticalEntry>(() => {
     const id = this.selectedMobId();
@@ -721,6 +909,8 @@ export class BestiaryModalComponent {
   });
 
   public onSelectMob(id: MobTypeId): void {
+    this.game.selectedMobId.set(null);
+    this.game.bestiaryTypeId.set(id);
     this.selectedMobId.set(id);
     this.audio.playSelect();
   }

@@ -29,6 +29,8 @@ export interface TowerLevelConfig {
   splashRadius?: number; // in grid cells
   slowPercent?: number; // 0 to 1
   slowDuration?: number; // in seconds
+  critChance?: number; // innate chance, learned through level progression
+  critMultiplier?: number;
   auraRange?: number; // optional support radius, separate from attack range
   buffSpeedPercent?: number;
   buffCritChance?: number;
@@ -86,6 +88,8 @@ export const XP_PER_KILL_GOLD = 5;
 export const XP_PER_SUPPORT_GOLD = 10;
 /** Share of an ally's earned XP that flows to each Oracle whose halo covers it. */
 export const ORACLE_XP_SHARE = 0.25;
+/** The Samurai's focused katana cut is stronger than its surrounding spirit cleave. */
+export const SAMURAI_SLASH_MULTIPLIER = 2;
 
 export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
   'blade-warden': {
@@ -161,7 +165,8 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
     damageType: 'physical',
     targetsAir: true,
     targetsGround: true,
-    description: 'Long-range precision archer. Deals +50% bonus damage against Flying monsters.',
+    description:
+      'Long-range precision archer. Deals +50% damage against Flying monsters and learns critical shots at Lv. 3.',
     levels: [
       {
         level: 1,
@@ -179,7 +184,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 48,
         range: 3.6,
         cadence: 0.78,
-        specialDescription: 'Enhanced range and arrow velocity.',
+        specialDescription: 'Enhanced range. Learns critical shots at Lv. 3.',
       },
       {
         level: 3,
@@ -188,7 +193,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 90,
         range: 4.0,
         cadence: 0.7,
-        specialDescription: 'Exceptional sightlines covering multiple lane bends.',
+        critChance: 0.15,
+        critMultiplier: 1.75,
+        specialDescription: 'Precision shots: 15% critical chance for 1.75× damage.',
       },
       {
         level: 4,
@@ -197,7 +204,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 165,
         range: 4.4,
         cadence: 0.62,
-        specialDescription: 'Twin shot bursts and piercing air-defense.',
+        critChance: 0.25,
+        critMultiplier: 1.75,
+        specialDescription: 'Piercing air-defense: 25% critical chance for 1.75× damage.',
       },
       {
         level: 5,
@@ -206,7 +215,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         damage: 290,
         range: 5.0,
         cadence: 0.52,
-        specialDescription: 'Battlefield-spanning range; instantly shreds flying targets.',
+        critChance: 0.35,
+        critMultiplier: 1.75,
+        specialDescription: 'Battlefield-spanning range; 35% critical chance for 1.75× damage.',
       },
     ],
   },
@@ -593,7 +604,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
     targetsAir: false,
     targetsGround: true,
     description:
-      'Slams a colossal warhammer into the earth, sending shockwaves that damage and fracture all nearby ground enemies.',
+      'Earthquakes damage nearby ground enemies and leave them Unsteady: a modest physical slow that stacks with magical slows. Repeated quakes refresh it.',
     levels: [
       {
         level: 1,
@@ -603,7 +614,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 1.7,
         cadence: 1.35,
         splashRadius: 1.7,
-        specialDescription: 'Tremor shockwave hits all ground enemies in range.',
+        slowPercent: 0.1,
+        slowDuration: 1.5,
+        specialDescription:
+          'Tremor hits all nearby ground enemies. Unsteady: 10% slow for 1.5s; stacks with magical slows.',
       },
       {
         level: 2,
@@ -613,7 +627,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 1.85,
         cadence: 1.25,
         splashRadius: 1.85,
-        specialDescription: 'Heavier shockwaves and wider tremor circumference.',
+        slowPercent: 0.125,
+        slowDuration: 1.5,
+        specialDescription:
+          'Wider tremors. Unsteady: 12.5% slow for 1.5s; stacks with magical slows.',
       },
       {
         level: 3,
@@ -623,7 +640,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 2.0,
         cadence: 1.15,
         splashRadius: 2.0,
-        specialDescription: 'Fractures armor on all ground units caught in radius.',
+        slowPercent: 0.15,
+        slowDuration: 1.5,
+        specialDescription:
+          'Heavy earthquakes. Unsteady: 15% slow for 1.5s; stacks with magical slows.',
       },
       {
         level: 4,
@@ -633,7 +653,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 2.2,
         cadence: 1.05,
         splashRadius: 2.2,
-        specialDescription: 'Huge continuous ground tremors pulverizing waves.',
+        slowPercent: 0.175,
+        slowDuration: 1.5,
+        specialDescription:
+          'Huge ground tremors. Unsteady: 17.5% slow for 1.5s; stacks with magical slows.',
       },
       {
         level: 5,
@@ -643,7 +666,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 2.4,
         cadence: 0.95,
         splashRadius: 2.4,
-        specialDescription: 'Cataclysmic quakes flattening any ground force.',
+        slowPercent: 0.2,
+        slowDuration: 1.5,
+        specialDescription:
+          'Cataclysmic quakes. Unsteady: 20% slow for 1.5s; stacks with magical slows.',
       },
     ],
   },
@@ -753,7 +779,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
     targetsAir: true,
     targetsGround: true,
     description:
-      'Lethal shadow operative with the same loot aura as Rogue. Hurls dual razor shurikens simultaneously with blazing cadence and critical chance.',
+      'Lethal shadow operative with the same loot aura as Rogue. Hurls rapid shurikens and learns critical strikes at Lv. 3.',
     levels: [
       {
         level: 1,
@@ -764,7 +790,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         cadence: 0.48,
         killGoldMultiplier: 1.25,
         specialDescription:
-          'Dual-Throw: flings two shurikens per volley with 20% crit chance. Loot aura: ×1.25 kill Gold; strongest aura wins.',
+          'Rapid shuriken throws; learns critical strikes at Lv. 3. Loot aura: ×1.25 kill Gold; strongest aura wins.',
       },
       {
         level: 2,
@@ -775,7 +801,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         cadence: 0.44,
         killGoldMultiplier: 1.375,
         specialDescription:
-          'Swifter throws with 25% critical strike multiplier. Loot aura: ×1.375 kill Gold; strongest aura wins.',
+          'Swifter throws; learns critical strikes at Lv. 3. Loot aura: ×1.375 kill Gold; strongest aura wins.',
       },
       {
         level: 3,
@@ -785,8 +811,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 3.0,
         cadence: 0.4,
         killGoldMultiplier: 1.5,
+        critChance: 0.25,
+        critMultiplier: 1.75,
         specialDescription:
-          'Dual heavy shadow stars with 30% critical strike chance. Loot aura: ×1.5 kill Gold; strongest aura wins.',
+          '25% critical chance for 1.75× damage. Loot aura: ×1.5 kill Gold; strongest aura wins.',
       },
       {
         level: 4,
@@ -796,8 +824,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 3.2,
         cadence: 0.36,
         killGoldMultiplier: 1.75,
+        critChance: 0.35,
+        critMultiplier: 1.75,
         specialDescription:
-          'Hyper-speed shuriken barrage tearing through fast targets. Loot aura: ×1.75 kill Gold; strongest aura wins.',
+          '35% critical chance for 1.75× damage. Loot aura: ×1.75 kill Gold; strongest aura wins.',
       },
       {
         level: 5,
@@ -807,8 +837,10 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 3.4,
         cadence: 0.32,
         killGoldMultiplier: 2,
+        critChance: 0.45,
+        critMultiplier: 1.75,
         specialDescription:
-          'Supreme assassination arts; unrivaled single-target physical DPS. Loot aura: ×2 kill Gold; strongest aura wins.',
+          '45% critical chance for 1.75× damage. Loot aura: ×2 kill Gold; strongest aura wins.',
       },
     ],
   },
@@ -825,7 +857,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
     targetsAir: false,
     targetsGround: true,
     description:
-      'Draws out spiritual energy from ancestral katanas. Unleashes circular Iaido spirit waves sundering enemy armor.',
+      'Delivers a heavy katana slash for 2× damage to its main target. A circular spirit cleave deals normal damage to other nearby ground enemies.',
     levels: [
       {
         level: 1,
@@ -836,7 +868,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         cadence: 1.25,
         splashRadius: 1.8,
         specialDescription:
-          'Iaido Spirit Wave: strikes all nearby ground foes, sundering 20% armor.',
+          'Heavy katana slash: 2× damage to the main target. Spirit cleave: normal damage to nearby ground foes.',
       },
       {
         level: 2,
@@ -846,7 +878,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 1.9,
         cadence: 1.2,
         splashRadius: 1.9,
-        specialDescription: 'Expands spirit blade radius with 25% armor sunder.',
+        specialDescription: 'Wider spirit cleave; the main target takes a heavy 2× katana slash.',
       },
       {
         level: 3,
@@ -856,7 +888,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 2.0,
         cadence: 1.15,
         splashRadius: 2.0,
-        specialDescription: 'Kiku-ichimonji spirit slash sundering 30% armor.',
+        specialDescription: 'Masterful 2× katana slash with a stronger circular spirit cleave.',
       },
       {
         level: 4,
@@ -866,7 +898,8 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 2.1,
         cadence: 1.1,
         splashRadius: 2.1,
-        specialDescription: 'Devastating 360-degree blade tempest shredding armored waves.',
+        specialDescription:
+          'Devastating 2× katana slash; spirit tempest cleaves surrounding ground foes.',
       },
       {
         level: 5,
@@ -876,7 +909,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 2.3,
         cadence: 1.0,
         splashRadius: 2.3,
-        specialDescription: 'Transcendent spirit blade cleavage that obliterates armor completely.',
+        specialDescription: 'Transcendent 2× katana slash and battlefield-cleaving spirit wave.',
       },
     ],
   },
@@ -904,9 +937,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         cadence: 1.15,
         stunChance: 0.35,
         auraRange: 2.2,
-        buffDamagePercent: 0.1,
+        buffDamagePercent: 0.2,
         specialDescription:
-          'Stasis Sword: heavy radiant slash with 35% chance to stun for 1.4s. Allies in the aura gain +10% damage.',
+          'Stasis Sword: heavy radiant slash with 35% chance to stun for 1.4s. Allies in the aura gain +20% damage.',
       },
       {
         level: 2,
@@ -917,9 +950,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         cadence: 1.1,
         stunChance: 0.4,
         auraRange: 2.4,
-        buffDamagePercent: 0.15,
+        buffDamagePercent: 0.3,
         specialDescription:
-          'Increased holy impact with 40% stun chance. Allies in the aura gain +15% damage.',
+          'Increased holy impact with 40% stun chance. Allies in the aura gain +30% damage.',
       },
       {
         level: 3,
@@ -930,9 +963,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         cadence: 1.05,
         stunChance: 0.45,
         auraRange: 2.6,
-        buffDamagePercent: 0.2,
+        buffDamagePercent: 0.4,
         specialDescription:
-          'Judgment Blade: celestial shockwave with 45% stun chance. Allies in the aura gain +20% damage.',
+          'Judgment Blade: celestial shockwave with 45% stun chance. Allies in the aura gain +40% damage.',
       },
       {
         level: 4,
@@ -943,9 +976,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         cadence: 1.0,
         stunChance: 0.5,
         auraRange: 2.8,
-        buffDamagePercent: 0.25,
+        buffDamagePercent: 0.5,
         specialDescription:
-          'Cleansing smite locking tough enemies in stasis. Allies in the aura gain +25% damage.',
+          'Cleansing smite locking tough enemies in stasis. Allies in the aura gain +50% damage.',
       },
       {
         level: 5,
@@ -956,9 +989,9 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         cadence: 0.95,
         stunChance: 0.6,
         auraRange: 3,
-        buffDamagePercent: 0.3,
+        buffDamagePercent: 0.6,
         specialDescription:
-          'Divine stasis judgment; immovable fortress against boss waves. Allies in the aura gain +30% damage.',
+          'Divine stasis judgment; immovable fortress against boss waves. Allies in the aura gain +60% damage.',
       },
     ],
   },

@@ -24,7 +24,7 @@ test.describe('Crystal Wardens Tower Defense Smoke Tests', () => {
     await expect(page.locator('#call-wave-btn')).toBeVisible();
 
     // 3. Command dock and wave command bar are visible
-    await expect(page.locator('.tower-command-panel')).toBeVisible();
+    await expect(page.locator('.tower-command-panel')).not.toBeVisible();
     await expect(page.locator('app-command-bar')).toBeVisible();
 
     // Keyboard/controller prompts show wherever there is room (hidden on short landscape phones)
@@ -37,6 +37,9 @@ test.describe('Crystal Wardens Tower Defense Smoke Tests', () => {
     // Press '2' to select Ranger class
     await page.keyboard.press('Digit2');
     await expect(page.locator('.class-card[aria-label*="Ranger"]')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.tower-command-panel')).not.toBeVisible();
 
     // Navigate grid with arrow keys
     await page.keyboard.press('ArrowRight');
@@ -78,7 +81,7 @@ test.describe('Crystal Wardens Tower Defense Smoke Tests', () => {
     expect(consoleErrors).toEqual([]);
   });
 
-  test('should render mobile-first layout on Pixel 9 Pro with zero scroll and contextual command drawer', async ({
+  test('should render mobile-first layout on Pixel 9 Pro with zero scroll and contextual command menu', async ({
     page,
   }) => {
     // Target Google Pixel 9 Pro viewport (412 x 915)
@@ -98,14 +101,17 @@ test.describe('Crystal Wardens Tower Defense Smoke Tests', () => {
     expect(pageScrollMetrics.scrollHeight).toBeLessThanOrEqual(pageScrollMetrics.innerHeight);
     expect(pageScrollMetrics.scrollWidth).toBeLessThanOrEqual(pageScrollMetrics.innerWidth);
 
-    // Initial vantage point (0, 0) is selected, so command dock is visible
+    // Commands appear only after activating a platform.
+    await expect(page.locator('.tower-command-dock')).not.toBeVisible();
+    await page.locator('#battlefield-map').focus();
+    await page.keyboard.press('Enter');
     const commandDock = page.locator('.tower-command-dock');
     await expect(commandDock).toHaveClass(/is-visible/);
-    await expect(page.locator('.drawer-handle-bar')).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Defender command menu' })).toBeVisible();
 
     // Close command drawer via close button [B]
     await page.locator('#panel-close-btn').click();
-    await expect(commandDock).not.toHaveClass(/is-visible/);
+    await expect(commandDock).not.toBeVisible();
 
     // Verify still zero scroll when drawer is closed
     const closedScrollMetrics = await page.evaluate(() => ({
@@ -115,7 +121,7 @@ test.describe('Crystal Wardens Tower Defense Smoke Tests', () => {
     expect(closedScrollMetrics.scrollHeight).toBeLessThanOrEqual(closedScrollMetrics.innerHeight);
   });
 
-  test('should render tablet layout (768x1024) with docked console and zero scroll', async ({
+  test('should render tablet layout (768x1024) with contextual menus and zero scroll', async ({
     page,
   }) => {
     // Target Tablet viewport (768 x 1024)
@@ -134,12 +140,15 @@ test.describe('Crystal Wardens Tower Defense Smoke Tests', () => {
     expect(scrollMetrics.scrollHeight).toBeLessThanOrEqual(scrollMetrics.innerHeight);
     expect(scrollMetrics.scrollWidth).toBeLessThanOrEqual(scrollMetrics.innerWidth);
 
+    await expect(page.locator('.tower-command-dock')).not.toBeVisible();
+    await page.locator('#battlefield-map').focus();
+    await page.keyboard.press('Enter');
     const commandDock = page.locator('.tower-command-dock');
     await expect(commandDock).toHaveClass(/is-visible/);
     await expect(page.locator('.class-deck-section')).toBeVisible();
   });
 
-  test('should render desktop layout (1440x900) with side-by-side presentation and side dossier console', async ({
+  test('should render desktop layout (1440x900) with an unobstructed battlefield and contextual commands', async ({
     page,
   }) => {
     // Target Desktop viewport (1440 x 900)
@@ -158,14 +167,19 @@ test.describe('Crystal Wardens Tower Defense Smoke Tests', () => {
     expect(scrollMetrics.scrollHeight).toBeLessThanOrEqual(scrollMetrics.innerHeight);
     expect(scrollMetrics.scrollWidth).toBeLessThanOrEqual(scrollMetrics.innerWidth);
 
+    await expect(page.locator('.tower-command-dock')).not.toBeVisible();
+    await page.locator('#battlefield-map').focus();
+    await page.keyboard.press('Enter');
     const commandDock = page.locator('.tower-command-dock');
     await expect(commandDock).toHaveClass(/is-visible/);
 
-    // Verify side-by-side layout: arena-stage-area has flex-direction row
-    const arenaDirection = await page.locator('.arena-stage-area').evaluate((el) => {
-      return window.getComputedStyle(el).flexDirection;
-    });
-    expect(arenaDirection).toBe('row');
+    // The board keeps its full width; the menu overlays it instead of reserving a sidebar.
+    const boardWidth = await page
+      .locator('.arena-stage-area')
+      .evaluate((el) => el.getBoundingClientRect().width);
+    expect(boardWidth).toBe(1440);
+    await page.keyboard.press('Escape');
+    await expect(commandDock).not.toBeVisible();
   });
 
   test('should open and interact with Campaign Chronicles and Monster Bestiary modals', async ({
@@ -206,7 +220,9 @@ test.describe('Crystal Wardens Tower Defense Smoke Tests', () => {
     // Click on Swiftbeak to inspect tactical counter
     await page.locator('.roster-item-card:has-text("Swiftbeak")').click();
     await expect(page.locator('.active-mob-name')).toContainText('Swiftbeak');
-    await expect(page.locator('.strategy-advice-card')).toContainText('Celerity runner');
+    await expect(page.locator('.strategy-advice-card')).toContainText(
+      'Celerity halves slow strength',
+    );
 
     // Close via close button
     await page.locator('#close-bestiary-btn').click();

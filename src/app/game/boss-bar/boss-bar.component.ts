@@ -6,19 +6,24 @@ import { MOB_TYPES } from '../../core/models/mob.model';
 const STAGE_STATES = ['Intact', 'Armor cracked', 'Arm torn away', 'Crawling'];
 
 /**
- * A super boss's health across the top of the board, notched where its armour breaks, in place
- * of the small bar the rank and file carry over their heads.
+ * Every living boss gets a top-of-board health bar; super bosses also get armour-break notches.
  */
 @Component({
   selector: 'app-boss-bar',
   standalone: true,
   template: `
-    @if (boss(); as b) {
-      <div class="boss-bar" role="status" [attr.aria-label]="b.name + ' health ' + b.percent + '%'">
+    @for (b of bosses(); track b.mobId) {
+      <button
+        type="button"
+        class="boss-bar"
+        (click)="game.selectMob(b.mobId)"
+        [attr.aria-label]="'Inspect ' + b.name + ', health ' + b.hp + ' of ' + b.maxHp"
+      >
         <div class="boss-head">
           <img class="boss-face" [src]="'assets/monsters/' + b.id + '-portrait.png'" alt="" />
           <span class="boss-name">{{ b.name }}</span>
           <span class="boss-state" [class.is-dire]="b.stage >= 3">{{ b.state }}</span>
+          <span class="boss-hp">{{ b.hp }} / {{ b.maxHp }}</span>
         </div>
         <div class="boss-gauge">
           <div class="boss-fill" [style.width.%]="b.percent"></div>
@@ -26,30 +31,35 @@ const STAGE_STATES = ['Intact', 'Armor cracked', 'Arm torn away', 'Crawling'];
             <span class="boss-notch" [style.left.%]="notch"></span>
           }
         </div>
-      </div>
+      </button>
     }
   `,
   styles: [
     `
       :host {
         position: absolute;
-        top: 8px;
+        top: 82px;
         left: 50%;
         transform: translateX(-50%);
         width: min(420px, calc(100% - 32px));
-        pointer-events: none;
+        display: grid;
+        gap: 6px;
         z-index: 5;
       }
 
       .boss-bar {
         display: flex;
         flex-direction: column;
+        align-items: stretch;
         gap: 4px;
         padding: 6px 10px 8px;
         border-radius: var(--radius-md);
         background: color-mix(in srgb, #0b0f1a 82%, transparent);
         border: 1px solid color-mix(in srgb, #fb923c 45%, transparent);
         box-shadow: var(--shadow-raised);
+        width: 100%;
+        text-align: left;
+        cursor: pointer;
       }
 
       .boss-head {
@@ -90,8 +100,38 @@ const STAGE_STATES = ['Intact', 'Armor cracked', 'Arm torn away', 'Crawling'];
         }
       }
 
+      .boss-hp {
+        margin-left: auto;
+        font: 700 var(--font-size-xs) var(--font-tactical);
+        color: #ffedd5;
+        white-space: nowrap;
+      }
+
+      @media (max-width: 599px) {
+        :host {
+          top: 70px;
+          left: 12px;
+          transform: none;
+          width: min(420px, calc(100% - 72px));
+        }
+      }
+      @media (max-width: 440px) {
+        .boss-state {
+          display: none;
+        }
+        .boss-name {
+          font-size: var(--font-size-xs);
+        }
+      }
+      @media (orientation: landscape) and (max-height: 519px) {
+        :host {
+          top: 58px;
+        }
+      }
+
       .boss-gauge {
         position: relative;
+        width: 100%;
         height: 10px;
         border-radius: 3px;
         overflow: hidden;
@@ -117,19 +157,27 @@ const STAGE_STATES = ['Intact', 'Armor cracked', 'Arm torn away', 'Crawling'];
   ],
 })
 export class BossBarComponent {
-  private readonly game = inject(GameService);
+  protected readonly game = inject(GameService);
 
-  protected readonly boss = computed(() => {
-    const mob = this.game.mobs().find((m) => !m.isDead && MOB_TYPES[m.typeId].damageStages);
-    if (!mob) return null;
-    const stage = mob.damageStage ?? 0;
-    return {
-      id: mob.typeId,
-      name: mob.name,
-      stage,
-      state: STAGE_STATES[Math.min(stage, STAGE_STATES.length - 1)],
-      percent: Math.max(0, Math.round((mob.hp / mob.maxHp) * 100)),
-      notches: (MOB_TYPES[mob.typeId].damageStages ?? []).map((s) => s.at * 100),
-    };
-  });
+  protected readonly bosses = computed(() =>
+    this.game
+      .mobs()
+      .filter((m) => !m.isDead && !m.hasEscaped && MOB_TYPES[m.typeId].isBoss)
+      .map((mob) => {
+        const stage = mob.damageStage ?? 0;
+        return {
+          mobId: mob.id,
+          id: mob.typeId,
+          name: mob.name,
+          hp: Math.max(0, Math.ceil(mob.hp)),
+          maxHp: mob.maxHp,
+          stage,
+          state: MOB_TYPES[mob.typeId].damageStages
+            ? STAGE_STATES[Math.min(stage, STAGE_STATES.length - 1)]
+            : MOB_TYPES[mob.typeId].badge,
+          percent: Math.max(0, Math.min(100, (mob.hp / mob.maxHp) * 100)),
+          notches: (MOB_TYPES[mob.typeId].damageStages ?? []).map((s) => s.at * 100),
+        };
+      }),
+  );
 }

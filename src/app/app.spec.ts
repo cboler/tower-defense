@@ -4,6 +4,7 @@ import { App } from './app';
 import { GameComponent } from './game/game.component';
 import { StatusComponent } from './status/status.component';
 import { routes } from './app.routes';
+import { GameService } from './core/services/game.service';
 
 describe('Crystal Wardens Application Tests', () => {
   beforeEach(async () => {
@@ -38,13 +39,19 @@ describe('Crystal Wardens Application Tests', () => {
   });
 
   describe('GameComponent', () => {
-    it('should create the game component and render HUD, battlefield, and command dock', async () => {
+    it('shows the command menu only when a platform is activated', async () => {
       const fixture = TestBed.createComponent(GameComponent);
       await fixture.whenStable();
       const compiled = fixture.nativeElement as HTMLElement;
       expect(compiled.querySelector('app-hud')).toBeTruthy();
       expect(compiled.querySelector('app-battle-map')).toBeTruthy();
+      expect(compiled.querySelector('app-tower-panel')).toBeNull();
+      TestBed.inject(GameService).openTileMenu(0, 0);
+      await fixture.whenStable();
       expect(compiled.querySelector('app-tower-panel')).toBeTruthy();
+      (compiled.querySelector('#panel-close-btn') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      expect(compiled.querySelector('app-tower-panel')).toBeNull();
     });
   });
 

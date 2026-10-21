@@ -565,6 +565,37 @@ import { IconComponent } from '../icon/icon.component';
         color: var(--text-primary);
         padding-right: var(--space-1);
       }
+
+      .game-hud {
+        background: linear-gradient(180deg, #1b2938f5, #0c1522f5);
+        border: 1px solid #8c744a;
+        border-radius: 6px;
+        box-shadow:
+          inset 0 0 0 3px #0c1420,
+          0 5px 20px #0008;
+      }
+      .brand-name {
+        color: #f4d59d;
+        font-family: var(--font-display);
+        font-size: 0.8rem;
+        letter-spacing: 0.1em;
+      }
+      .brand-map {
+        color: #aebdbf;
+      }
+      .res-chip {
+        border-radius: 3px;
+        background: #080f1acc;
+        border-color: #53606b;
+      }
+      .menu-btn {
+        border-color: #8c744a;
+        color: #f4d59d;
+        border-radius: 3px;
+      }
+      .nav-btn {
+        padding: 0 8px;
+      }
     `,
   ],
 })
@@ -579,6 +610,12 @@ export class HudComponent {
 
   @HostListener('window:keydown', ['$event'])
   protected onKeyDown(event: KeyboardEvent): void {
+    if (event.defaultPrevented || this.game.isModalOpen()) return;
+    if (
+      (event.key === 's' || event.key === 'S') &&
+      (event.target as HTMLElement)?.closest('#battlefield-map')
+    )
+      return;
     if (event.key === 's' || event.key === 'S') {
       if (!this.game.isGameOver() && !this.game.isVictory()) {
         this.toggleScout();
@@ -591,10 +628,6 @@ export class HudComponent {
       if (!this.game.isGameOver() && !this.game.isVictory()) {
         this.toggleBestiary();
       }
-    } else if (event.key === 'Escape') {
-      if (this.game.isScoutOpen()) this.game.isScoutOpen.set(false);
-      if (this.game.isCampaignModalOpen()) this.game.isCampaignModalOpen.set(false);
-      if (this.game.isBestiaryModalOpen()) this.game.isBestiaryModalOpen.set(false);
     }
   }
 

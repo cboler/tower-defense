@@ -1,4 +1,5 @@
 import { DamageType } from './tower.model';
+import { StatusEffect } from './mob.model';
 
 export type GameStatus = 'idle' | 'running' | 'paused' | 'game-over' | 'victory';
 
@@ -21,6 +22,7 @@ export interface Projectile {
   splashRadius?: number;
   slowPercent?: number;
   slowDuration?: number;
+  slowSource?: StatusEffect['slowSource'];
   stunChance?: number;
   stunDuration?: number; // in seconds
   goldPerHit?: number;

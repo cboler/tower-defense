@@ -4,6 +4,7 @@ import {
   DamageType,
   JOB_UNLOCK_RULES,
   ORACLE_XP_SHARE,
+  SAMURAI_SLASH_MULTIPLIER,
   TOWER_CLASSES,
   TargetPriority,
   TowerClassId,
@@ -15,6 +16,7 @@ import {
   MOB_TYPES,
   MobInstance,
   MobTypeId,
+  StatusEffect,
   SUPER_BOSS_DEATH_MS,
   damageStageAt,
 } from '../models/mob.model';
@@ -59,6 +61,44 @@ export class GameService implements OnDestroy {
   public readonly isCampaignModalOpen = signal<boolean>(false);
   public readonly isBestiaryModalOpen = signal<boolean>(false);
   public readonly isScoutOpen = signal<boolean>(false);
+  public readonly isCommandMenuOpen = signal(false);
+  public readonly isOptionsMenuOpen = signal(false);
+  public readonly isAboutModalOpen = signal(false);
+  public readonly bestiaryTypeId = signal<MobTypeId>('skulker');
+  public readonly selectedMobId = signal<string | null>(null);
+  public readonly selectedMob = computed(
+    () =>
+      this.mobs().find((m) => m.id === this.selectedMobId() && !m.isDead && !m.hasEscaped) ?? null,
+  );
+  public readonly isModalOpen = computed(
+    () =>
+      this.isCommandMenuOpen() ||
+      this.isOptionsMenuOpen() ||
+      this.isScoutOpen() ||
+      this.isCampaignModalOpen() ||
+      this.isBestiaryModalOpen() ||
+      this.isAboutModalOpen(),
+  );
+
+  public selectMob(id: string): void {
+    const mob = this.mobs().find((m) => m.id === id && !m.isDead && !m.hasEscaped);
+    if (!mob) return;
+    this.selectedTile.set(null);
+    this.isCommandMenuOpen.set(false);
+    this.selectedMobId.set(id);
+    this.bestiaryTypeId.set(mob.typeId);
+    this.isBestiaryModalOpen.set(true);
+    this.audio.playSelect();
+  }
+
+  public inspectEnemyAt(x: number, y: number): boolean {
+    const mob = this.mobs()
+      .filter((m) => !m.isDead && !m.hasEscaped && Math.hypot(m.x - x, m.y - y) <= 0.9)
+      .sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
+    if (!mob) return false;
+    this.selectMob(mob.id);
+    return true;
+  }
 
   public toggleScout(): void {
     this.isScoutOpen.update((v) => !v);
@@ -285,6 +325,10 @@ export class GameService implements OnDestroy {
     this.isGameOver.set(false);
     this.isVictory.set(false);
     this.selectedTile.set({ x: 0, y: 0 });
+    this.selectedMobId.set(null);
+    this.isCommandMenuOpen.set(false);
+    this.isBestiaryModalOpen.set(false);
+    this.isScoutOpen.set(false);
     this.towers.set([]);
     this.mobs.set([]);
     this.projectiles.set([]);
@@ -490,6 +534,7 @@ export class GameService implements OnDestroy {
   }
 
   public selectTile(x: number, y: number): void {
+    this.selectedMobId.set(null);
     if (x < 0 || y < 0) {
       this.selectedTile.set(null);
       return;
@@ -498,6 +543,12 @@ export class GameService implements OnDestroy {
     if (x >= map.width || y >= map.height) return;
     this.selectedTile.set({ x, y });
     this.audio.playSelect();
+  }
+
+  public openTileMenu(x: number, y: number): void {
+    this.selectTile(x, y);
+    const tile = this.activeMap().tiles[y]?.[x];
+    this.isCommandMenuOpen.set(tile === 'B' || tile === 'M');
   }
 
   public cycleTargetPriorityForTower(towerId: string): void {
@@ -667,7 +718,7 @@ export class GameService implements OnDestroy {
     const rawDelta = Math.min(100, timestamp - this.lastTime);
     this.lastTime = timestamp;
 
-    if (!this.isPaused() && !this.isGameOver() && !this.isVictory()) {
+    if (!this.isPaused() && !this.isModalOpen() && !this.isGameOver() && !this.isVictory()) {
       const deltaMs = rawDelta * this.gameSpeed();
       this.gameTimeMs += deltaMs;
       this.bossDeathRemainingMs = Math.max(0, this.bossDeathRemainingMs - rawDelta);
@@ -977,6 +1028,9 @@ export class GameService implements OnDestroy {
     damage: number,
     range: number,
   ): void {
+    // Snapshot learned criticals at launch, so promotion or selling cannot change a shot in flight.
+    const isCritical = !!lvl.critChance && Math.random() < lvl.critChance;
+    const shotDamage = isCritical ? Math.round(damage * (lvl.critMultiplier ?? 1.75)) : damage;
     switch (tower.classId) {
       case 'blade-warden': {
         // Melee slash instantaneous
@@ -999,7 +1053,8 @@ export class GameService implements OnDestroy {
           targetX: target.x,
           targetY: target.y,
           speed: 12.0,
-          damage,
+          damage: shotDamage,
+          isCritical,
           damageType: 'physical',
           isAirBonus: true,
           visualType: 'arrow',
@@ -1026,6 +1081,7 @@ export class GameService implements OnDestroy {
           splashRadius: lvl.splashRadius ?? 0.8,
           slowPercent: spell === 1 ? 0.3 : undefined,
           slowDuration: spell === 1 ? 2 : undefined,
+          slowSource: 'elementalist',
           stunChance: spell === 2 ? 1 : undefined,
           stunDuration: spell === 2 ? 1 : undefined,
           visualType: spell === 2 ? 'lightning-bolt' : spell === 1 ? 'ice-shard' : 'fireball',
@@ -1050,6 +1106,7 @@ export class GameService implements OnDestroy {
           damageType: 'magic',
           slowPercent: lvl.slowPercent ?? 0.4,
           slowDuration: lvl.slowDuration ?? 3.0,
+          slowSource: 'chronomancer',
           visualType: 'time-orb',
         });
         break;
@@ -1104,6 +1161,12 @@ export class GameService implements OnDestroy {
           (m) => !m.isFlying && !m.isDead && Math.hypot(m.x - tower.x, m.y - tower.y) <= range,
         );
         for (const mob of inRangeGround) {
+          this.applySlow(
+            mob,
+            lvl.slowPercent ?? 0.1,
+            (lvl.slowDuration ?? 1.5) * 1000,
+            'juggernaut',
+          );
           this.dealDamage(mob, damage, 'physical', tower);
         }
         break;
@@ -1131,9 +1194,7 @@ export class GameService implements OnDestroy {
       }
 
       case 'ninja': {
-        // Keep the innate critical on the projectile, even if its source is later sold.
         this.audio.playSlash();
-        const isCritical = Math.random() < 0.25;
         this.spawnProjectile({
           sourceTowerId: tower.id,
           targetMobId: target.id,
@@ -1144,7 +1205,7 @@ export class GameService implements OnDestroy {
           targetX: target.x,
           targetY: target.y,
           speed: 15.0,
-          damage: isCritical ? Math.round(damage * 1.75) : damage,
+          damage: shotDamage,
           isCritical,
           damageType: 'physical',
           visualType: 'dagger',
@@ -1153,14 +1214,20 @@ export class GameService implements OnDestroy {
       }
 
       case 'samurai': {
-        // Iaido Blade Master: 360-degree spirit katana slash sundering armor
+        // One heavy katana cut on the chosen target, plus spirit cleave on its neighbours.
         this.audio.playSlash();
+        this.addParticle(target.x, target.y, '#ffe4e6', 1.4, 'slash');
         this.addParticle(tower.x, tower.y, '#f43f5e', range, 'slash');
         const inRange = this.mobs().filter(
           (m) => !m.isFlying && !m.isDead && Math.hypot(m.x - tower.x, m.y - tower.y) <= range,
         );
         for (const mob of inRange) {
-          this.dealDamage(mob, damage, 'physical', tower);
+          this.dealDamage(
+            mob,
+            mob.id === target.id ? damage * SAMURAI_SLASH_MULTIPLIER : damage,
+            'physical',
+            tower,
+          );
         }
         break;
       }
@@ -1194,6 +1261,7 @@ export class GameService implements OnDestroy {
           splashRadius: lvl.splashRadius ?? 2.0,
           slowPercent: lvl.slowPercent ?? 0.35,
           slowDuration: lvl.slowDuration ?? 3.0,
+          slowSource: 'astrologian',
           visualType: 'time-orb',
         });
         break;
@@ -1281,12 +1349,7 @@ export class GameService implements OnDestroy {
 
       for (const mob of affected) {
         if (proj.slowPercent) {
-          mob.statusEffects.push({
-            type: 'slow',
-            intensity: proj.slowPercent,
-            durationMs: (proj.slowDuration ?? 3) * 1000,
-            remainingMs: (proj.slowDuration ?? 3) * 1000,
-          });
+          this.applySlow(mob, proj.slowPercent, (proj.slowDuration ?? 3) * 1000, proj.slowSource);
         }
         if (proj.stunChance && Math.random() < proj.stunChance) {
           this.applyStun(mob, (proj.stunDuration ?? 1.2) * 1000);
@@ -1309,17 +1372,37 @@ export class GameService implements OnDestroy {
       }
 
       if (proj.slowPercent) {
-        target.statusEffects.push({
-          type: 'slow',
-          intensity: proj.slowPercent,
-          durationMs: (proj.slowDuration ?? 3) * 1000,
-          remainingMs: (proj.slowDuration ?? 3) * 1000,
-        });
+        this.applySlow(target, proj.slowPercent, (proj.slowDuration ?? 3) * 1000, proj.slowSource);
         this.addParticle(target.x, target.y, '#a855f7', 0.8, 'time-pulse');
       }
 
       this.dealDamage(target, finalDamage, proj.damageType, tower ?? null, proj.isCritical);
     }
+  }
+
+  private applySlow(
+    mob: MobInstance,
+    intensity: number,
+    durationMs: number,
+    source?: StatusEffect['slowSource'],
+  ): void {
+    const type = source === 'juggernaut' ? 'unsteady' : 'slow';
+    // Discard only effects this hit fully replaces. A stronger, shorter effect keeps its expiry,
+    // so a weaker follow-up can take over afterwards without extending the stronger slow.
+    mob.statusEffects = mob.statusEffects.filter(
+      (effect) =>
+        effect.type !== type ||
+        effect.slowSource !== source ||
+        (effect.remainingMs > 0 &&
+          (effect.intensity > intensity || effect.remainingMs > durationMs)),
+    );
+    mob.statusEffects.push({
+      type,
+      slowSource: source,
+      intensity,
+      durationMs,
+      remainingMs: durationMs,
+    });
   }
 
   private applyStun(mob: MobInstance, durationMs: number): boolean {
@@ -1339,7 +1422,7 @@ export class GameService implements OnDestroy {
   ): void {
     const bardCritChance = tower ? (this.towerBuffs().get(tower.id)?.critChance ?? 0) : 0;
     const bardCrit = !isCritical && bardCritChance > 0 && Math.random() < bardCritChance;
-    // A Ninja's stronger innate critical takes precedence; critical multipliers never multiply.
+    // Learned criticals take precedence over the Bard roll; multipliers never multiply.
     const critMultiplier = bardCrit ? 1.5 : 1;
     isCritical ||= bardCrit;
     const dmg = this.rules.calculateEffectiveDamage(

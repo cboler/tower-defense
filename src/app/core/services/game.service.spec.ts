@@ -16,6 +16,143 @@ describe('GameService', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
+  it.each([1, 2, 3, 4, 5])(
+    'Samurai level %i delivers one heavy katana hit and cleaves other ground foes',
+    (level) => {
+      service.gold.set(10000);
+      service.unlockedJobIds.set(new Set(['samurai']));
+      service.placeTower(0, 0, 'samurai');
+      const tower = service.towers()[0];
+      tower.level = level;
+      for (const type of ['skulker', 'bonewalker', 'dread-gaze', 'swiftbeak'] as const)
+        service['spawnMob'](type, 1);
+      service
+        .mobs()
+        .forEach((mob, i) =>
+          Object.assign(mob, { x: i === 3 ? 5 : 0.2 * i, y: 1, hp: 10000, armor: 0.2 }),
+        );
+      const config = TOWER_CLASSES.samurai.levels[level - 1];
+      service['executeTowerAttack'](tower, service.mobs()[0], config, config.damage, config.range);
+      expect(service.mobs()[0].hp).toBe(10000 - Math.round(config.damage * 2 * 0.8));
+      expect(service.mobs()[1].hp).toBe(10000 - Math.round(config.damage * 0.8));
+      expect(service.mobs()[2].hp).toBe(10000);
+      expect(service.mobs()[3].hp).toBe(10000);
+    },
+  );
+
+  describe('Learned criticals and source-aware slows', () => {
+    it.each(['ranger', 'ninja'] as const)(
+      '%s learns criticals at level 3 and improves through level 5',
+      (classId) => {
+        service.gold.set(10000);
+        service.unlockedJobIds.set(new Set(['ninja']));
+        service.placeTower(0, 0, classId);
+        const tower = service.towers()[0];
+        service['spawnMob']('dread-gaze', 1);
+        const target = service.mobs()[0];
+        Object.assign(target, { hp: 100000, armor: 0 });
+        const random = vi.spyOn(Math, 'random');
+        const chances = classId === 'ranger' ? [0, 0, 0.15, 0.25, 0.35] : [0, 0, 0.25, 0.35, 0.45];
+        for (let level = 1; level <= 5; level++) {
+          tower.level = level;
+          const config = TOWER_CLASSES[classId].levels[level - 1];
+          for (const roll of [0, chances[level - 1]]) {
+            random.mockReturnValue(roll);
+            service.projectiles.set([]);
+            service['executeTowerAttack'](tower, target, config, 100, config.range);
+            const shot = service.projectiles()[0];
+            const critical = roll < chances[level - 1];
+            expect(shot.isCritical).toBe(critical);
+            expect(shot.damage).toBe(critical ? 175 : 100);
+            const hp = target.hp;
+            service['updateProjectiles'](1);
+            expect(hp - target.hp).toBe(
+              Math.round((critical ? 175 : 100) * (classId === 'ranger' ? 1.5 : 1)),
+            );
+          }
+        }
+      },
+    );
+
+    it('quakes slow ground enemies once per class, combine with ice and chrono, and expire independently', () => {
+      service.gold.set(10000);
+      service.placeTower(0, 0, 'juggernaut');
+      const tower = service.towers()[0];
+      tower.level = 5;
+      for (const type of ['skulker', 'dread-gaze', 'bonewalker'] as const)
+        service['spawnMob'](type, 1);
+      service.mobs().forEach((m, i) => Object.assign(m, { x: i === 2 ? 5 : 0, y: 1, hp: 100000 }));
+      const [target, flyer, outside] = service.mobs();
+      service['applySlow'](target, 0.4, 3000, 'chronomancer');
+      service['applySlow'](target, 0.3, 2000, 'elementalist');
+      const config = TOWER_CLASSES.juggernaut.levels[4];
+      for (let i = 0; i < 5; i++)
+        service['executeTowerAttack'](tower, target, config, 1, config.range);
+      expect(target.statusEffects.filter((e) => e.type === 'unsteady')).toHaveLength(1);
+      expect(service.rules.resolveMobSpeed(target, 0.1).effectiveSpeed).toBeCloseTo(
+        target.baseSpeed * 0.6 * 0.7 * 0.8,
+      );
+      expect(flyer.statusEffects).toEqual([]);
+      expect(outside.statusEffects).toEqual([]);
+      service['updateMobs'](1.6);
+      expect(target.effectiveSpeed).toBeCloseTo(target.baseSpeed * 0.6 * 0.7);
+      service['updateMobs'](0.5);
+      expect(target.effectiveSpeed).toBeCloseTo(target.baseSpeed * 0.6);
+    });
+
+    it('keeps a weaker follow-up without extending a stronger slow, and preserves sources after sale', () => {
+      service['spawnMob']('skulker', 1);
+      const target = service.mobs()[0];
+      service['applySlow'](target, 0.7, 500, 'chronomancer');
+      service['applySlow'](target, 0.4, 3000, 'chronomancer');
+      expect(service.rules.resolveMobSpeed(target, 0.1).effectiveSpeed).toBeCloseTo(
+        target.baseSpeed * 0.3,
+      );
+      service['updateMobs'](0.6);
+      expect(target.effectiveSpeed).toBeCloseTo(target.baseSpeed * 0.6);
+      service.placeTower(0, 0, 'elementalist');
+      const tower = service.towers()[0];
+      tower.level = 2;
+      tower.spellIndex = 1;
+      const config = TOWER_CLASSES.elementalist.levels[1];
+      target.hp = 100000;
+      service['executeTowerAttack'](tower, target, config, 1, config.range);
+      service.sellTower(tower.id);
+      service['updateProjectiles'](1);
+      expect(target.statusEffects.some((e) => e.slowSource === 'elementalist')).toBe(true);
+      expect(service.rules.resolveMobSpeed(target, 0.1).effectiveSpeed).toBeCloseTo(
+        target.baseSpeed * 0.6 * 0.7,
+      );
+    });
+
+    it('holds simulation in each menu and preserves the manual pause state', () => {
+      vi.spyOn(globalThis, 'requestAnimationFrame').mockReturnValue(0);
+      service.isPaused.set(false);
+      const menus = [
+        service.isOptionsMenuOpen,
+        service.isCommandMenuOpen,
+        service.isBestiaryModalOpen,
+        service.isScoutOpen,
+        service.isCampaignModalOpen,
+        service.isAboutModalOpen,
+      ];
+      for (const menu of menus) {
+        menu.set(true);
+        const before = service.countdownRemainingMs();
+        service['tick'](service['lastTime'] + 100);
+        expect(service.countdownRemainingMs()).toBe(before);
+        expect(service.isPaused()).toBe(false);
+        menu.set(false);
+      }
+      service['tick'](service['lastTime'] + 100);
+      expect(service.countdownRemainingMs()).toBeLessThan(service.countdownDurationMs);
+      service.isPaused.set(true);
+      service.isBestiaryModalOpen.set(true);
+      service.isBestiaryModalOpen.set(false);
+      expect(service.isPaused()).toBe(true);
+    });
+  });
+
   describe('Elementalist spell progression', () => {
     it.each([
       [1, ['fireball', 'fireball', 'fireball', 'fireball', 'fireball', 'fireball']],
@@ -88,6 +225,7 @@ describe('GameService', () => {
         expect(mob.hp).toBe(915);
         expect(mob.statusEffects).toContainEqual({
           type: 'slow',
+          slowSource: 'elementalist',
           intensity: 0.3,
           durationMs: 2000,
           remainingMs: 2000,
@@ -231,7 +369,8 @@ describe('GameService', () => {
       Object.assign(mob, { hp: 1000, armor: 0 });
       const random = vi.spyOn(Math, 'random').mockReturnValue(0);
       const ninja = service.towers()[1];
-      const level = TOWER_CLASSES.ninja.levels[0];
+      ninja.level = 3;
+      const level = TOWER_CLASSES.ninja.levels[2];
       const attack = () => service['executeTowerAttack'](ninja, mob, level, 100, level.range);
       attack();
       service['updateProjectiles'](1);

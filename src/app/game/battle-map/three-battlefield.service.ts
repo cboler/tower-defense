@@ -2059,6 +2059,8 @@ export class ThreeBattlefieldService {
 
   private setupPointerEvents(canvas: HTMLCanvasElement, game: GameService): void {
     canvas.addEventListener('pointerdown', (e) => {
+      if (game.isModalOpen()) return;
+      canvas.closest<HTMLElement>('#battlefield-map')?.focus({ preventScroll: true });
       const rect = canvas.getBoundingClientRect();
       this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -2066,6 +2068,28 @@ export class ThreeBattlefieldService {
       if (!this.camera || this.tileMeshes.length === 0) return;
 
       this.raycaster.setFromCamera(this.pointer, this.camera);
+      // Test the actual miniature / billboard first, so flying and oversized enemies are selectable.
+      const live = game.mobs().filter((m) => !m.isDead && !m.hasEscaped);
+      const actors = live.flatMap((m) => {
+        const visual = this.mobVisuals.get(m.id);
+        return visual ? [visual.sprite] : [];
+      });
+      const actorHit = this.raycaster.intersectObjects(actors, true)[0];
+      if (actorHit) {
+        const mob = live.find((m) => {
+          const root = this.mobVisuals.get(m.id)?.sprite;
+          let node: THREE.Object3D | null = actorHit.object;
+          while (node) {
+            if (node === root) return true;
+            node = node.parent;
+          }
+          return false;
+        });
+        if (mob) {
+          game.selectMob(mob.id);
+          return;
+        }
+      }
       const meshes = this.tileMeshes.map((t) => t.mesh);
       const intersects = this.raycaster.intersectObjects(meshes);
 
@@ -2073,7 +2097,8 @@ export class ThreeBattlefieldService {
         const hit = intersects[0].object as THREE.Mesh;
         const tileInfo = this.tileMeshes.find((t) => t.mesh === hit);
         if (tileInfo) {
-          game.selectTile(tileInfo.x, tileInfo.y);
+          if (!game.inspectEnemyAt(tileInfo.x, tileInfo.y))
+            game.openTileMenu(tileInfo.x, tileInfo.y);
         }
       }
     });
@@ -2124,8 +2149,9 @@ export class ThreeBattlefieldService {
     const halfH = (map.height - 1) / 2;
 
     // Simulation-time delta: creature and attack motion freezes on pause and speeds up at 2x/4x
-    const simRunning = !game.isPaused() && !game.isGameOver() && !game.isVictory();
-    this.simPaused = game.isPaused();
+    const simRunning =
+      !game.isPaused() && !game.isModalOpen() && !game.isGameOver() && !game.isVictory();
+    this.simPaused = game.isPaused() || game.isModalOpen();
     const simDt = simRunning ? dt * game.gameSpeed() : 0;
     if (!this.reducedMotion) this.sceneryTime += simDt;
     for (let i = 0; i < this.breezeObjects.length; i++) {

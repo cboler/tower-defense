@@ -1,12 +1,12 @@
 import {
   Component,
+  afterRenderEffect,
   DOCUMENT,
   OnDestroy,
   OnInit,
   computed,
   effect,
   inject,
-  signal,
 } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { GameService } from '../core/services/game.service';
@@ -48,16 +48,23 @@ import { BossBarComponent } from './boss-bar/boss-bar.component';
       <div class="arena-stage-area">
         <app-battle-map class="battle-map-stage" />
         <app-boss-bar />
-
-        <!-- Phones: in-flow drawer that shrinks the map. Landscape / desktop: side panel. -->
-        <app-tower-panel
-          class="tower-command-dock"
-          [class.is-visible]="isVantageSelected()"
-          (closePanel)="deselectVantage()"
-        />
       </div>
 
       <app-command-bar class="command-bar-block" />
+
+      @if (isVantageSelected()) {
+        <div
+          class="cw-scrim command-scrim"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Defender command menu"
+          tabindex="-1"
+          (click)="onCommandBackdrop($event)"
+          (keydown.escape)="$event.stopPropagation(); deselectVantage()"
+        >
+          <app-tower-panel class="tower-command-dock is-visible" (closePanel)="deselectVantage()" />
+        </div>
+      }
 
       <!-- Defeat -->
       @if (game.isGameOver()) {
@@ -187,7 +194,7 @@ import { BossBarComponent } from './boss-bar/boss-bar.component';
             <div class="cw-sheet-header">
               <div class="cw-sheet-titles">
                 <span class="cw-eyebrow">{{ game.activeMap().name }}</span>
-                <h2 id="pause-title" class="cw-title">Menu</h2>
+                <h2 id="pause-title" class="cw-title">Battle council</h2>
               </div>
               <button
                 type="button"
@@ -300,26 +307,20 @@ import { BossBarComponent } from './boss-bar/boss-bar.component';
         overflow: hidden;
       }
 
-      /* Mobile first: top bar · battlefield (+ drawer) · command bar */
       .game-view {
         position: relative;
-        display: grid;
-        grid-template-rows: auto minmax(0, 1fr) auto;
-        grid-template-columns: minmax(0, 1fr);
         width: 100%;
         height: 100%;
         overflow: hidden;
+        background: #080f19;
       }
-
       .arena-stage-area {
-        position: relative;
+        position: absolute;
+        inset: 0;
+        padding: 74px 0 84px;
         display: flex;
-        flex-direction: column;
         min-height: 0;
-        min-width: 0;
-        overflow: hidden;
       }
-
       .battle-map-stage {
         flex: 1;
         min-height: 0;
@@ -327,47 +328,79 @@ import { BossBarComponent } from './boss-bar/boss-bar.component';
         display: flex;
         flex-direction: column;
       }
-
-      /* The drawer lives in the layout flow, so the map shrinks (and the camera
-         re-fits) instead of being covered by the panel. */
+      .game-hud-block {
+        position: absolute;
+        top: 12px;
+        left: 16px;
+        right: 16px;
+        z-index: 10;
+      }
+      .command-bar-block {
+        position: absolute;
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: min(720px, calc(100% - 32px));
+        z-index: 10;
+      }
       .tower-command-dock {
-        flex-shrink: 0;
-        max-height: 0;
+        display: flex;
+        width: min(660px, 100%);
+        max-height: min(760px, 86dvh);
+        min-height: 0;
         overflow: hidden;
-        transition: max-height 0.3s var(--ease-out);
-
-        &.is-visible {
-          max-height: min(52%, 420px);
-          min-height: 0;
-        }
+        border: 1px solid #b49356;
+        border-radius: 6px;
+        box-shadow:
+          0 24px 80px #000b,
+          0 0 0 4px #121a24;
       }
-
-      /* Landscape phones, tablets in landscape, desktop: persistent side panel */
-      @media (orientation: landscape) and (min-width: 640px) {
+      .command-scrim {
+        align-items: center;
+        padding: 20px;
+      }
+      @media (max-width: 599px) {
+        .game-hud-block {
+          top: 6px;
+          left: 6px;
+          right: 6px;
+        }
+        .command-bar-block {
+          bottom: 6px;
+          width: calc(100% - 12px);
+        }
         .arena-stage-area {
-          flex-direction: row;
+          padding-top: 62px;
+          padding-bottom: 78px;
         }
-
-        .tower-command-dock,
-        .tower-command-dock.is-visible {
-          width: 300px;
-          max-height: none;
-          height: 100%;
-          transition: none;
+        .command-scrim {
+          align-items: flex-end;
+          padding: 6px;
         }
-      }
-
-      @media (orientation: landscape) and (min-width: 1100px) {
-        .tower-command-dock,
-        .tower-command-dock.is-visible {
-          width: 360px;
+        .tower-command-dock {
+          max-height: min(720px, 90dvh);
         }
       }
-
-      /* Tall tablets in portrait: the drawer can afford more height */
-      @media (orientation: portrait) and (min-width: 600px) {
-        .tower-command-dock.is-visible {
-          max-height: min(44%, 460px);
+      @media (orientation: landscape) and (max-height: 519px) {
+        .game-hud-block {
+          top: 4px;
+          left: 8px;
+          right: 8px;
+        }
+        .command-bar-block {
+          bottom: 4px;
+        }
+        .arena-stage-area {
+          padding-top: 52px;
+          padding-bottom: 64px;
+        }
+        .tower-command-dock {
+          width: min(760px, 100%);
+          height: calc(100dvh - 24px);
+          max-height: calc(100dvh - 24px);
+        }
+        .command-scrim {
+          padding: 12px;
         }
       }
 
@@ -623,9 +656,9 @@ export class GameComponent implements OnInit, OnDestroy {
   private readonly document = inject(DOCUMENT);
   protected readonly allMaps = ALL_MAPS;
 
-  public readonly isPauseMenuOpen = signal<boolean>(false);
+  public readonly isPauseMenuOpen = this.game.isOptionsMenuOpen;
   /** About Crystal Wardens: credits and a link to the original game. */
-  public readonly isAboutOpen = signal<boolean>(false);
+  public readonly isAboutOpen = this.game.isAboutModalOpen;
   private sub?: Subscription;
 
   private static readonly CAMERA_LABELS: Record<CameraPreset, string> = {
@@ -640,7 +673,7 @@ export class GameComponent implements OnInit, OnDestroy {
 
   public readonly isVantageSelected = computed(() => {
     const tile = this.game.selectedTile();
-    if (!tile) return false;
+    if (!tile || !this.game.isCommandMenuOpen()) return false;
     const map = this.game.activeMap();
     const cellType = map.tiles[tile.y]?.[tile.x];
     const hasTower = !!this.game.selectedTower();
@@ -648,6 +681,34 @@ export class GameComponent implements OnInit, OnDestroy {
   });
 
   constructor() {
+    afterRenderEffect(() => {
+      this.game.isCommandMenuOpen();
+      this.isPauseMenuOpen();
+      this.game.isScoutOpen();
+      this.game.isBestiaryModalOpen();
+      this.game.isCampaignModalOpen();
+      this.isAboutOpen();
+      this.game.isGameOver();
+      this.game.isVictory();
+      const dialog = this.activeDialog();
+      if (dialog === this.lastDialog) return;
+      if (dialog) {
+        if (!this.lastDialog) this.returnFocus = this.document.activeElement as HTMLElement;
+        (
+          dialog.querySelector<HTMLElement>(
+            '#deploy-tower-btn:not(:disabled), #upgrade-tower-btn:not(:disabled)',
+          ) ??
+          dialog.querySelector<HTMLElement>('button:not(:disabled), [href]') ??
+          dialog
+        ).focus({ preventScroll: true });
+      } else {
+        const target = this.returnFocus?.isConnected
+          ? this.returnFocus
+          : this.document.getElementById('battlefield-map');
+        target?.focus({ preventScroll: true });
+      }
+      this.lastDialog = dialog;
+    });
     // Lets global styles reveal controller prompts only while a pad is in use
     effect(() => {
       const root = this.document.documentElement;
@@ -657,8 +718,22 @@ export class GameComponent implements OnInit, OnDestroy {
   }
 
   public deselectVantage(): void {
-    this.game.selectTile(-1, -1);
+    this.game.isCommandMenuOpen.set(false);
+    this.document.getElementById('battlefield-map')?.focus({ preventScroll: true });
   }
+
+  protected onCommandBackdrop(event: MouseEvent): void {
+    if (event.target === event.currentTarget) this.deselectVantage();
+  }
+
+  private activeDialog(): HTMLElement | undefined {
+    return Array.from(
+      this.document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'),
+    ).at(-1);
+  }
+
+  private lastDialog?: HTMLElement;
+  private returnFocus?: HTMLElement;
 
   ngOnInit(): void {
     this.gamepad.start();
@@ -715,6 +790,37 @@ export class GameComponent implements OnInit, OnDestroy {
       return;
     }
 
+    if (
+      this.game.isBestiaryModalOpen() ||
+      this.game.isCampaignModalOpen() ||
+      this.game.isScoutOpen()
+    ) {
+      if (action === 'cancel' || action === 'toggle-menu') {
+        this.game.isBestiaryModalOpen.set(false);
+        this.game.isCampaignModalOpen.set(false);
+        this.game.isScoutOpen.set(false);
+      }
+      return;
+    }
+    if (this.game.isCommandMenuOpen()) {
+      if (action === 'cancel' || action === 'toggle-menu') {
+        this.deselectVantage();
+        return;
+      }
+      if (action === 'prev-class') {
+        this.game.cycleClass('prev');
+        return;
+      }
+      if (action === 'next-class') {
+        this.game.cycleClass('next');
+        return;
+      }
+      const tower = this.game.selectedTower();
+      if (tower && action === 'start-wave') this.game.sellTower(tower.id);
+      if (tower && action === 'toggle-speed') this.game.cycleTargetPriorityForTower(tower.id);
+      return;
+    }
+
     // 4. Main Gameplay Actions
     switch (action) {
       case 'toggle-menu':
@@ -725,29 +831,12 @@ export class GameComponent implements OnInit, OnDestroy {
         this.cycleCameraPreset();
         break;
 
-      case 'start-wave': {
-        const tower = this.game.selectedTower();
-        if (tower) {
-          // If a tower is inspected, [X] is Dismiss / Sell
-          this.game.sellTower(tower.id);
-        } else if (!this.game.waveActive()) {
-          // Otherwise [X] calls the next wave when not in combat!
-          this.game.startNextWave();
-        }
+      case 'start-wave':
+        if (!this.game.waveActive()) this.game.startNextWave();
         break;
-      }
-
-      case 'toggle-speed': {
-        const tower = this.game.selectedTower();
-        if (tower && tower.classId !== 'barricade') {
-          // If a tower is inspected, [Y] cycles target priority!
-          this.game.cycleTargetPriorityForTower(tower.id);
-        } else {
-          // Otherwise [Y] cycles game speed!
-          this.game.cycleSpeed();
-        }
+      case 'toggle-speed':
+        this.game.cycleSpeed();
         break;
-      }
 
       case 'prev-class':
         this.game.cycleClass('prev');
@@ -774,30 +863,8 @@ export class GameComponent implements OnInit, OnDestroy {
         break;
 
       case 'confirm': {
-        let tile = this.game.selectedTile();
-        if (!tile) {
-          this.game.selectTile(0, 1);
-          tile = this.game.selectedTile();
-        }
-        if (tile) {
-          const tower = this.game.selectedTower();
-          if (tower) {
-            this.game.upgradeTower(tower.id);
-          } else {
-            const cellType = this.game.activeMap().tiles[tile.y]?.[tile.x];
-            if (cellType === 'M') {
-              const hasBarricade = this.game.barricades().has(`${tile.x},${tile.y}`);
-              if (hasBarricade) {
-                const bar = this.game.towers().find((t) => t.x === tile.x && t.y === tile.y);
-                if (bar) this.game.sellTower(bar.id);
-              } else {
-                this.game.placeTower(tile.x, tile.y, 'barricade');
-              }
-            } else if (cellType === 'B') {
-              this.game.placeTower(tile.x, tile.y, this.game.selectedClassId());
-            }
-          }
-        }
+        const tile = this.game.selectedTile() ?? { x: 0, y: 0 };
+        if (!this.game.inspectEnemyAt(tile.x, tile.y)) this.game.openTileMenu(tile.x, tile.y);
         break;
       }
 
@@ -841,24 +908,52 @@ export class GameComponent implements OnInit, OnDestroy {
   }
 
   private readonly onGlobalKeyDown = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape' && this.isAboutOpen()) {
-      this.isAboutOpen.set(false);
-      e.preventDefault();
+    const dialog = this.activeDialog();
+    if (dialog && e.key === 'Tab') {
+      const controls = Array.from(
+        dialog.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], [tabindex="0"]'),
+      ).filter((el) => el.getClientRects().length > 0 && !el.closest('[inert], [hidden]'));
+      const first = controls[0],
+        last = controls.at(-1);
+      if (
+        e.shiftKey &&
+        (this.document.activeElement === first || !dialog.contains(this.document.activeElement))
+      ) {
+        last?.focus();
+        e.preventDefault();
+      } else if (
+        !e.shiftKey &&
+        (this.document.activeElement === last || !dialog.contains(this.document.activeElement))
+      ) {
+        first?.focus();
+        e.preventDefault();
+      }
       return;
     }
     if (e.key === 'Escape') {
-      // Escape closes whichever overlay is on top; it only opens the menu from the battlefield
-      const overlayOpen =
-        this.game.isScoutOpen() ||
-        this.game.isCampaignModalOpen() ||
-        this.game.isBestiaryModalOpen() ||
-        this.isAboutOpen();
-      if (!overlayOpen) this.isPauseMenuOpen.set(!this.isPauseMenuOpen());
+      if (this.isAboutOpen()) this.isAboutOpen.set(false);
+      else if (this.game.isBestiaryModalOpen()) this.game.isBestiaryModalOpen.set(false);
+      else if (this.game.isCampaignModalOpen()) this.game.isCampaignModalOpen.set(false);
+      else if (this.game.isScoutOpen()) this.game.isScoutOpen.set(false);
+      else if (this.game.isCommandMenuOpen()) this.deselectVantage();
+      else this.isPauseMenuOpen.set(!this.isPauseMenuOpen());
       e.preventDefault();
       return;
     }
-
-    if (this.isPauseMenuOpen() || this.isAboutOpen()) return;
+    if (dialog) {
+      if (this.game.isCommandMenuOpen()) {
+        if (e.key === '[' || e.key === ']') this.game.cycleClass(e.key === '[' ? 'prev' : 'next');
+        const tower = this.game.selectedTower();
+        if (tower && e.key.toLowerCase() === 'x') this.game.sellTower(tower.id);
+        if (tower && e.key.toLowerCase() === 'y') this.game.cycleTargetPriorityForTower(tower.id);
+      }
+      return;
+    }
+    if (e.key === 'e' || e.key === 'E') {
+      const mob = this.game.mobs().find((m) => !m.isDead && !m.hasEscaped);
+      if (mob) this.game.selectMob(mob.id);
+      return;
+    }
 
     if (e.key === 'c' || e.key === 'C') {
       this.cycleCameraPreset();
@@ -881,9 +976,7 @@ export class GameComponent implements OnInit, OnDestroy {
     }
 
     if (e.key === 'x' || e.key === 'X') {
-      const tower = this.game.selectedTower();
-      if (tower) this.game.sellTower(tower.id);
-      else if (!this.game.waveActive()) this.game.startNextWave();
+      if (!this.game.waveActive()) this.game.startNextWave();
       return;
     }
 
@@ -895,12 +988,7 @@ export class GameComponent implements OnInit, OnDestroy {
     }
 
     if (e.key === 'y' || e.key === 'Y') {
-      const tower = this.game.selectedTower();
-      if (tower && tower.classId !== 'barricade') {
-        this.game.cycleTargetPriorityForTower(tower.id);
-      } else {
-        this.game.cycleSpeed();
-      }
+      this.game.cycleSpeed();
       return;
     }
 
@@ -919,6 +1007,8 @@ export class GameComponent implements OnInit, OnDestroy {
 
     if (classKeys[e.key]) {
       this.game.setSelectedClass(classKeys[e.key]);
+      const tile = this.game.selectedTile();
+      if (tile) this.game.openTileMenu(tile.x, tile.y);
       return;
     }
 

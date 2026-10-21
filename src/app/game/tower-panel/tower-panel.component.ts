@@ -4,6 +4,7 @@ import {
   ADVANCED_TOWER_CLASSES,
   BASE_TOWER_CLASSES,
   JOB_UNLOCK_RULES,
+  SAMURAI_SLASH_MULTIPLIER,
   JobUnlockRule,
   TOWER_CLASSES,
   TargetPriority,
@@ -93,6 +94,26 @@ import { IconComponent } from '../icon/icon.component';
               </div>
 
               <dl class="stats-matrix">
+                @if (getCurLevel(tower).critChance; as chance) {
+                  <div class="stat-cell">
+                    <dt>Critical</dt>
+                    <dd>{{ round(chance * 100) }}% / {{ getCurLevel(tower).critMultiplier }}×</dd>
+                  </div>
+                } @else if (tower.classId === 'ranger' || tower.classId === 'ninja') {
+                  <div class="stat-cell">
+                    <dt>Critical</dt>
+                    <dd>Learns Lv. 3</dd>
+                  </div>
+                }
+                @if (tower.classId === 'juggernaut') {
+                  <div class="stat-cell">
+                    <dt>Unsteady</dt>
+                    <dd>
+                      {{ (getCurLevel(tower).slowPercent ?? 0) * 100 }}% /
+                      {{ getCurLevel(tower).slowDuration }}s
+                    </dd>
+                  </div>
+                }
                 @if (tower.classId === 'rogue') {
                   <div class="stat-cell">
                     <dt>Plunder</dt>
@@ -141,7 +162,7 @@ import { IconComponent } from '../icon/icon.component';
                   </div>
                 } @else {
                   <div class="stat-cell">
-                    <dt>Damage</dt>
+                    <dt>{{ tower.classId === 'samurai' ? 'Spirit cleave' : 'Damage' }}</dt>
                     <dd>{{ getCurLevel(tower).damage }}</dd>
                   </div>
                   <div class="stat-cell">
@@ -201,6 +222,12 @@ import { IconComponent } from '../icon/icon.component';
                   <div class="stat-cell">
                     <dt>Earned</dt>
                     <dd class="gold">{{ tower.goldGenerated }}G</dd>
+                  </div>
+                }
+                @if (tower.classId === 'samurai') {
+                  <div class="stat-cell">
+                    <dt>Katana slash</dt>
+                    <dd>{{ getCurLevel(tower).damage * samuraiSlashMultiplier }}</dd>
                   </div>
                 }
                 @if ((game.towerBuffs().get(tower.id)?.rangeMult ?? 1) > 1) {
@@ -1288,6 +1315,37 @@ import { IconComponent } from '../icon/icon.component';
           min-height: 44px;
         }
       }
+
+      .tower-command-panel {
+        border: 0;
+        border-radius: 0;
+        background: linear-gradient(135deg, #202d3d, #101c2a 55%, #162332);
+      }
+      .panel-header {
+        border-bottom: 1px solid #8c744a;
+        margin-bottom: 14px;
+        padding-bottom: 14px;
+      }
+      .head-title {
+        font-family: var(--font-display);
+        color: #f4d59d;
+        letter-spacing: 0.04em;
+      }
+      .drawer-handle-bar {
+        display: none;
+      }
+      .class-cards-scroll {
+        grid-auto-flow: row;
+        grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+        overflow: visible;
+        margin: 0 0 12px;
+      }
+      .class-card {
+        border-radius: 3px;
+      }
+      .panel-sticky-actions {
+        border-color: #8c744a;
+      }
     `,
   ],
 })
@@ -1295,6 +1353,7 @@ export class TowerPanelComponent {
   public readonly closePanel = output<void>();
   protected readonly game = inject(GameService);
   protected readonly round = Math.round;
+  protected readonly samuraiSlashMultiplier = SAMURAI_SLASH_MULTIPLIER;
 
   protected buffedRange(tower: TowerInstance, range: number): number {
     return Math.round(range * (this.game.towerBuffs().get(tower.id)?.rangeMult ?? 1) * 100) / 100;
@@ -1333,7 +1392,7 @@ export class TowerPanelComponent {
 
   public onClose(): void {
     this.closePanel.emit();
-    this.game.selectTile(-1, -1);
+    this.game.isCommandMenuOpen.set(false);
   }
 
   protected readonly priorities: TargetPriority[] = [
@@ -1368,7 +1427,7 @@ export class TowerPanelComponent {
   protected deploySelectedClass(): void {
     const tile = this.game.selectedTile();
     if (!tile || !this.isBuildTile(tile)) return;
-    this.game.placeTower(tile.x, tile.y, this.game.selectedClassId());
+    if (this.game.placeTower(tile.x, tile.y, this.game.selectedClassId())) this.onClose();
   }
 
   protected getRuleProgress(rule: JobUnlockRule) {

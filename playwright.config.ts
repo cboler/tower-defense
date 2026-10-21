@@ -1,5 +1,8 @@
 import { defineConfig } from '@playwright/test';
 
+const port = process.env['CW_TEST_PORT'] ?? '4210';
+const baseURL = `http://127.0.0.1:${port}`;
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -8,7 +11,7 @@ export default defineConfig({
   workers: process.env['CI'] ? 1 : 2,
   reporter: 'list',
   use: {
-    baseURL: 'http://localhost:4210',
+    baseURL,
     trace: 'on-first-retry',
   },
   projects: [
@@ -38,8 +41,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm start -- --port 4210',
-    url: 'http://localhost:4210',
+    command: `npm start -- --host 127.0.0.1 --port ${port}`,
+    url: baseURL,
     reuseExistingServer: !process.env['CI'],
     timeout: 120 * 1000,
   },

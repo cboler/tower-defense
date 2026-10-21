@@ -63,7 +63,7 @@ describe('GameRulesService', () => {
     const weaker = tower('weaker', 'paladin', 1, 2);
     const oracle = tower('oracle', 'oracle', 1, 1);
     const buffs = service.calculateTowerBuffs([ally, paladin, weaker, oracle]);
-    expect(buffs.get(ally.id)?.damageMult).toBeCloseTo(1.45);
+    expect(buffs.get(ally.id)?.damageMult).toBeCloseTo(1.75);
     expect(buffs.get(ally.id)?.speedMult).toBeCloseTo(1.25);
     expect(service.calculateTowerBuffs([paladin]).has(paladin.id)).toBe(false);
     expect(service.calculateTowerBuffs([ally, oracle]).get(ally.id)?.damageMult).toBeCloseTo(1.15);
@@ -74,7 +74,7 @@ describe('GameRulesService', () => {
     const edge = tower('edge', 'ranger', 1, 2.2);
     const outside = tower('outside', 'ranger', 1, 2.21);
     const buffs = service.calculateTowerBuffs([paladin, edge, outside]);
-    expect(buffs.get(edge.id)?.damageMult).toBeCloseTo(1.1);
+    expect(buffs.get(edge.id)?.damageMult).toBeCloseTo(1.2);
     expect(buffs.has(outside.id)).toBe(false);
   });
 
@@ -97,10 +97,22 @@ describe('GameRulesService', () => {
     const outside = tower('outside', 'ranger', 1, 2.21);
     const buffs = service.calculateTowerBuffs([bard, paladin, edge, outside]);
     expect(buffs.get(edge.id)?.speedMult).toBeCloseTo(1.15);
-    expect(buffs.get(edge.id)?.damageMult).toBeCloseTo(1.1);
+    expect(buffs.get(edge.id)?.damageMult).toBeCloseTo(1.2);
     expect(buffs.get(outside.id)?.speedMult).toBe(1);
-    expect(buffs.get(outside.id)?.damageMult).toBeCloseTo(1.1);
+    expect(buffs.get(outside.id)?.damageMult).toBeCloseTo(1.2);
   });
+
+  it.each([0.2, 0.3, 0.4, 0.5, 0.6])(
+    'grants Paladin allies a %s damage bonus without affecting its source',
+    (bonus) => {
+      const level = Math.round((bonus - 0.2) * 10) + 1;
+      const paladin = tower('paladin', 'paladin', level);
+      const ally = tower('ally', 'ranger', 1, 1);
+      const buffs = service.calculateTowerBuffs([paladin, ally]);
+      expect(buffs.get(ally.id)?.damageMult).toBeCloseTo(1 + bonus);
+      expect(buffs.has(paladin.id)).toBe(false);
+    },
+  );
 
   it('pays only the strongest Rogue or Ninja loot aura and credits its source', () => {
     const mob = createDummyMob({ goldReward: 20 });
@@ -163,7 +175,7 @@ describe('GameRulesService', () => {
       const edge = tower('edge', 'ranger', 1, 4.75);
       const outside = tower('outside', 'ranger', 1, 4.76);
       const buffs = service.calculateTowerBuffs([bard, source, edge, outside]);
-      expect(buffs.get(edge.id)?.damageMult).toBeCloseTo(classId === 'oracle' ? 1.15 : 1.1);
+      expect(buffs.get(edge.id)?.damageMult).toBeCloseTo(classId === 'oracle' ? 1.15 : 1.2);
       expect(buffs.has(outside.id)).toBe(false);
       expect(service.calculateTowerBuffs([source, edge]).has(edge.id)).toBe(false);
     },
@@ -233,6 +245,34 @@ describe('GameRulesService', () => {
   });
 
   describe('resolveMobSpeed', () => {
+    it.each(['skulker', 'swiftbeak'] as const)(
+      'stacks each source once on %s, taking the strongest active effect per class',
+      (typeId) => {
+        const effects = [
+          { slowSource: 'chronomancer', intensity: 0.4 },
+          { slowSource: 'chronomancer', intensity: 0.2 },
+          { slowSource: 'elementalist', intensity: 0.3 },
+          { slowSource: 'elementalist', intensity: 0.3 },
+          { slowSource: 'astrologian', intensity: 0.3 },
+          { slowSource: 'juggernaut', intensity: 0.1 },
+        ] as const;
+        const mob = createDummyMob({
+          typeId,
+          statusEffects: effects.map((e) => ({
+            ...e,
+            type: e.slowSource === 'juggernaut' ? 'unsteady' : 'slow',
+            durationMs: 2000,
+            remainingMs: 2000,
+          })),
+        });
+        const factor = typeId === 'swiftbeak' ? 0.8 * 0.85 * 0.85 * 0.95 : 0.6 * 0.7 * 0.7 * 0.9;
+        expect(service.resolveMobSpeed(mob, 1).effectiveSpeed).toBeCloseTo(factor);
+        mob.statusEffects[0].remainingMs = 0;
+        const expired = typeId === 'swiftbeak' ? 0.9 * 0.85 * 0.85 * 0.95 : 0.8 * 0.7 * 0.7 * 0.9;
+        expect(service.resolveMobSpeed(mob, 1).effectiveSpeed).toBeCloseTo(expired);
+      },
+    );
+
     it('should reduce speed when slowed', () => {
       const mob = createDummyMob({
         baseSpeed: 2.0,

@@ -510,6 +510,30 @@ import { IconComponent } from '../icon/icon.component';
           width: 44px;
         }
       }
+
+      .command-bar {
+        border: 1px solid #8c744a;
+        border-radius: 6px;
+        background: linear-gradient(180deg, #1b2938f5, #0c1522fa);
+        box-shadow:
+          inset 0 0 0 3px #0c1420,
+          0 5px 24px #0009;
+      }
+      .ctrl-btn {
+        border-radius: 3px;
+        background: #080f1a;
+        border-color: #52606c;
+      }
+      .primary-btn.call {
+        color: #fff1cd;
+        background: linear-gradient(180deg, #49635d, #243c3d);
+        border-color: #c7a469;
+        box-shadow: inset 0 0 0 2px #172f32;
+        border-radius: 3px;
+      }
+      .wave-portrait {
+        border-color: #9b8052;
+      }
     `,
   ],
 })

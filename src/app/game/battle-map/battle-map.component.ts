@@ -56,6 +56,18 @@ import { IconComponent } from '../icon/icon.component';
 
       <!-- Main Battlefield Stage (Three.js WebGL Engine) -->
       <div class="battlefield-stage-wrapper">
+        @if (livingEnemies().length) {
+          <button
+            type="button"
+            class="map-fab enemy-fab"
+            (click)="game.selectMob(livingEnemies()[0].id)"
+            aria-label="Inspect enemies [E]"
+          >
+            <app-icon name="search" [size]="18" /><span
+              >Enemies · {{ livingEnemies().length }}</span
+            >
+          </button>
+        }
         <canvas
           #threeCanvas
           class="three-battlefield-canvas"
@@ -197,6 +209,17 @@ import { IconComponent } from '../icon/icon.component';
             @if (!mob.isDead && !mob.hasEscaped) {
               <div
                 class="creep-entity"
+                [style.pointer-events]="'auto'"
+                role="button"
+                tabindex="0"
+                (click)="$event.stopPropagation(); game.selectMob(mob.id)"
+                (keydown.enter)="$event.stopPropagation(); game.selectMob(mob.id)"
+                (keydown.space)="
+                  $event.preventDefault(); $event.stopPropagation(); game.selectMob(mob.id)
+                "
+                [attr.aria-label]="
+                  'Inspect ' + mob.name + ', ' + mob.hp + ' of ' + mob.maxHp + ' HP'
+                "
                 [class.is-flying]="mob.isFlying"
                 [style.left.%]="((mob.x + 0.5) / game.activeMap().width) * 100"
                 [style.top.%]="((mob.y + 0.5) / game.activeMap().height) * 100"
@@ -232,6 +255,9 @@ import { IconComponent } from '../icon/icon.component';
                   @if (hasSlowEffect(mob)) {
                     <span class="status-badge slow-badge" title="Slowed">❄️</span>
                   }
+                  @if (hasUnsteadyEffect(mob)) {
+                    <span class="status-badge" title="Unsteady: earthquake slow">⛰️</span>
+                  }
                   @if (hasStunEffect(mob)) {
                     <span class="status-badge stun-badge" title="Stunned">⚡</span>
                   }
@@ -242,99 +268,36 @@ import { IconComponent } from '../icon/icon.component';
         </div>
       </div>
 
-      <!-- Tactical Controller & Keyboard Shortcuts Footer -->
-      <footer class="controller-guide-bar" aria-label="Tactical Controller Action Prompts">
-        @if (game.selectedTower(); as tower) {
-          <div class="guide-item active-action">
-            <kbd class="key-badge">[A]</kbd>
-            <span class="guide-desc">Upgrade (Lv.{{ tower.level + 1 }})</span>
-          </div>
-          <div class="guide-item active-action">
-            <kbd class="key-badge">[X]</kbd>
-            <span class="guide-desc">Dismiss (+Refund)</span>
-          </div>
-          @if (tower.classId !== 'barricade') {
-            <div class="guide-item active-action">
-              <kbd class="key-badge">[Y]</kbd>
-              <span class="guide-desc">Priority: {{ tower.targetPriority }}</span>
-            </div>
-          }
-          <div class="guide-item">
-            <kbd class="key-badge">[B]</kbd>
-            <span class="guide-desc">Deselect</span>
-          </div>
-        } @else if (game.selectedTile(); as tile) {
-          @if (isBuildTile(tile)) {
-            <div class="guide-item active-action">
-              <kbd class="key-badge">[A]</kbd>
-              <span class="guide-desc"
-                >Deploy {{ activeClassDef().name }} ({{ activeClassDef().cost }}G)</span
-              >
-            </div>
-            <div class="guide-item">
-              <kbd class="key-badge">[LB / RB]</kbd>
-              <span class="guide-desc">Switch Class</span>
-            </div>
-            <div class="guide-item">
-              <kbd class="key-badge">[B]</kbd>
-              <span class="guide-desc">Deselect</span>
-            </div>
-          } @else if (isMazeTile(tile)) {
-            <div class="guide-item active-action">
-              <kbd class="key-badge">[A]</kbd>
-              <span class="guide-desc">{{
-                hasBarricadeAt(tile.x, tile.y) ? 'Dismantle Barricade' : 'Erect Barricade (30G)'
-              }}</span>
-            </div>
-            <div class="guide-item">
-              <kbd class="key-badge">[B]</kbd>
-              <span class="guide-desc">Deselect</span>
-            </div>
-          } @else {
-            <div class="guide-item">
-              <kbd class="key-badge">D-Pad / Stick</kbd>
-              <span class="guide-desc">Move</span>
-            </div>
-            <div class="guide-item">
-              <kbd class="key-badge">[B]</kbd>
-              <span class="guide-desc">Deselect</span>
-            </div>
-            <div class="guide-item">
-              <kbd class="key-badge">[X]</kbd>
-              <span class="guide-desc">Call Wave</span>
-            </div>
-          }
-        } @else {
-          <div class="guide-item">
-            <kbd class="key-badge">D-Pad / Stick</kbd>
-            <span class="guide-desc">Move Cursor</span>
-          </div>
-          <div class="guide-item">
-            <kbd class="key-badge">[A]</kbd>
-            <span class="guide-desc">Select Tile</span>
-          </div>
-          <div class="guide-item">
-            <kbd class="key-badge">[LB / RB]</kbd>
-            <span class="guide-desc">Class ({{ activeClassDef().name }})</span>
-          </div>
-          <div class="guide-item">
-            <kbd class="key-badge">[X]</kbd>
-            <span class="guide-desc">Call Wave</span>
-          </div>
-          <div class="guide-item">
-            <kbd class="key-badge">[Y]</kbd>
-            <span class="guide-desc">Speed ({{ game.gameSpeed() }}x)</span>
-          </div>
-          <div class="guide-item">
-            <kbd class="key-badge">[START / Esc]</kbd>
-            <span class="guide-desc">Menu</span>
-          </div>
-        }
+      <footer class="controller-guide-bar" aria-label="Battle controls">
+        <div class="guide-item">
+          <kbd class="key-badge">D-Pad / Arrows</kbd><span class="guide-desc">Move</span>
+        </div>
+        <div class="guide-item">
+          <kbd class="key-badge">A / Enter</kbd><span class="guide-desc">Commands / Inspect</span>
+        </div>
+        <div class="guide-item">
+          <kbd class="key-badge">E</kbd><span class="guide-desc">Enemies</span>
+        </div>
+        <div class="guide-item">
+          <kbd class="key-badge">X</kbd><span class="guide-desc">Call wave</span>
+        </div>
+        <div class="guide-item">
+          <kbd class="key-badge">Y</kbd><span class="guide-desc">Speed</span>
+        </div>
+        <div class="guide-item">
+          <kbd class="key-badge">Start / Esc</kbd><span class="guide-desc">Menu</span>
+        </div>
       </footer>
     </div>
   `,
   styles: [
     `
+      .map-fab.enemy-fab {
+        top: auto;
+        bottom: 12px;
+        right: 12px;
+      }
+
       :host {
         display: flex;
         flex-direction: column;
@@ -922,6 +885,9 @@ export class BattleMapComponent implements AfterViewInit, OnDestroy {
   }
 
   protected readonly activeClassDef = computed(() => TOWER_CLASSES[this.game.selectedClassId()]);
+  protected readonly livingEnemies = computed(() =>
+    this.game.mobs().filter((m) => !m.isDead && !m.hasEscaped),
+  );
 
   protected isBuildTile(tile: { x: number; y: number }): boolean {
     return this.game.activeMap().tiles[tile.y]?.[tile.x] === 'B';
@@ -975,7 +941,7 @@ export class BattleMapComponent implements AfterViewInit, OnDestroy {
   }
 
   protected onCellClick(x: number, y: number): void {
-    this.game.selectTile(x, y);
+    if (!this.game.inspectEnemyAt(x, y)) this.game.openTileMenu(x, y);
   }
 
   protected getCellTooltip(tile: TileCode, x: number, y: number): string {
@@ -1033,11 +999,16 @@ export class BattleMapComponent implements AfterViewInit, OnDestroy {
     return mob.statusEffects.some((e) => e.type === 'slow' && e.remainingMs > 0);
   }
 
+  protected hasUnsteadyEffect(mob: MobInstance): boolean {
+    return mob.statusEffects.some((e) => e.type === 'unsteady' && e.remainingMs > 0);
+  }
+
   protected hasStunEffect(mob: MobInstance): boolean {
     return mob.statusEffects.some((e) => e.type === 'stun' && e.remainingMs > 0);
   }
 
   protected onKeyDown(event: KeyboardEvent): void {
+    if (this.game.isModalOpen()) return;
     switch (event.key) {
       case 'ArrowUp':
       case 'w':
@@ -1065,25 +1036,10 @@ export class BattleMapComponent implements AfterViewInit, OnDestroy {
         break;
       case 'Enter': {
         const tile = this.game.selectedTile();
-        if (tile) {
-          const tower = this.game.selectedTower();
-          if (tower) {
-            this.game.upgradeTower(tower.id);
-          } else {
-            const cellType = this.game.activeMap().tiles[tile.y]?.[tile.x];
-            if (cellType === 'M') {
-              const hasBarricade = this.game.barricades().has(`${tile.x},${tile.y}`);
-              if (hasBarricade) {
-                const bar = this.game.towers().find((t) => t.x === tile.x && t.y === tile.y);
-                if (bar) this.game.sellTower(bar.id);
-              } else {
-                this.game.placeTower(tile.x, tile.y, 'barricade');
-              }
-            } else if (cellType === 'B') {
-              this.game.placeTower(tile.x, tile.y, this.game.selectedClassId());
-            }
-          }
-        }
+        if (tile && !this.game.inspectEnemyAt(tile.x, tile.y))
+          this.game.openTileMenu(tile.x, tile.y);
+        event.preventDefault();
+        event.stopPropagation();
         break;
       }
       case 'Escape':
