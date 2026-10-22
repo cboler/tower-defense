@@ -59,6 +59,9 @@ test('a tapped platform keeps its menu open to recruit, and the hero can then be
   await page.waitForTimeout(700);
   await expect(menu).toBeVisible();
   expect(await towerCount(page)).toBe(0);
+  // The sheet hides the HUD, so it shows the gold on hand itself
+  await expect(page.locator('#panel-gold')).toBeVisible();
+  await expect(page.locator('#panel-gold')).toContainText('420');
 
   await page.locator('#deploy-tower-btn').tap();
   await expect(menu).not.toBeVisible();

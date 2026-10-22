@@ -58,6 +58,14 @@ import { IconComponent } from '../icon/icon.component';
           </div>
         }
 
+        <!-- The treasury stays in view while buying; the scrim hides the HUD's own readout -->
+        <span class="head-gold" id="panel-gold" title="Gold on hand">
+          <app-icon name="coin" [size]="15" />
+          <span class="head-gold-value">{{ game.gold() }}</span>
+          <span class="head-gold-unit">G</span>
+          <span class="sr-only">gold on hand</span>
+        </span>
+
         <button
           type="button"
           class="cw-icon-btn panel-close-btn"
@@ -722,6 +730,35 @@ import { IconComponent } from '../icon/icon.component';
       .head-titles {
         flex: 1;
         min-width: 0;
+      }
+
+      .head-gold {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 32px;
+        padding: 0 10px;
+        border-radius: var(--radius-full);
+        background: rgba(251, 191, 36, 0.1);
+        border: 1px solid rgba(251, 191, 36, 0.35);
+        color: var(--color-gold);
+        font-variant-numeric: tabular-nums;
+
+        app-icon {
+          color: var(--color-gold);
+        }
+      }
+
+      .head-gold-value {
+        font-size: var(--font-size-sm);
+        font-weight: 800;
+      }
+
+      .head-gold-unit {
+        font-size: 0.6875rem;
+        font-weight: 700;
+        opacity: 0.8;
       }
 
       .head-title {
