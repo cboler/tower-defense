@@ -2065,10 +2065,7 @@ export class ThreeBattlefieldService {
   }
 
   /** The board tile under a pointer, if any. */
-  private tileAtPointer(
-    canvas: HTMLCanvasElement,
-    e: PointerEvent,
-  ): { x: number; y: number } | null {
+  private tileAtPointer(canvas: HTMLCanvasElement, e: MouseEvent): { x: number; y: number } | null {
     if (!this.camera || this.tileMeshes.length === 0) return null;
     const rect = canvas.getBoundingClientRect();
     this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -2093,12 +2090,14 @@ export class ThreeBattlefieldService {
       e.preventDefault();
       game.cancelPlacement();
     });
-    canvas.addEventListener('pointerdown', (e) => {
+    // Taps act on click, once the finger has lifted. Acting on pointerdown opened menus that the
+    // phone's own trailing click then landed on and closed, and fired at the start of scrolls.
+    canvas.addEventListener('click', (e) => {
       if (game.isModalOpen()) return;
       canvas.closest<HTMLElement>('#battlefield-map')?.focus({ preventScroll: true });
       if (game.placingClassId()) {
         // Clicking sets the hero down (right-click puts it back, via contextmenu)
-        const tile = e.button === 0 ? this.tileAtPointer(canvas, e) : null;
+        const tile = this.tileAtPointer(canvas, e);
         if (tile) game.activateTile(tile.x, tile.y);
         return;
       }

@@ -60,6 +60,7 @@ import { BossBarComponent } from './boss-bar/boss-bar.component';
           aria-modal="true"
           aria-label="Defender command menu"
           tabindex="-1"
+          (pointerdown)="onBackdropPress($event)"
           (click)="onCommandBackdrop($event)"
           (keydown.escape)="$event.stopPropagation(); deselectVantage()"
         >
@@ -74,6 +75,7 @@ import { BossBarComponent } from './boss-bar/boss-bar.component';
           aria-modal="true"
           aria-label="Recruit a defender"
           tabindex="-1"
+          (pointerdown)="onBackdropPress($event)"
           (click)="onRecruitBackdrop($event)"
           (keydown.escape)="$event.stopPropagation(); closeRecruitMenu()"
         >
@@ -206,6 +208,7 @@ import { BossBarComponent } from './boss-bar/boss-bar.component';
           aria-modal="true"
           aria-labelledby="pause-title"
           tabindex="-1"
+          (pointerdown)="onBackdropPress($event)"
           (click)="onPauseBackdrop($event)"
           (keydown.escape)="$event.stopPropagation(); isPauseMenuOpen.set(false)"
         >
@@ -789,8 +792,25 @@ export class GameComponent implements OnInit, OnDestroy {
     this.document.getElementById('battlefield-map')?.focus({ preventScroll: true });
   }
 
+  /** The backdrop a press began on, if it began on one rather than inside its sheet. */
+  private backdropPress: EventTarget | null = null;
+
+  protected onBackdropPress(event: PointerEvent): void {
+    this.backdropPress = event.target === event.currentTarget ? event.currentTarget : null;
+  }
+
+  /**
+   * Only a tap that both starts and ends on the backdrop dismisses a sheet. A phone's trailing
+   * click from the tap that opened it, or a swipe that drifts off the sheet, must not.
+   */
+  private isBackdropTap(event: MouseEvent): boolean {
+    const pressed = this.backdropPress === event.currentTarget;
+    this.backdropPress = null;
+    return pressed && event.target === event.currentTarget;
+  }
+
   protected onCommandBackdrop(event: MouseEvent): void {
-    if (event.target === event.currentTarget) this.deselectVantage();
+    if (this.isBackdropTap(event)) this.deselectVantage();
   }
 
   public closeRecruitMenu(): void {
@@ -799,7 +819,7 @@ export class GameComponent implements OnInit, OnDestroy {
   }
 
   protected onRecruitBackdrop(event: MouseEvent): void {
-    if (event.target === event.currentTarget) this.closeRecruitMenu();
+    if (this.isBackdropTap(event)) this.closeRecruitMenu();
   }
 
   /** X calls the next wave, or rushes it while a wave is on the board. */
@@ -997,7 +1017,7 @@ export class GameComponent implements OnInit, OnDestroy {
   }
 
   protected onPauseBackdrop(event: MouseEvent): void {
-    if (event.target === event.currentTarget) this.isPauseMenuOpen.set(false);
+    if (this.isBackdropTap(event)) this.isPauseMenuOpen.set(false);
   }
 
   protected cycleMapInPause(direction: 'next' | 'prev'): void {
