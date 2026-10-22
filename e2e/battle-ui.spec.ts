@@ -203,6 +203,8 @@ test('contextual commands trap focus, deploy, close, and hold the battle without
 test('standard Gamepad API controls recruit, upgrade, and dismiss contextual commands', async ({
   page,
 }) => {
+  // A long controller walkthrough; CI's software-rendered WebGL runs it close to the default 30s
+  test.slow();
   await page.addInitScript(() => {
     const pad = {
       id: 'Test standard controller',
