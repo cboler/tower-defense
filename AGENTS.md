@@ -23,6 +23,8 @@ src/
 │   │   │   └── game-state.model.ts  # Projectiles, particles, floating combat text
 │   │   └── services/
 │   │       ├── audio.service.ts     # Synthesized Web Audio API sound effects
+│   │       ├── music.service.ts     # Battle music: look-ahead scheduler, synths, moods, ducking
+│   │       ├── music-score.ts       # The battle theme written as data (chords, lines, patterns)
 │   │       ├── gamepad.service.ts   # Gamepad API navigation, focus, and button actions
 │   │       ├── pathfinding.service.ts # BFS ground/air pathfinding and mazing validation
 │   │       └── game.service.ts      # Core game loop, targeting, waves, and economy
@@ -181,6 +183,6 @@ crystal. The Miniatures look keeps its 3D effects; both exist side by side and t
 - **Trademarked Content**: Do not use trademarked names (e.g. _Chocobo_, _Moogle_, _Final Fantasy_, _Ivalice_). Use our original counterparts: _Swiftbeak_, _Skulker_, _Prismatic Ooze_, _Blade Warden_, etc. The one deliberate exception is the About sheet (`about-modal`), which credits _Crystal Defenders_ by name, links to where to buy it and states that this fan project is unaffiliated; keep that credit, and keep the names out of the game itself.
 - **Light Mazing Rule**: When placing an Aether Barricade on a `MAZE_SLOT` tile (`M`), the pathfinding service must verify that at least one valid path from spawn to sanctuary remains open. Monsters must never be completely sealed off.
 - **Controller Support**: All interactive game features must remain accessible via standard Gamepad API controls (A to place/upgrade, B to cancel, X to call or rush a wave, Y for the recruit menu, LB/RB to pick up and swap the hero being placed, RT for speed, D-Pad/sticks for map navigation) alongside keyboard and touch/mouse controls. Placing is a mode: the hero in hand hovers over the cursor tile (range ring red where it can't stand) until A, Enter or a click sets it down; B, Esc or right-click puts it back.
-- **Audio Synthesis**: Avoid external binary audio files. Use procedural Web Audio API synthesis in `AudioService` so the app remains lightweight, offline-first, and instant to load.
+- **Audio Synthesis**: Avoid external binary audio files. Use procedural Web Audio API synthesis in `AudioService` so the app remains lightweight, offline-first, and instant to load. Music follows the same rule: `MusicService` plays the score in `music-score.ts` through its own synths and AudioContext, starts only after the first user gesture, follows the global mute, has its own On / Soft / Off level (pause menu, `M`, RB in the menu), ducks while paused or in a menu, and adds layers for waves and boss waves. Keep it well under the sound effects. Music is original; reference tracks may set the style, never the melody.
 - **Sculpted Fallback**: Every hero and monster must keep a working sculpted miniature. `public/assets/models/manifest.json` must always exist (an empty one is fine) so the app never makes a failing request.
 - **Zero Regression Quality**: Any code changes must pass `npm test`, `npm run lint`, and `npm run format:check`.

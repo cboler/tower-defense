@@ -12,6 +12,7 @@ import { Subscription } from 'rxjs';
 import { GameService } from '../core/services/game.service';
 import { GamepadAction, GamepadService } from '../core/services/gamepad.service';
 import { AudioService } from '../core/services/audio.service';
+import { MusicLevel, MusicService } from '../core/services/music.service';
 import { ALL_MAPS } from '../core/models/map.model';
 import { TowerClassId } from '../core/models/tower.model';
 import { HudComponent } from './hud/hud.component';
@@ -259,6 +260,17 @@ import { BossBarComponent } from './boss-bar/boss-bar.component';
                   <app-icon [name]="audio.muted() ? 'mute' : 'volume'" />
                   <span>{{ audio.muted() ? 'Sound off' : 'Sound on' }}</span>
                   <span class="btn-kbd">Y</span>
+                </button>
+                <button
+                  type="button"
+                  class="option-tile"
+                  id="pause-music-btn"
+                  [class.is-off]="music.level() === 'off'"
+                  (click)="music.cycleLevel()"
+                >
+                  <app-icon name="music" />
+                  <span>Music: {{ musicLabel() }}</span>
+                  <span class="btn-kbd">RB</span>
                 </button>
                 <button type="button" class="option-tile" (click)="openFromMenu('about')">
                   <app-icon name="info" />
@@ -602,6 +614,10 @@ import { BossBarComponent } from './boss-bar/boss-bar.component';
           background: rgba(148, 163, 184, 0.12);
           border-color: var(--border-muted);
         }
+
+        &.is-off app-icon {
+          color: var(--text-muted);
+        }
       }
 
       .option-label {
@@ -670,6 +686,7 @@ export class GameComponent implements OnInit, OnDestroy {
   protected readonly game = inject(GameService);
   protected readonly gamepad = inject(GamepadService);
   protected readonly audio = inject(AudioService);
+  protected readonly music = inject(MusicService);
   protected readonly three = inject(ThreeBattlefieldService);
   private readonly document = inject(DOCUMENT);
   protected readonly allMaps = ALL_MAPS;
@@ -684,6 +701,14 @@ export class GameComponent implements OnInit, OnDestroy {
     isometric: 'Corner',
     topdown: 'Overhead',
   };
+
+  private static readonly MUSIC_LABELS: Record<MusicLevel, string> = {
+    on: 'On',
+    soft: 'Soft',
+    off: 'Off',
+  };
+
+  protected readonly musicLabel = computed(() => GameComponent.MUSIC_LABELS[this.music.level()]);
 
   protected readonly cameraLabel = computed(
     () => GameComponent.CAMERA_LABELS[this.three.activeCameraMode()],
@@ -727,6 +752,29 @@ export class GameComponent implements OnInit, OnDestroy {
         target?.focus({ preventScroll: true });
       }
       this.lastDialog = dialog;
+    });
+    // The battle theme follows the fight: calm while building, full band during a wave, more
+    // still for bosses; it quiets and muffles while the game is paused or a menu is up
+    effect(() => {
+      const game = this.game;
+      const wave = game.currentWaveDef();
+      const boss = !!wave && wave.threatBadge.includes('Boss');
+      this.music.mood.set(
+        game.isGameOver() || game.isVictory()
+          ? 'silent'
+          : !game.waveActive()
+            ? 'calm'
+            : boss
+              ? 'boss'
+              : 'battle',
+      );
+      this.music.ducked.set(
+        this.isPauseMenuOpen() ||
+          this.isAboutOpen() ||
+          game.isBestiaryModalOpen() ||
+          game.isCampaignModalOpen() ||
+          (game.isPaused() && game.waveActive()),
+      );
     });
     // Lets global styles reveal controller prompts only while a pad is in use
     effect(() => {
@@ -784,9 +832,11 @@ export class GameComponent implements OnInit, OnDestroy {
       window.removeEventListener('keydown', this.onGlobalKeyDown);
     }
     delete this.document.documentElement.dataset['input'];
+    this.music.mood.set('silent');
   }
 
   protected handleGamepadAction(action: GamepadAction): void {
+    this.music.unlock();
     // 1. Victory / Game Over modal handling
     if (this.game.isGameOver() || this.game.isVictory()) {
       if (action === 'confirm') {
@@ -812,6 +862,8 @@ export class GameComponent implements OnInit, OnDestroy {
         this.isPauseMenuOpen.set(false);
       } else if (action === 'recruit') {
         this.audio.toggleMute();
+      } else if (action === 'next-class') {
+        this.music.cycleLevel();
       } else if (action === 'cycle-camera') {
         this.cycleCameraPreset();
       } else if (action === 'confirm') {
@@ -990,6 +1042,10 @@ export class GameComponent implements OnInit, OnDestroy {
       else if (this.game.placingClassId() && !this.isPauseMenuOpen()) this.game.cancelPlacement();
       else this.isPauseMenuOpen.set(!this.isPauseMenuOpen());
       e.preventDefault();
+      return;
+    }
+    if (e.key === 'm' || e.key === 'M') {
+      this.music.cycleLevel();
       return;
     }
     if (dialog) {
