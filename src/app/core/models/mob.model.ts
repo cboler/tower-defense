@@ -51,7 +51,7 @@ export interface DamageStage {
 
 export interface StatusEffect {
   type: 'slow' | 'unsteady' | 'burn' | 'stun' | 'plundered';
-  slowSource?: 'chronomancer' | 'elementalist' | 'astrologian' | 'juggernaut';
+  slowSource?: 'chronomancer' | 'elementalist' | 'red-mage' | 'astrologian' | 'juggernaut';
   intensity: number; // e.g. 0.4 for 40% slow
   durationMs: number;
   remainingMs: number;

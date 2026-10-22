@@ -6,6 +6,8 @@ import {
   DamageType,
   JOB_UNLOCK_RULES,
   ORACLE_XP_SHARE,
+  RED_MAGE_PRISM_MULTIPLIER,
+  RED_MAGE_SPELLS,
   SAMURAI_SLASH_MULTIPLIER,
   TOWER_CLASSES,
   TargetPriority,
@@ -1281,9 +1283,11 @@ export class GameService implements OnDestroy {
       }
 
       case 'red-mage': {
-        // Dual-Cast Spellblade: Arcane flame burst damaging ground & air with AoE splash
-        this.audio.playExplosion();
-        this.spawnProjectile({
+        // Spellblade rotation: fire, ice, lightning, then a non-elemental Prism Impact
+        const spell = RED_MAGE_SPELLS[(tower.spellIndex ?? 0) % RED_MAGE_SPELLS.length];
+        tower.spellIndex = ((tower.spellIndex ?? 0) + 1) % RED_MAGE_SPELLS.length;
+        const splash = lvl.splashRadius ?? 1.2;
+        const shot = {
           sourceTowerId: tower.id,
           targetMobId: target.id,
           startX: tower.x,
@@ -1292,12 +1296,53 @@ export class GameService implements OnDestroy {
           currentY: tower.y,
           targetX: target.x,
           targetY: target.y,
-          speed: 9.5,
-          damage,
-          damageType: 'magic',
-          splashRadius: lvl.splashRadius ?? 1.2,
-          visualType: 'fireball',
-        });
+        };
+        if (spell === 'prism') {
+          this.audio.playPrism();
+          this.spawnProjectile({
+            ...shot,
+            speed: 7,
+            damage: damage * RED_MAGE_PRISM_MULTIPLIER,
+            damageType: 'pure',
+            splashRadius: splash * (tower.level >= 3 ? 1.5 : 1.25),
+            visualType: 'prism',
+          });
+        } else if (spell === 'ice') {
+          this.audio.playSlowPulse();
+          this.spawnProjectile({
+            ...shot,
+            speed: 9.5,
+            damage,
+            damageType: 'magic',
+            splashRadius: splash,
+            slowPercent: tower.level >= 2 ? 0.3 : 0.25,
+            slowDuration: 2,
+            slowSource: 'red-mage',
+            visualType: 'ice-shard',
+          });
+        } else if (spell === 'lightning') {
+          this.audio.playZap();
+          this.spawnProjectile({
+            ...shot,
+            speed: 13,
+            damage,
+            damageType: 'magic',
+            splashRadius: splash,
+            stunChance: 1,
+            stunDuration: tower.level >= 2 ? 0.9 : 0.6,
+            visualType: 'lightning-bolt',
+          });
+        } else {
+          this.audio.playExplosion();
+          this.spawnProjectile({
+            ...shot,
+            speed: 9.5,
+            damage,
+            damageType: 'magic',
+            splashRadius: splash,
+            visualType: 'fireball',
+          });
+        }
         break;
       }
 
@@ -1447,7 +1492,9 @@ export class GameService implements OnDestroy {
           ? '#7dd3fc'
           : proj.visualType === 'lightning-bolt'
             ? '#facc15'
-            : '#f97316';
+            : proj.visualType === 'prism'
+              ? '#e2e8f0'
+              : '#f97316';
       this.addParticle(proj.targetX, proj.targetY, color, proj.splashRadius, 'explosion');
 
       const affected = this.mobs().filter(

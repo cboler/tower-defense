@@ -191,6 +191,57 @@ export function paintTimeOrb(): PropArt {
   return strip(frames, [Math.floor(c), Math.floor(c)], 0.4);
 }
 
+const SILVER = [0x334155, 0x64748b, 0x94a3b8, 0xcbd5e1, 0xf1f5f9, 0xffffff].map(rgb);
+
+/**
+ * The Red Mage's Prism Impact: a silver diamond turning on its axis, its lit facet sweeping
+ * across as it spins, with three crystal motes orbiting it (in front of it, then behind).
+ */
+export function paintPrism(): PropArt {
+  const size = 23;
+  const c = Math.floor(size / 2);
+  const halfW = 4.5;
+  const halfH = 7.5;
+  const frames = [0, 1, 2, 3].map((f) => {
+    const out = new Raster(size, size);
+    const turn = (f / 4) * Math.PI * 2;
+    // The edge between the lit and shaded faces sweeps across the stone as it turns
+    const ridge = Math.sin(turn) * halfW * 0.7;
+    const motes = [0, 1, 2].map((i) => {
+      const a = turn / 3 + (i / 3) * Math.PI * 2;
+      return {
+        x: Math.round(c + Math.cos(a) * 9),
+        y: Math.round(c + Math.sin(a) * 3 - 1),
+        front: Math.sin(a) > 0,
+      };
+    });
+    const mote = (x: number, y: number, front: boolean) => {
+      out.set(x, y, front ? SILVER[5] : SILVER[3]);
+      out.set(x + 1, y, front ? SILVER[4] : SILVER[2]);
+      out.set(x, y - 1, front ? SILVER[4] : SILVER[2]);
+    };
+    for (const m of motes) if (!m.front) mote(m.x, m.y, false);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dx = x + 0.5 - (c + 0.5);
+        const dy = y + 0.5 - (c + 0.5);
+        if (Math.abs(dx) / halfW + Math.abs(dy) / halfH > 1) continue;
+        // Upper facets catch the light from the upper left; the far side of the ridge is shade
+        const lit = dx < ridge;
+        const upper = dy < 0;
+        const tone = lit ? (upper ? 5 : 3) : upper ? 2 : 1;
+        out.set(x, y, SILVER[tone]);
+      }
+    }
+    // A glint that travels up the lit face
+    out.set(c - 1, c - 3 + f, SILVER[5]);
+    for (const m of motes) if (m.front) mote(m.x, m.y, true);
+    outline(out, rgb(0x1e293b));
+    return out;
+  });
+  return strip(frames, [c, c], 0.32);
+}
+
 const STEEL = [0x0e4a5c, 0x22a5c4, 0x67e8f9, 0xe0fbff].map(rgb);
 
 /** The Rogue's thrown blade star, spinning. */

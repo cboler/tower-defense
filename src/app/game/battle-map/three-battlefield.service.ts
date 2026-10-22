@@ -16,6 +16,7 @@ import {
   paintFireball,
   paintIceShard,
   paintLightningBolt,
+  paintPrism,
   paintLightPillar,
   paintSlash,
   paintSpark,
@@ -105,6 +106,7 @@ const PROJECTILE_ARC: Record<Projectile['visualType'], number> = {
   fireball: 0.28,
   'ice-shard': 0.12,
   'lightning-bolt': 0.02,
+  prism: 0.22,
   'magic-spark': 0.1,
   'time-orb': 0.12,
   spear: 0.35,
@@ -119,6 +121,7 @@ const PIXEL_SHOTS: Record<Projectile['visualType'], [() => PropArt, boolean]> = 
   fireball: [paintFireball, true],
   'ice-shard': [paintIceShard, true],
   'lightning-bolt': [paintLightningBolt, true],
+  prism: [paintPrism, false],
   'time-orb': [paintTimeOrb, false],
   dagger: [paintBladeStar, false],
   'magic-spark': [() => paintSpark(), false],
@@ -132,6 +135,7 @@ const SHOT_COLOURS: Record<Projectile['visualType'], { trail: number | null; imp
   fireball: { trail: 0xf97316, impact: 0xfb923c },
   'ice-shard': { trail: 0x38bdf8, impact: 0x7dd3fc },
   'lightning-bolt': { trail: 0xfacc15, impact: 0xfef08a },
+  prism: { trail: 0xe2e8f0, impact: 0xf8fafc },
   'time-orb': { trail: 0xa855f7, impact: 0xc084fc },
   dagger: { trail: null, impact: 0x22d3ee },
   'magic-spark': { trail: 0x7dd3fc, impact: 0x38bdf8 },
@@ -3395,8 +3399,8 @@ export class ThreeBattlefieldService {
         }
         vis.sprite.update(simDt);
         vis.sprite.faceCamera(this.camera, this.sunYaw);
-      } else if (vis.hasPrev) {
-        // Point along the flight path
+      } else if (vis.hasPrev && p.visualType !== 'prism') {
+        // Point along the flight path (the prism stays upright, turning on its own axis)
         this.tmpVec.set(wx - vis.prev.x, y - vis.prev.y, wz - vis.prev.z);
         if (this.tmpVec.lengthSq() > 1e-8) {
           this.tmpVec.add(vis.group.position);
@@ -3410,6 +3414,11 @@ export class ThreeBattlefieldService {
       vis.spin += simDt;
       if (!vis.sprite && p.visualType === 'dagger') {
         vis.body.rotation.y = vis.spin * 28;
+      } else if (!vis.sprite && p.visualType === 'prism') {
+        // The diamond turns on its axis while its shards circle it
+        const [stone, orbit] = vis.body.children;
+        stone.rotation.y = vis.spin * 5;
+        orbit.rotation.y = -vis.spin * 8;
       } else if (!vis.sprite && (p.visualType === 'fireball' || p.visualType === 'time-orb')) {
         const pulse = 1 + Math.sin(vis.spin * 30) * 0.12;
         vis.body.scale.setScalar(pulse);
@@ -3494,6 +3503,34 @@ export class ThreeBattlefieldService {
           new THREE.MeshBasicMaterial({ color: 0xfde047 }),
         ),
       );
+    } else if (type === 'prism') {
+      // A silver diamond with three crystal shards orbiting it, kept upright as it flies
+      const stone = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.14, 0),
+        new THREE.MeshStandardMaterial({
+          color: 0xcbd5e1,
+          emissive: 0x334155,
+          emissiveIntensity: 0.6,
+          metalness: 0.55,
+          roughness: 0.18,
+          flatShading: true,
+        }),
+      );
+      stone.scale.set(0.8, 1.45, 0.8);
+      const orbit = new THREE.Group();
+      orbit.rotation.x = 0.35;
+      for (let i = 0; i < 3; i++) {
+        const shard = new THREE.Mesh(
+          new THREE.TetrahedronGeometry(0.045, 0),
+          new THREE.MeshBasicMaterial({ color: 0xf8fafc }),
+        );
+        const a = (i / 3) * Math.PI * 2;
+        shard.position.set(Math.cos(a) * 0.26, 0, Math.sin(a) * 0.26);
+        orbit.add(shard);
+      }
+      const glow = new THREE.Mesh(this.fxSphereGeo, this.additiveMat(0x94a3b8, 0.2));
+      glow.scale.setScalar(0.17);
+      body.add(stone, orbit, glow);
     } else if (type === 'time-orb') {
       body.add(new THREE.Mesh(this.fxSphereGeo, new THREE.MeshBasicMaterial({ color: 0xf5d0fe })));
       body.children[0].scale.setScalar(0.1);

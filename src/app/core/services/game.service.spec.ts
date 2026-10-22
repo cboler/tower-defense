@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GameService } from './game.service';
 import { ALL_MAPS, MAP_VERDANT_CROSSROADS } from '../models/map.model';
 import { MOB_TYPES, MobInstance } from '../models/mob.model';
-import { ORACLE_XP_SHARE, TOWER_CLASSES, XP_PER_KILL_GOLD } from '../models/tower.model';
+import {
+  ORACLE_XP_SHARE,
+  RED_MAGE_PRISM_MULTIPLIER,
+  TOWER_CLASSES,
+  XP_PER_KILL_GOLD,
+} from '../models/tower.model';
 
 describe('GameService', () => {
   let service: GameService;
@@ -150,6 +155,54 @@ describe('GameService', () => {
       service.isBestiaryModalOpen.set(true);
       service.isBestiaryModalOpen.set(false);
       expect(service.isPaused()).toBe(true);
+    });
+  });
+
+  describe('Red Mage spellweaving', () => {
+    it('casts fire, ice and lightning, then a non-elemental Prism Impact', () => {
+      service.gold.set(5000);
+      service.unlockedJobIds.set(new Set(['red-mage']));
+      service.placeTower(0, 0, 'red-mage');
+      const caster = service.towers()[0];
+      service['spawnMob']('skulker', 1);
+      const target = service.mobs()[0];
+      const config = TOWER_CLASSES['red-mage'].levels[0];
+      const cast = () => {
+        service.projectiles.set([]);
+        service['executeTowerAttack'](caster, target, config, config.damage, config.range);
+        return service.projectiles()[0];
+      };
+      const shots = [cast(), cast(), cast(), cast(), cast()];
+      expect(shots.map((s) => s.visualType)).toEqual([
+        'fireball',
+        'ice-shard',
+        'lightning-bolt',
+        'prism',
+        'fireball',
+      ]);
+      const [fire, ice, lightning, prism] = shots;
+      expect(fire).toMatchObject({ damage: config.damage, damageType: 'magic' });
+      expect(ice).toMatchObject({ slowPercent: 0.25, slowDuration: 2, slowSource: 'red-mage' });
+      expect(lightning).toMatchObject({ stunChance: 1, stunDuration: 0.6 });
+      expect(prism).toMatchObject({
+        damage: config.damage * RED_MAGE_PRISM_MULTIPLIER,
+        damageType: 'pure',
+        splashRadius: config.splashRadius! * 1.25,
+      });
+    });
+
+    it('strikes through armour and magic shields with the Prism Impact', () => {
+      service.unlockedJobIds.set(new Set(['red-mage']));
+      service.placeTower(0, 0, 'red-mage');
+      const caster = service.towers()[0];
+      caster.spellIndex = 3;
+      service['spawnMob']('pyre-core', 1);
+      const core = service.mobs()[0];
+      Object.assign(core, { x: 1, y: 1, hp: 100000 });
+      const config = TOWER_CLASSES['red-mage'].levels[0];
+      service['executeTowerAttack'](caster, core, config, config.damage, config.range);
+      service['onProjectileHit'](service.projectiles()[0], core);
+      expect(core.hp).toBe(100000 - config.damage * RED_MAGE_PRISM_MULTIPLIER);
     });
   });
 

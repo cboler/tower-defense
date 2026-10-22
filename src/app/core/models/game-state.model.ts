@@ -36,7 +36,8 @@ export interface Projectile {
     | 'magic-spark'
     | 'time-orb'
     | 'spear'
-    | 'dagger';
+    | 'dagger'
+    | 'prism';
 }
 
 export interface FloatingText {

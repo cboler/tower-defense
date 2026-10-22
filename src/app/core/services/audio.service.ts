@@ -164,6 +164,53 @@ export class AudioService {
     osc.stop(now + 0.25);
   }
 
+  /** A short electric crackle: a buzzing square wave that stutters as it falls. */
+  public playZap(): void {
+    const ctx = this.initContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1400, now);
+    osc.frequency.exponentialRampToValueAtTime(220, now + 0.16);
+    gain.gain.setValueAtTime(0.05, now);
+    for (let i = 1; i <= 4; i++) {
+      gain.gain.setValueAtTime(i % 2 ? 0.015 : 0.05, now + i * 0.025);
+    }
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.18);
+  }
+
+  /** The Red Mage's Prism Impact: a bright, glassy chime of rising fifths that rings out. */
+  public playPrism(): void {
+    const ctx = this.initContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [880, 1318.5, 1760, 2637].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const start = now + i * 0.035;
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, start);
+      osc.detune.setValueAtTime(i % 2 ? 6 : -6, start);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.setValueAtTime(0.06 - i * 0.01, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(start + 0.5);
+    });
+  }
+
   public playBuff(): void {
     const ctx = this.initContext();
     if (!ctx) return;

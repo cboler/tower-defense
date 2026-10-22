@@ -90,6 +90,13 @@ export const XP_PER_SUPPORT_GOLD = 10;
 export const ORACLE_XP_SHARE = 0.25;
 /** The Samurai's focused katana cut is stronger than its surrounding spirit cleave. */
 export const SAMURAI_SLASH_MULTIPLIER = 2;
+/**
+ * The Red Mage's spell rotation: fire, ice and lightning, then a non-elemental Prism Impact
+ * that ignores armour and magic shields and hits this many times harder.
+ */
+export const RED_MAGE_SPELLS = ['fire', 'ice', 'lightning', 'prism'] as const;
+export type RedMageSpell = (typeof RED_MAGE_SPELLS)[number];
+export const RED_MAGE_PRISM_MULTIPLIER = 2;
 
 export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
   'blade-warden': {
@@ -712,7 +719,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
     targetsAir: true,
     targetsGround: true,
     description:
-      'Master of both arcane destruction and divine healing arts. Rapidly dual-casts piercing flame and holy spells.',
+      'Spellblade who weaves fire, ice and lightning, then looses a non-elemental Prism Impact that no armour or ward can turn aside.',
     levels: [
       {
         level: 1,
@@ -722,7 +729,8 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 2.8,
         cadence: 0.85,
         splashRadius: 1.2,
-        specialDescription: 'Dual-cast: fires rapid flame spell followed by holy burst.',
+        specialDescription:
+          'Casts fire, ice (slows) and lightning (halts), then a Prism Impact: 2× non-elemental damage through armour and wards.',
       },
       {
         level: 2,
@@ -732,7 +740,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 3.0,
         cadence: 0.8,
         splashRadius: 1.3,
-        specialDescription: 'Increased spell velocity and amplified dual-cast thermal damage.',
+        specialDescription: 'Faster spells; colder frost and longer lightning halts.',
       },
       {
         level: 3,
@@ -742,7 +750,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 3.2,
         cadence: 0.75,
         splashRadius: 1.4,
-        specialDescription: 'Dual-cast holy waves pierce 25% of magic resistance.',
+        specialDescription: 'The Prism Impact bursts wider, shattering whole packs.',
       },
       {
         level: 4,
@@ -752,7 +760,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 3.4,
         cadence: 0.7,
         splashRadius: 1.5,
-        specialDescription: 'High-frequency dual burst vaporizing grouped ground and air creeps.',
+        specialDescription: 'High-frequency spellweaving across ground and air.',
       },
       {
         level: 5,
@@ -762,7 +770,7 @@ export const TOWER_CLASSES: Record<TowerClassId, TowerClassDefinition> = {
         range: 3.6,
         cadence: 0.65,
         splashRadius: 1.6,
-        specialDescription: 'Legendary twin-cast cataclysms melting all resistances.',
+        specialDescription: 'Legendary spellweaving; every element at full strength.',
       },
     ],
   },
@@ -1181,7 +1189,7 @@ export const JOB_UNLOCK_RULES: Record<string, JobUnlockRule> = {
       { classId: 'oracle', minLevel: 2 },
     ],
     hint: 'Upgrade an Elementalist (Black Mage) to Lv. 2 and an Oracle (White Mage) to Lv. 2',
-    lore: 'Master of both arcane destruction and radiant restoration. Weaves fire and holy spells with equal finesse.',
+    lore: 'Spellblade of both black and white arts. Weaves fire, ice and lightning, then shatters foes with a non-elemental prism.',
   },
   ninja: {
     targetClassId: 'ninja',
