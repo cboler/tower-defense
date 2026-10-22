@@ -1,4 +1,13 @@
-import { Component, computed, inject, output, signal } from '@angular/core';
+import {
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+  untracked,
+} from '@angular/core';
 import { GameService } from '../../core/services/game.service';
 import {
   ADVANCED_TOWER_CLASSES,
@@ -26,7 +35,7 @@ import { IconComponent } from '../icon/icon.component';
 
       <!-- Header: what is selected -->
       <header class="panel-header">
-        @if (game.selectedTower(); as tower) {
+        @if (dossierTower(); as tower) {
           <span class="head-avatar" [style.--accent]="getDef(tower.classId).color">
             @if (tower.classId === 'barricade') {
               <app-icon name="shield" [size]="22" />
@@ -63,7 +72,7 @@ import { IconComponent } from '../icon/icon.component';
 
       <!-- Body -->
       <div class="panel-scroll-content">
-        @if (game.selectedTower(); as tower) {
+        @if (dossierTower(); as tower) {
           <div class="tower-dossier">
             @if (tower.classId !== 'barricade') {
               <p class="perk">{{ getCurLevel(tower).specialDescription }}</p>
@@ -392,7 +401,7 @@ import { IconComponent } from '../icon/icon.component';
               </section>
             }
           </div>
-        } @else if (game.selectedTile() && isMazeTile(game.selectedTile()!)) {
+        } @else if (!recruiting() && game.selectedTile() && isMazeTile(game.selectedTile()!)) {
           <div class="maze-brief">
             <span class="maze-icon"><app-icon name="shield" [size]="26" /></span>
             <p>
@@ -439,7 +448,9 @@ import { IconComponent } from '../icon/icon.component';
                   [class.is-active]="game.selectedClassId() === c.id"
                   [class.is-unaffordable]="game.gold() < c.cost"
                   [class.is-locked]="!isClassUnlocked(c.id)"
+                  [attr.data-recruit]="recruiting() ? '' : null"
                   (click)="onClassCardClick(c)"
+                  (focus)="onClassCardFocus(c)"
                   [title]="c.name + ' — ' + c.description"
                   [attr.aria-label]="(isClassUnlocked(c.id) ? 'Recruit ' : 'Locked ') + c.name"
                 >
@@ -540,7 +551,7 @@ import { IconComponent } from '../icon/icon.component';
 
       <!-- Sticky actions -->
       <footer class="panel-sticky-actions" aria-label="Actions">
-        @if (game.selectedTower(); as tower) {
+        @if (dossierTower(); as tower) {
           @if (getNextLevel(tower); as nextLvl) {
             <button
               type="button"
@@ -567,6 +578,23 @@ import { IconComponent } from '../icon/icon.component';
           >
             <span>Sell</span>
             <span class="btn-cost">+{{ getRefund(tower) }}G</span>
+          </button>
+        } @else if (recruiting()) {
+          <button
+            type="button"
+            class="cw-btn primary action-main"
+            id="recruit-place-btn"
+            [disabled]="!isClassUnlocked(game.selectedClassId())"
+            (click)="game.beginPlacement(game.selectedClassId())"
+          >
+            @if (!isClassUnlocked(game.selectedClassId())) {
+              <app-icon name="lock" [size]="16" />
+              <span>{{ activeClassDef().name }} is locked</span>
+            } @else {
+              <span>Place {{ activeClassDef().name }}</span>
+              <span class="btn-cost">{{ activeClassDef().cost }}G</span>
+            }
+            <span class="gamepad-pill" aria-hidden="true">A</span>
           </button>
         } @else if (game.selectedTile(); as tile) {
           @if (isBuildTile(tile)) {
@@ -1350,8 +1378,25 @@ import { IconComponent } from '../icon/icon.component';
   ],
 })
 export class TowerPanelComponent {
+  /** 'tile' commands the selected tile; 'recruit' is the Y menu that hands a hero to placement. */
+  public readonly mode = input<'tile' | 'recruit'>('tile');
   public readonly closePanel = output<void>();
   protected readonly game = inject(GameService);
+  protected readonly recruiting = computed(() => this.mode() === 'recruit');
+  /** The tower whose dossier shows; the recruit menu always shows the deck instead. */
+  protected readonly dossierTower = computed(() =>
+    this.recruiting() ? null : this.game.selectedTower(),
+  );
+
+  constructor() {
+    // The deck opens on, and follows, the selected hero's tab (LB / RB and [ ] cycle heroes)
+    effect(() => {
+      const id = this.game.selectedClassId();
+      untracked(() =>
+        this.activeTab.set(ADVANCED_TOWER_CLASSES.some((c) => c.id === id) ? 'advanced' : 'base'),
+      );
+    });
+  }
   protected readonly round = Math.round;
   protected readonly samuraiSlashMultiplier = SAMURAI_SLASH_MULTIPLIER;
 
@@ -1378,6 +1423,7 @@ export class TowerPanelComponent {
 
   protected readonly eyebrow = computed(() => {
     const tile = this.game.selectedTile();
+    if (this.recruiting()) return 'Recruit · choose a hero to place';
     if (!tile) return 'Recruit';
     if (this.isBuildTile(tile)) return `Platform ${tile.x}, ${tile.y}`;
     if (this.isMazeTile(tile)) return `Maze slot ${tile.x}, ${tile.y}`;
@@ -1386,13 +1432,14 @@ export class TowerPanelComponent {
 
   protected readonly heading = computed(() => {
     const tile = this.game.selectedTile();
-    if (tile && this.isMazeTile(tile)) return 'Aether Barricade';
+    if (!this.recruiting() && tile && this.isMazeTile(tile)) return 'Aether Barricade';
     return this.activeClassDef().name;
   });
 
   public onClose(): void {
     this.closePanel.emit();
     this.game.isCommandMenuOpen.set(false);
+    this.game.isRecruitMenuOpen.set(false);
   }
 
   protected readonly priorities: TargetPriority[] = [
@@ -1408,7 +1455,18 @@ export class TowerPanelComponent {
     return this.game.isClassUnlocked(classId);
   }
 
+  /** Browsing the recruit menu with the D-pad previews each hero as it is reached. */
+  protected onClassCardFocus(c: TowerClassDefinition): void {
+    if (this.recruiting()) this.game.selectedClassId.set(c.id);
+  }
+
   protected onClassCardClick(c: TowerClassDefinition): void {
+    if (this.recruiting()) {
+      // Picking an unlocked hero puts it in hand; locked ones only show what they need
+      if (this.isClassUnlocked(c.id)) this.game.beginPlacement(c.id);
+      else this.game.setSelectedClass(c.id);
+      return;
+    }
     const tile = this.game.selectedTile();
     // Quick deploy if already selected and affordable and build tile
     if (

@@ -84,7 +84,7 @@ describe('GamepadService for Tower Defense', () => {
     expect(service.connected()).toBe(false);
   });
 
-  it('dispatches X (start wave) and Y (toggle speed) actions on press edge', () => {
+  it('dispatches X (call wave), Y (recruit) and RT (speed) actions on press edge', () => {
     tick();
     press(2, true); // Button X
     tick(20);
@@ -94,7 +94,13 @@ describe('GamepadService for Tower Defense', () => {
     tick(40);
     press(3, true); // Button Y
     tick(60);
-    expect(actions).toEqual(['start-wave', 'toggle-speed']);
+    expect(actions).toEqual(['start-wave', 'recruit']);
+
+    press(3, false);
+    tick(80);
+    press(7, true); // RT
+    tick(100);
+    expect(actions).toEqual(['start-wave', 'recruit', 'toggle-speed']);
   });
 
   it('cycles class selection with LB (button 4) and RB (button 5)', () => {

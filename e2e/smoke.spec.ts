@@ -34,11 +34,12 @@ test.describe('Crystal Wardens Tower Defense Smoke Tests', () => {
     }
 
     // 4. Controller & Keyboard interaction test (pure controller/keyboard playable)
-    // Press '2' to select Ranger class
+    // Press '2' to pick up a Ranger, then Escape to put it back
     await page.keyboard.press('Digit2');
-    await expect(page.locator('.class-card[aria-label*="Ranger"]')).toBeVisible();
+    await expect(page.locator('.placement-chip')).toContainText('Ranger');
 
     await page.keyboard.press('Escape');
+    await expect(page.locator('.placement-chip')).not.toBeVisible();
     await expect(page.locator('.tower-command-panel')).not.toBeVisible();
 
     // Navigate grid with arrow keys

@@ -56,6 +56,49 @@ import { IconComponent } from '../icon/icon.component';
 
       <!-- Main Battlefield Stage (Three.js WebGL Engine) -->
       <div class="battlefield-stage-wrapper">
+        @if (game.placementPreview(); as preview) {
+          @let def = classDef(preview.classId);
+          <div
+            class="placement-chip"
+            role="status"
+            [class.is-blocked]="!!preview.problem"
+            [style.--accent]="def.color"
+          >
+            @if (preview.classId === 'barricade') {
+              <span class="chip-face"><app-icon name="shield" [size]="18" /></span>
+            } @else {
+              <img
+                class="chip-face"
+                [src]="'assets/portraits/' + preview.classId + '.png'"
+                alt=""
+              />
+            }
+            <span class="chip-text">
+              <span class="chip-name">{{ def.name }} · {{ def.cost }}G</span>
+              <span class="chip-state">{{ preview.problem?.text ?? 'Ready to place' }}</span>
+            </span>
+            <button
+              type="button"
+              class="chip-cancel"
+              (click)="game.cancelPlacement()"
+              aria-label="Put the hero back [B / Esc]"
+            >
+              <app-icon name="close" [size]="16" />
+            </button>
+          </div>
+        } @else {
+          <button
+            type="button"
+            class="map-fab recruit-fab"
+            id="recruit-fab"
+            (click)="game.openRecruitMenu()"
+            title="Recruit a defender [Y]"
+            aria-label="Recruit a defender"
+          >
+            <app-icon name="swords" [size]="18" /><span>Recruit</span>
+            <span class="gamepad-hint" aria-hidden="true">Y</span>
+          </button>
+        }
         @if (livingEnemies().length) {
           <button
             type="button"
@@ -269,24 +312,12 @@ import { IconComponent } from '../icon/icon.component';
       </div>
 
       <footer class="controller-guide-bar" aria-label="Battle controls">
-        <div class="guide-item">
-          <kbd class="key-badge">D-Pad / Arrows</kbd><span class="guide-desc">Move</span>
-        </div>
-        <div class="guide-item">
-          <kbd class="key-badge">A / Enter</kbd><span class="guide-desc">Commands / Inspect</span>
-        </div>
-        <div class="guide-item">
-          <kbd class="key-badge">E</kbd><span class="guide-desc">Enemies</span>
-        </div>
-        <div class="guide-item">
-          <kbd class="key-badge">X</kbd><span class="guide-desc">Call wave</span>
-        </div>
-        <div class="guide-item">
-          <kbd class="key-badge">Y</kbd><span class="guide-desc">Speed</span>
-        </div>
-        <div class="guide-item">
-          <kbd class="key-badge">Start / Esc</kbd><span class="guide-desc">Menu</span>
-        </div>
+        @for (hint of guideHints(); track hint.action) {
+          <div class="guide-item">
+            <kbd class="key-badge">{{ hint.key }}</kbd
+            ><span class="guide-desc">{{ hint.action }}</span>
+          </div>
+        }
       </footer>
     </div>
   `,
@@ -296,6 +327,102 @@ import { IconComponent } from '../icon/icon.component';
         top: auto;
         bottom: 12px;
         right: 12px;
+      }
+
+      .map-fab.recruit-fab {
+        top: auto;
+        right: auto;
+        bottom: 12px;
+        left: 12px;
+        color: var(--text-primary);
+        border-color: color-mix(in srgb, var(--color-primary) 55%, transparent);
+      }
+
+      .recruit-fab .gamepad-hint {
+        min-width: 18px;
+        height: 18px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: #eab308;
+        color: #111827;
+        font-size: 0.6875rem;
+        font-weight: 800;
+      }
+
+      /* The hero in hand: who it is, what it costs and whether it can stand on this tile */
+      .placement-chip {
+        position: absolute;
+        left: 50%;
+        bottom: 12px;
+        transform: translateX(-50%);
+        z-index: 30;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: calc(100% - 140px);
+        padding: 4px 4px 4px 6px;
+        border-radius: var(--radius-full);
+        background: color-mix(in srgb, #0b0f1a 86%, transparent);
+        border: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+        box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 35%, transparent);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+
+        &.is-blocked {
+          border-color: rgba(239, 68, 68, 0.75);
+          box-shadow: 0 0 16px rgba(239, 68, 68, 0.3);
+
+          .chip-state {
+            color: #fca5a5;
+          }
+        }
+      }
+
+      .chip-face {
+        flex-shrink: 0;
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        object-fit: cover;
+        background: color-mix(in srgb, var(--accent) 30%, #0b0f1a);
+        color: var(--text-primary);
+      }
+
+      .chip-text {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        line-height: 1.2;
+      }
+
+      .chip-name {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        font-size: var(--font-size-xs);
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .chip-state {
+        font-size: 0.6875rem;
+        color: #86efac;
+      }
+
+      .chip-cancel {
+        flex-shrink: 0;
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        border-radius: 50%;
+        background: rgba(148, 163, 184, 0.12);
+        border: 1px solid var(--border-subtle);
+        color: var(--text-secondary);
       }
 
       :host {
@@ -884,6 +1011,34 @@ export class BattleMapComponent implements AfterViewInit, OnDestroy {
     this.game.moveCursor(gx, gy);
   }
 
+  /** The controls strip: controller or keyboard keys, and what they do right now. */
+  protected readonly guideHints = computed(() => {
+    const pad = this.gamepad.lastActiveInput() === 'gamepad';
+    const key = (gamepad: string, keyboard: string) => (pad ? gamepad : keyboard);
+    const move = { key: key('D-Pad', 'Arrows'), action: 'Move' };
+    if (this.game.placingClassId()) {
+      return [
+        move,
+        { key: key('A', 'Enter / Click'), action: 'Place' },
+        { key: key('LB / RB', '[ / ]'), action: 'Change hero' },
+        { key: key('B', 'Esc'), action: 'Put back' },
+      ];
+    }
+    return [
+      move,
+      { key: key('A', 'Enter'), action: 'Commands / Inspect' },
+      { key: 'Y', action: 'Recruit' },
+      { key: key('LB / RB', '[ / ]'), action: 'Pick up hero' },
+      { key: 'X', action: this.game.waveActive() ? 'Rush' : 'Call wave' },
+      { key: key('RT', 'F'), action: 'Speed' },
+      { key: key('Start', 'Esc'), action: 'Menu' },
+    ];
+  });
+
+  protected classDef(classId: TowerClassId) {
+    return TOWER_CLASSES[classId];
+  }
+
   protected readonly activeClassDef = computed(() => TOWER_CLASSES[this.game.selectedClassId()]);
   protected readonly livingEnemies = computed(() =>
     this.game.mobs().filter((m) => !m.isDead && !m.hasEscaped),
@@ -941,7 +1096,7 @@ export class BattleMapComponent implements AfterViewInit, OnDestroy {
   }
 
   protected onCellClick(x: number, y: number): void {
-    if (!this.game.inspectEnemyAt(x, y)) this.game.openTileMenu(x, y);
+    this.game.activateTile(x, y);
   }
 
   protected getCellTooltip(tile: TileCode, x: number, y: number): string {
@@ -1036,14 +1191,14 @@ export class BattleMapComponent implements AfterViewInit, OnDestroy {
         break;
       case 'Enter': {
         const tile = this.game.selectedTile();
-        if (tile && !this.game.inspectEnemyAt(tile.x, tile.y))
-          this.game.openTileMenu(tile.x, tile.y);
+        if (tile) this.game.activateTile(tile.x, tile.y);
         event.preventDefault();
         event.stopPropagation();
         break;
       }
       case 'Escape':
-        this.game.selectTile(-1, -1);
+        // While a hero is in hand, Escape puts it back (handled by the game) and keeps the cursor
+        if (!this.game.placingClassId()) this.game.selectTile(-1, -1);
         break;
     }
   }

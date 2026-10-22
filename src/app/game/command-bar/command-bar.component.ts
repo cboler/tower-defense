@@ -37,7 +37,7 @@ import { IconComponent } from '../icon/icon.component';
         id="speed-btn"
         [class.fast]="game.gameSpeed() > 1"
         (click)="game.cycleSpeed()"
-        [title]="'Game Speed ' + game.gameSpeed() + 'x [Y]'"
+        [title]="'Game Speed ' + game.gameSpeed() + 'x [F / RT]'"
         [attr.aria-label]="'Game speed ' + game.gameSpeed() + 'x'"
       >
         <span class="speed-label">{{ game.gameSpeed() }}×</span>
@@ -133,7 +133,7 @@ import { IconComponent } from '../icon/icon.component';
               [disabled]="!game.canRushWave()"
               [title]="
                 game.canRushWave()
-                  ? 'Rush next wave for +' + game.earlyCallBonusGold() + 'G [R]'
+                  ? 'Rush next wave for +' + game.earlyCallBonusGold() + 'G [X]'
                   : 'Rush unlocks once the vanguard engages'
               "
               [attr.aria-label]="'Rush next wave for ' + game.earlyCallBonusGold() + ' Gold bonus'"
@@ -143,7 +143,7 @@ import { IconComponent } from '../icon/icon.component';
                 <span class="primary-label">Rush</span>
                 <span class="primary-meta">+{{ game.earlyCallBonusGold() }}G</span>
               </span>
-              <span class="gamepad-hint" aria-hidden="true">R</span>
+              <span class="gamepad-hint" aria-hidden="true">X</span>
             </button>
           } @else {
             <div class="final-wave" role="status">Final wave</div>

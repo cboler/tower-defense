@@ -248,7 +248,41 @@ test('standard Gamepad API controls recruit, upgrade, and dismiss contextual com
   await press(1);
   await expect(page.locator('.tower-command-dock')).not.toBeVisible();
   await expect(page.locator('#pause-title')).not.toBeVisible();
+  // Y summons the recruit menu; A picks the focused hero and carries it over the board.
+  // Start in open meadow, so the D-pad step below lands on a build tile on every screen.
+  await page.evaluate(() => {
+    const inspector = (
+      window as unknown as { ng: { getComponent(el: Element): { game: GameService } } }
+    ).ng;
+    inspector.getComponent(document.querySelector('app-game')!).game.selectTile(12, 4);
+  });
   await press(3);
+  await expect(page.getByRole('dialog', { name: 'Recruit a defender' })).toBeVisible();
+  await expect(page.locator('.class-card.is-active')).toBeFocused();
+  await press(0);
+  await expect(page.locator('.placement-chip')).toContainText('Ranger');
+  // The D-pad walks the hero to the next tile; A sets it down there
+  await press(15);
+  await expect(page.locator('.placement-chip')).toContainText('Ready to place');
+  await press(0);
+  await expect(page.locator('.placement-chip')).not.toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const inspector = (
+          window as unknown as { ng: { getComponent(el: Element): { game: GameService } } }
+        ).ng;
+        return inspector.getComponent(document.querySelector('app-game')!).game.towers().length;
+      }),
+    )
+    .toBe(2);
+  // RB picks up a hero straight from the board; B puts it back
+  await press(5);
+  await expect(page.locator('.placement-chip')).toBeVisible();
+  await press(1);
+  await expect(page.locator('.placement-chip')).not.toBeVisible();
+  // RT changes the speed
+  await press(7);
   await expect(page.locator('#speed-btn')).toContainText('2×');
   await press(9);
   await expect(page.locator('#pause-title')).toBeVisible();

@@ -5,6 +5,7 @@ export type GamepadAction =
   | 'confirm'
   | 'cancel'
   | 'start-wave'
+  | 'recruit'
   | 'toggle-speed'
   | 'prev-class'
   | 'next-class'
@@ -136,12 +137,21 @@ export class GamepadService implements OnDestroy {
     // Buttons
     // 0: A (Confirm / Place / Upgrade)
     // 1: B (Cancel / Deselect)
-    // 2: X (Start / Call Wave)
-    // 3: Y (Cycle Speed 1x -> 2x -> 4x)
-    // 4: LB (Previous Class)
-    // 5: RB (Next Class)
+    // 2: X (Call Wave / Rush)
+    // 3: Y (Recruit menu)
+    // 4: LB (Previous hero to place)
+    // 5: RB (Next hero to place)
+    // 7: RT (Cycle Speed 1x -> 2x -> 4x)
     const hasAnyButtonEdge =
-      edge(0) || edge(1) || edge(2) || edge(3) || edge(4) || edge(5) || edge(8) || edge(9);
+      edge(0) ||
+      edge(1) ||
+      edge(2) ||
+      edge(3) ||
+      edge(4) ||
+      edge(5) ||
+      edge(7) ||
+      edge(8) ||
+      edge(9);
 
     if (hasAnyButtonEdge) {
       this.zone.run(() => {
@@ -154,10 +164,13 @@ export class GamepadService implements OnDestroy {
           // Cancel button
           this.cancel();
         } else if (edge(2)) {
-          // X: Start Wave / Action
+          // X: Call Wave / Rush
           this.actionSource.next('start-wave');
         } else if (edge(3)) {
-          // Y: Toggle Speed / Action
+          // Y: Recruit menu
+          this.actionSource.next('recruit');
+        } else if (edge(7)) {
+          // RT: Toggle Speed
           this.actionSource.next('toggle-speed');
         } else if (edge(4)) {
           // LB: Prev Class

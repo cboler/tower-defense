@@ -345,6 +345,9 @@ export class ThreeBattlefieldService {
 
   // Entity visuals & effect pools
   private towerVisuals = new Map<string, TowerVisual>();
+  /** The hero in hand while placing: its piece hovering over the cursor tile. */
+  private ghost: { key: string; group: THREE.Group; rig: PieceRig | null; age: number } | null =
+    null;
   private mobVisuals = new Map<string, MobVisual>();
   private projectileVisuals = new Map<string, ProjectileVisual>();
   private fadingVisuals: FadingVisual[] = [];
@@ -2057,10 +2060,44 @@ export class ThreeBattlefieldService {
     }
   }
 
+  /** The board tile under a pointer, if any. */
+  private tileAtPointer(
+    canvas: HTMLCanvasElement,
+    e: PointerEvent,
+  ): { x: number; y: number } | null {
+    if (!this.camera || this.tileMeshes.length === 0) return null;
+    const rect = canvas.getBoundingClientRect();
+    this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const hit = this.raycaster.intersectObjects(this.tileMeshes.map((t) => t.mesh))[0];
+    return this.tileMeshes.find((t) => t.mesh === hit?.object) ?? null;
+  }
+
   private setupPointerEvents(canvas: HTMLCanvasElement, game: GameService): void {
+    // A hero in hand follows a mouse from tile to tile; touch moves it by tapping instead
+    canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'mouse' || !game.placingClassId() || game.isModalOpen()) return;
+      const tile = this.tileAtPointer(canvas, e);
+      const sel = game.selectedTile();
+      if (tile && (tile.x !== sel?.x || tile.y !== sel?.y)) {
+        game.selectedTile.set({ x: tile.x, y: tile.y });
+      }
+    });
+    canvas.addEventListener('contextmenu', (e) => {
+      if (!game.placingClassId()) return;
+      e.preventDefault();
+      game.cancelPlacement();
+    });
     canvas.addEventListener('pointerdown', (e) => {
       if (game.isModalOpen()) return;
       canvas.closest<HTMLElement>('#battlefield-map')?.focus({ preventScroll: true });
+      if (game.placingClassId()) {
+        // Clicking sets the hero down (right-click puts it back, via contextmenu)
+        const tile = e.button === 0 ? this.tileAtPointer(canvas, e) : null;
+        if (tile) game.activateTile(tile.x, tile.y);
+        return;
+      }
       const rect = canvas.getBoundingClientRect();
       this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -2305,7 +2342,7 @@ export class ThreeBattlefieldService {
         const { x, z } = this.reticleMesh.position;
         decal.position.set(snap(x), top + 0.006, snap(z));
         texture.offset.x = Math.floor(elapsed * 3) % 2 ? 0.5 : 0;
-        const above = game.selectedTower() ? 1.95 : 0.85;
+        const above = game.selectedTower() || game.placingClassId() ? 1.95 : 0.85;
         const bob = Math.round(Math.abs(Math.sin(elapsed * 3)) * 3) * PROP_PIXEL;
         gem.root.position.set(decal.position.x, top + above + bob, decal.position.z);
         gem.update(dt);
@@ -2314,7 +2351,12 @@ export class ThreeBattlefieldService {
     }
 
     // 7. Range Overlay Update (geometry rebuilt only when the radius changes)
-    const selTower = game.selectedTower();
+    // A hero in hand shows its own reach wherever it hovers, red where it can't be set down
+    const placing = game.placementPreview();
+    const selTower = placing ? null : game.selectedTower();
+    const rangeColor = placing?.problem ? 0xef4444 : 0x38bdf8;
+    (this.rangeMesh?.material as THREE.MeshBasicMaterial | undefined)?.color.setHex(rangeColor);
+    this.pixelRange?.color.setHex(rangeColor);
     if (this.supportRangeMesh) {
       const classId = selTower?.classId ?? game.selectedClassId();
       const level = TOWER_CLASSES[classId].levels[(selTower?.level ?? 1) - 1];
@@ -2323,7 +2365,7 @@ export class ThreeBattlefieldService {
       this.supportRangeMesh.visible = !!(
         sel &&
         radius &&
-        (selTower || map.tiles[sel.y]?.[sel.x] === 'B')
+        (selTower || placing || map.tiles[sel.y]?.[sel.x] === 'B')
       );
       if (sel && radius) {
         this.supportRangeMesh.scale.setScalar(radius * this.TILE_SIZE);
@@ -2338,7 +2380,7 @@ export class ThreeBattlefieldService {
       let rangeRadius = 0;
       if (selTower && selTower.classId !== 'barricade') {
         rangeRadius = game.towerRange(selTower) * this.TILE_SIZE;
-      } else if (sel && map.tiles[sel.y]?.[sel.x] === 'B') {
+      } else if (sel && (placing || map.tiles[sel.y]?.[sel.x] === 'B')) {
         const curClass = TOWER_CLASSES[game.selectedClassId()];
         if (curClass.id !== 'barricade') {
           rangeRadius = curClass.levels[0].range * this.TILE_SIZE;
@@ -2392,6 +2434,7 @@ export class ThreeBattlefieldService {
     }
 
     // 8. Synchronize Dynamic Entities & Effects
+    this.syncGhost(game, dt);
     this.syncTowers(game, halfW, halfH, dt, simDt, elapsed);
     this.syncMobs(game, halfW, halfH, dt, simDt);
     this.syncProjectiles(game, halfW, halfH, simDt);
@@ -2442,6 +2485,56 @@ export class ThreeBattlefieldService {
   // ---------------------------------------------------------------------------
   // Heroes (towers)
   // ---------------------------------------------------------------------------
+
+  /**
+   * Placement mode: the carried hero hovers and bobs over the cursor, gliding with it from tile
+   * to tile, until it is set down (then syncTowers drops the real piece in) or put back.
+   */
+  private syncGhost(game: GameService, dt: number): void {
+    const classId = game.placementPreview()?.classId;
+    const key = classId && `${classId}:${this.pieceKey('heroes', classId)}`;
+    if (this.ghost && this.ghost.key !== key) {
+      this.ghost.rig?.dispose();
+      this.scene?.remove(this.ghost.group);
+      this.disposeObject(this.ghost.group);
+      this.ghost = null;
+    }
+    if (!classId || !key || !this.scene || !this.reticleMesh) return;
+
+    if (!this.ghost) {
+      const group = new THREE.Group();
+      let rig: PieceRig | null = null;
+      if (classId === 'barricade') {
+        group.add(this.createTowerMesh({ classId, level: 1 }));
+      } else {
+        const holder = new THREE.Group();
+        rig = this.buildPiece('heroes', classId);
+        this.mountRig(holder, rig, null);
+        group.add(holder);
+      }
+      group.position.copy(this.reticleMesh.position);
+      this.scene.add(group);
+      this.ghost = { key, group, rig, age: 0 };
+    }
+
+    const ghost = this.ghost;
+    ghost.age += dt;
+    const { x, z } = this.reticleMesh.position;
+    const bob = this.reducedMotion ? 0 : Math.sin(ghost.age * 4) * 0.05;
+    ghost.group.position.set(x, 0.5 + bob, z);
+    // Picked up with a little pop, so swapping heroes with LB / RB reads at a glance
+    const pop = Math.min(1, ghost.age / 0.25);
+    ghost.group.scale.setScalar(Math.max(0.001, this.easeOutBack(pop)));
+    const rig = ghost.rig;
+    if (!rig) return;
+    if (rig instanceof SpriteActor) {
+      if (this.camera) rig.faceCamera(this.camera, this.sunYaw);
+    } else if (!rig.animated) {
+      const holder = ghost.group.children[0] as THREE.Group;
+      animateModel(holder, this.reducedMotion ? 0 : ghost.age * 2.4, 0, 0);
+    }
+    rig.update(this.reducedMotion ? 0 : dt);
+  }
 
   private syncTowers(
     game: GameService,
@@ -4158,6 +4251,7 @@ export class ThreeBattlefieldService {
     this.scene = null;
     this.camera = null;
     this.towerVisuals.clear();
+    this.ghost = null;
     this.mobVisuals.clear();
     this.projectileVisuals.clear();
     this.fadingVisuals = [];

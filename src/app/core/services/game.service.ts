@@ -1,6 +1,8 @@
 import { Injectable, NgZone, OnDestroy, computed, inject, signal } from '@angular/core';
 import { MAP_VERDANT_CROSSROADS, MapDefinition, Point } from '../models/map.model';
 import {
+  ADVANCED_TOWER_CLASSES,
+  BASE_TOWER_CLASSES,
   DamageType,
   JOB_UNLOCK_RULES,
   ORACLE_XP_SHARE,
@@ -27,6 +29,17 @@ import { CampaignService } from './campaign.service';
 import { CampaignMission } from '../models/campaign.model';
 import { GameRulesService, TowerBuff } from './game-rules.service';
 import { StoryService } from './story.service';
+
+/** Why a hero can't be set down on a tile, as the floating text that says so. */
+export interface PlacementProblem {
+  text: string;
+  color: string;
+}
+
+/** Recruit order, as in the recruit deck: wardens, the barricade, then advanced jobs. */
+const RECRUIT_ORDER: TowerClassId[] = [...BASE_TOWER_CLASSES, ...ADVANCED_TOWER_CLASSES].map(
+  (c) => c.id,
+);
 
 interface SpawnQueueItem {
   mobType: MobTypeId;
@@ -62,6 +75,10 @@ export class GameService implements OnDestroy {
   public readonly isBestiaryModalOpen = signal<boolean>(false);
   public readonly isScoutOpen = signal<boolean>(false);
   public readonly isCommandMenuOpen = signal(false);
+  /** The recruit menu summoned from anywhere (Y), which hands a hero to placement mode. */
+  public readonly isRecruitMenuOpen = signal(false);
+  /** The hero being carried over the board, waiting to be set down; null when not placing. */
+  public readonly placingClassId = signal<TowerClassId | null>(null);
   public readonly isOptionsMenuOpen = signal(false);
   public readonly isAboutModalOpen = signal(false);
   public readonly bestiaryTypeId = signal<MobTypeId>('skulker');
@@ -73,6 +90,7 @@ export class GameService implements OnDestroy {
   public readonly isModalOpen = computed(
     () =>
       this.isCommandMenuOpen() ||
+      this.isRecruitMenuOpen() ||
       this.isOptionsMenuOpen() ||
       this.isScoutOpen() ||
       this.isCampaignModalOpen() ||
@@ -85,6 +103,7 @@ export class GameService implements OnDestroy {
     if (!mob) return;
     this.selectedTile.set(null);
     this.isCommandMenuOpen.set(false);
+    this.placingClassId.set(null);
     this.selectedMobId.set(id);
     this.bestiaryTypeId.set(mob.typeId);
     this.isBestiaryModalOpen.set(true);
@@ -327,6 +346,8 @@ export class GameService implements OnDestroy {
     this.selectedTile.set({ x: 0, y: 0 });
     this.selectedMobId.set(null);
     this.isCommandMenuOpen.set(false);
+    this.isRecruitMenuOpen.set(false);
+    this.placingClassId.set(null);
     this.isBestiaryModalOpen.set(false);
     this.isScoutOpen.set(false);
     this.towers.set([]);
@@ -545,6 +566,118 @@ export class GameService implements OnDestroy {
     this.audio.playSelect();
   }
 
+  /** A tile chosen with A, Enter or a click: sets down the carried hero, else inspects or commands. */
+  public activateTile(x: number, y: number): void {
+    if (this.placingClassId()) {
+      this.selectTile(x, y);
+      this.confirmPlacement();
+    } else if (!this.inspectEnemyAt(x, y)) {
+      this.openTileMenu(x, y);
+    }
+  }
+
+  public openRecruitMenu(): void {
+    this.isCommandMenuOpen.set(false);
+    this.isRecruitMenuOpen.set(true);
+    this.audio.playSelect();
+  }
+
+  /** Picks up a hero to carry over the board; nothing is spent until it is set down. */
+  public beginPlacement(classId: TowerClassId): void {
+    if (!this.isClassUnlocked(classId)) return;
+    this.selectedClassId.set(classId);
+    this.placingClassId.set(classId);
+    this.isRecruitMenuOpen.set(false);
+    this.isCommandMenuOpen.set(false);
+    this.selectedMobId.set(null);
+    const spot = this.nearestPlacementSpot(classId, this.selectedTile());
+    if (spot) this.selectedTile.set(spot);
+    this.audio.playSelect();
+  }
+
+  /** LB / RB: picks up the selected hero, then swaps through the unlocked ones. */
+  public cyclePlacement(direction: 'next' | 'prev'): void {
+    const unlocked = RECRUIT_ORDER.filter((id) => this.isClassUnlocked(id));
+    const current = this.placingClassId();
+    if (!current) {
+      const selected = this.selectedClassId();
+      this.beginPlacement(unlocked.includes(selected) ? selected : unlocked[0]);
+      return;
+    }
+    const step = direction === 'next' ? 1 : -1;
+    const index = unlocked.indexOf(current);
+    this.beginPlacement(unlocked[(index + step + unlocked.length) % unlocked.length]);
+  }
+
+  public cancelPlacement(): void {
+    if (!this.placingClassId()) return;
+    this.placingClassId.set(null);
+    this.audio.playSelect();
+  }
+
+  /** Sets the carried hero down on the cursor tile; it stays in hand if it can't stand there. */
+  public confirmPlacement(): boolean {
+    const classId = this.placingClassId();
+    const tile = this.selectedTile();
+    if (!classId || !tile) return false;
+    if (!this.placeTower(tile.x, tile.y, classId)) return false;
+    this.placingClassId.set(null);
+    return true;
+  }
+
+  /** The carried hero over the cursor tile and, if it can't be set down there, why not. */
+  public readonly placementPreview = computed(() => {
+    const classId = this.placingClassId();
+    const tile = this.selectedTile();
+    if (!classId || !tile) return null;
+    const problem = this.placementProblem(tile.x, tile.y, classId);
+    return { classId, x: tile.x, y: tile.y, problem };
+  });
+
+  /** Why a hero can't be set down on a tile right now, or null when it can. */
+  public placementProblem(x: number, y: number, classId: TowerClassId): PlacementProblem | null {
+    const map = this.activeMap();
+    const tile = map.tiles[y]?.[x];
+    if (!tile) return { text: 'Off the Board!', color: '#ef4444' };
+    if (this.towers().some((t) => t.x === x && t.y === y)) {
+      return { text: 'Tile Taken!', color: '#f97316' };
+    }
+    if (!this.isClassUnlocked(classId)) return { text: 'Job Locked!', color: '#ef4444' };
+    if (this.gold() < TOWER_CLASSES[classId].cost) {
+      return { text: 'Need More Gold!', color: '#ef4444' };
+    }
+    if (classId === 'barricade') {
+      if (tile !== 'M') return { text: 'Only Maze Slots!', color: '#f97316' };
+      if (!this.pathfinding.canPlaceBarricade(map, this.barricades(), x, y)) {
+        return { text: 'Cannot Block All Paths!', color: '#ef4444' };
+      }
+    } else if (tile !== 'B') {
+      return { text: 'Only Build Tiles!', color: '#f97316' };
+    }
+    return null;
+  }
+
+  /** The cursor tile if the hero can stand on that kind of ground, else the nearest free one. */
+  private nearestPlacementSpot(classId: TowerClassId, from: Point | null): Point | null {
+    const map = this.activeMap();
+    const kind = classId === 'barricade' ? 'M' : 'B';
+    const origin = from ?? { x: Math.floor(map.width / 2), y: Math.floor(map.height / 2) };
+    const taken = (x: number, y: number) => this.towers().some((t) => t.x === x && t.y === y);
+    if (from && map.tiles[from.y]?.[from.x] === kind && !taken(from.x, from.y)) return from;
+    let best: Point | null = null;
+    let bestDistance = Infinity;
+    map.tiles.forEach((row, y) =>
+      row.forEach((code, x) => {
+        const distance = Math.hypot(x - origin.x, y - origin.y);
+        if (code === kind && !taken(x, y) && distance < bestDistance) {
+          best = { x, y };
+          bestDistance = distance;
+        }
+      }),
+    );
+    return best ?? from;
+  }
+
   public openTileMenu(x: number, y: number): void {
     this.selectTile(x, y);
     const tile = this.activeMap().tiles[y]?.[x];
@@ -577,47 +710,22 @@ export class GameService implements OnDestroy {
   }
 
   public placeTower(x: number, y: number, classId: TowerClassId): boolean {
-    const map = this.activeMap();
-    const tile = map.tiles[y]?.[x];
-    if (!tile) return false;
-
-    // Check if cell already contains a tower
-    if (this.towers().some((t) => t.x === x && t.y === y)) {
-      return false;
-    }
-
-    if (!this.isClassUnlocked(classId)) {
-      this.addFloatingText('Job Locked!', x, y, '#ef4444', 'alert');
+    const problem = this.placementProblem(x, y, classId);
+    if (problem) {
+      if (this.activeMap().tiles[y]?.[x]) {
+        this.addFloatingText(problem.text, x, y, problem.color, 'alert');
+      }
       return false;
     }
 
     const def = TOWER_CLASSES[classId];
-    if (this.gold() < def.cost) {
-      this.addFloatingText('Need More Gold!', x, y, '#ef4444', 'alert');
-      return false;
-    }
-
     if (classId === 'barricade') {
-      if (tile !== 'M') {
-        this.addFloatingText('Only Maze Slots!', x, y, '#f97316', 'alert');
-        return false;
-      }
-      if (!this.pathfinding.canPlaceBarricade(map, this.barricades(), x, y)) {
-        this.addFloatingText('Cannot Block All Paths!', x, y, '#ef4444', 'alert');
-        return false;
-      }
-      // Add barricade
       this.barricades.update((b) => {
         const next = new Set(b);
         next.add(`${x},${y}`);
         return next;
       });
       this.recalculatePaths();
-    } else {
-      if (tile !== 'B') {
-        this.addFloatingText('Only Build Tiles!', x, y, '#f97316', 'alert');
-        return false;
-      }
     }
 
     this.gold.update((g) => g - def.cost);

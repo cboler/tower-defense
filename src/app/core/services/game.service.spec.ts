@@ -829,6 +829,62 @@ describe('GameService', () => {
     expect(service.gold()).toBe(MAP_VERDANT_CROSSROADS.startingGold - 100);
   });
 
+  describe('placement mode', () => {
+    it('carries a hero over the board and spends nothing until it is set down', () => {
+      service.selectTile(2, 1); // a path tile
+      service.beginPlacement('ranger');
+      expect(service.placingClassId()).toBe('ranger');
+      // The hero starts on the nearest free build tile instead of the path
+      expect(service.selectedTile()).toEqual({ x: 2, y: 0 });
+      expect(service.gold()).toBe(MAP_VERDANT_CROSSROADS.startingGold);
+
+      service.moveCursor(0, 1); // onto the path: it can't stand there and stays in hand
+      expect(service.placementPreview()?.problem?.text).toBe('Only Build Tiles!');
+      expect(service.confirmPlacement()).toBe(false);
+      expect(service.placingClassId()).toBe('ranger');
+
+      service.moveCursor(0, -1);
+      expect(service.placementPreview()?.problem).toBeNull();
+      expect(service.confirmPlacement()).toBe(true);
+      expect(service.placingClassId()).toBeNull();
+      expect(service.towers()).toMatchObject([{ classId: 'ranger', x: 2, y: 0 }]);
+      expect(service.gold()).toBe(MAP_VERDANT_CROSSROADS.startingGold - TOWER_CLASSES.ranger.cost);
+    });
+
+    it('cycles only unlocked heroes and sends barricades to the nearest maze slot', () => {
+      service.selectTile(8, 2);
+      service.cyclePlacement('next'); // first press picks up the selected hero
+      expect(service.placingClassId()).toBe('blade-warden');
+      service.cyclePlacement('prev'); // wraps past the locked advanced jobs to the barricade
+      expect(service.placingClassId()).toBe('barricade');
+      expect(service.selectedTile()).toEqual({ x: 9, y: 2 });
+      service.cyclePlacement('next');
+      expect(service.placingClassId()).toBe('blade-warden');
+    });
+
+    it('sets the hero down on a clicked tile, and can be put back', () => {
+      service.beginPlacement('blade-warden');
+      service.activateTile(5, 4);
+      expect(service.towers()).toMatchObject([{ classId: 'blade-warden', x: 5, y: 4 }]);
+      expect(service.isCommandMenuOpen()).toBe(false);
+
+      service.beginPlacement('ranger');
+      service.cancelPlacement();
+      expect(service.placingClassId()).toBeNull();
+      expect(service.towers().length).toBe(1);
+    });
+
+    it('marks taken tiles and unaffordable heroes as blocked', () => {
+      service.placeTower(0, 0, 'blade-warden');
+      service.beginPlacement('ranger');
+      service.selectTile(0, 0);
+      expect(service.placementPreview()?.problem?.text).toBe('Tile Taken!');
+      service.selectTile(1, 0);
+      service.gold.set(0);
+      expect(service.placementPreview()?.problem?.text).toBe('Need More Gold!');
+    });
+  });
+
   it('rejects tower placement on path tiles', () => {
     // Coordinate (1, 1) is 'P' (Path)
     const success = service.placeTower(1, 1, 'blade-warden');

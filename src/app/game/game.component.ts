@@ -66,6 +66,24 @@ import { BossBarComponent } from './boss-bar/boss-bar.component';
         </div>
       }
 
+      @if (game.isRecruitMenuOpen()) {
+        <div
+          class="cw-scrim command-scrim"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Recruit a defender"
+          tabindex="-1"
+          (click)="onRecruitBackdrop($event)"
+          (keydown.escape)="$event.stopPropagation(); closeRecruitMenu()"
+        >
+          <app-tower-panel
+            class="tower-command-dock is-visible"
+            mode="recruit"
+            (closePanel)="closeRecruitMenu()"
+          />
+        </div>
+      }
+
       <!-- Defeat -->
       @if (game.isGameOver()) {
         <div class="cw-scrim" role="dialog" aria-modal="true" aria-labelledby="defeat-title">
@@ -683,6 +701,7 @@ export class GameComponent implements OnInit, OnDestroy {
   constructor() {
     afterRenderEffect(() => {
       this.game.isCommandMenuOpen();
+      this.game.isRecruitMenuOpen();
       this.isPauseMenuOpen();
       this.game.isScoutOpen();
       this.game.isBestiaryModalOpen();
@@ -696,7 +715,7 @@ export class GameComponent implements OnInit, OnDestroy {
         if (!this.lastDialog) this.returnFocus = this.document.activeElement as HTMLElement;
         (
           dialog.querySelector<HTMLElement>(
-            '#deploy-tower-btn:not(:disabled), #upgrade-tower-btn:not(:disabled)',
+            '.class-card.is-active[data-recruit], #deploy-tower-btn:not(:disabled), #upgrade-tower-btn:not(:disabled)',
           ) ??
           dialog.querySelector<HTMLElement>('button:not(:disabled), [href]') ??
           dialog
@@ -724,6 +743,21 @@ export class GameComponent implements OnInit, OnDestroy {
 
   protected onCommandBackdrop(event: MouseEvent): void {
     if (event.target === event.currentTarget) this.deselectVantage();
+  }
+
+  public closeRecruitMenu(): void {
+    this.game.isRecruitMenuOpen.set(false);
+    this.document.getElementById('battlefield-map')?.focus({ preventScroll: true });
+  }
+
+  protected onRecruitBackdrop(event: MouseEvent): void {
+    if (event.target === event.currentTarget) this.closeRecruitMenu();
+  }
+
+  /** X calls the next wave, or rushes it while a wave is on the board. */
+  private callOrRushWave(): void {
+    if (!this.game.waveActive()) this.game.startNextWave();
+    else if (this.game.canRushWave()) this.game.rushWave();
   }
 
   private activeDialog(): HTMLElement | undefined {
@@ -776,7 +810,7 @@ export class GameComponent implements OnInit, OnDestroy {
       } else if (action === 'start-wave') {
         this.restartGame();
         this.isPauseMenuOpen.set(false);
-      } else if (action === 'toggle-speed') {
+      } else if (action === 'recruit') {
         this.audio.toggleMute();
       } else if (action === 'cycle-camera') {
         this.cycleCameraPreset();
@@ -802,6 +836,15 @@ export class GameComponent implements OnInit, OnDestroy {
       }
       return;
     }
+    if (this.game.isRecruitMenuOpen()) {
+      // A picks a hero (the focused card); Y or B puts the menu away
+      if (action === 'cancel' || action === 'toggle-menu' || action === 'recruit') {
+        this.closeRecruitMenu();
+      } else if (action === 'prev-class' || action === 'next-class') {
+        this.game.cycleClass(action === 'prev-class' ? 'prev' : 'next');
+      }
+      return;
+    }
     if (this.game.isCommandMenuOpen()) {
       if (action === 'cancel' || action === 'toggle-menu') {
         this.deselectVantage();
@@ -817,13 +860,14 @@ export class GameComponent implements OnInit, OnDestroy {
       }
       const tower = this.game.selectedTower();
       if (tower && action === 'start-wave') this.game.sellTower(tower.id);
-      if (tower && action === 'toggle-speed') this.game.cycleTargetPriorityForTower(tower.id);
+      if (tower && action === 'recruit') this.game.cycleTargetPriorityForTower(tower.id);
       return;
     }
 
     // 4. Main Gameplay Actions
     switch (action) {
       case 'toggle-menu':
+        this.game.cancelPlacement();
         this.isPauseMenuOpen.set(true);
         break;
 
@@ -832,18 +876,23 @@ export class GameComponent implements OnInit, OnDestroy {
         break;
 
       case 'start-wave':
-        if (!this.game.waveActive()) this.game.startNextWave();
+        this.callOrRushWave();
         break;
+
+      case 'recruit':
+        this.game.openRecruitMenu();
+        break;
+
       case 'toggle-speed':
         this.game.cycleSpeed();
         break;
 
       case 'prev-class':
-        this.game.cycleClass('prev');
+        this.game.cyclePlacement('prev');
         break;
 
       case 'next-class':
-        this.game.cycleClass('next');
+        this.game.cyclePlacement('next');
         break;
 
       case 'cursor-up':
@@ -864,12 +913,13 @@ export class GameComponent implements OnInit, OnDestroy {
 
       case 'confirm': {
         const tile = this.game.selectedTile() ?? { x: 0, y: 0 };
-        if (!this.game.inspectEnemyAt(tile.x, tile.y)) this.game.openTileMenu(tile.x, tile.y);
+        this.game.activateTile(tile.x, tile.y);
         break;
       }
 
       case 'cancel':
-        this.game.selectTile(-1, -1);
+        if (this.game.placingClassId()) this.game.cancelPlacement();
+        else this.game.selectTile(-1, -1);
         break;
     }
   }
@@ -936,11 +986,17 @@ export class GameComponent implements OnInit, OnDestroy {
       else if (this.game.isCampaignModalOpen()) this.game.isCampaignModalOpen.set(false);
       else if (this.game.isScoutOpen()) this.game.isScoutOpen.set(false);
       else if (this.game.isCommandMenuOpen()) this.deselectVantage();
+      else if (this.game.isRecruitMenuOpen()) this.closeRecruitMenu();
+      else if (this.game.placingClassId() && !this.isPauseMenuOpen()) this.game.cancelPlacement();
       else this.isPauseMenuOpen.set(!this.isPauseMenuOpen());
       e.preventDefault();
       return;
     }
     if (dialog) {
+      if (this.game.isRecruitMenuOpen()) {
+        if (e.key === '[' || e.key === ']') this.game.cycleClass(e.key === '[' ? 'prev' : 'next');
+        if (e.key.toLowerCase() === 'y') this.closeRecruitMenu();
+      }
       if (this.game.isCommandMenuOpen()) {
         if (e.key === '[' || e.key === ']') this.game.cycleClass(e.key === '[' ? 'prev' : 'next');
         const tower = this.game.selectedTower();
@@ -966,17 +1022,17 @@ export class GameComponent implements OnInit, OnDestroy {
     }
 
     if (e.key === '[' || e.key === '{') {
-      this.game.cycleClass('prev');
+      this.game.cyclePlacement('prev');
       return;
     }
 
     if (e.key === ']' || e.key === '}') {
-      this.game.cycleClass('next');
+      this.game.cyclePlacement('next');
       return;
     }
 
     if (e.key === 'x' || e.key === 'X') {
-      if (!this.game.waveActive()) this.game.startNextWave();
+      this.callOrRushWave();
       return;
     }
 
@@ -988,6 +1044,11 @@ export class GameComponent implements OnInit, OnDestroy {
     }
 
     if (e.key === 'y' || e.key === 'Y') {
+      this.game.openRecruitMenu();
+      return;
+    }
+
+    if (e.key === 'f' || e.key === 'F') {
       this.game.cycleSpeed();
       return;
     }
@@ -1006,9 +1067,7 @@ export class GameComponent implements OnInit, OnDestroy {
     };
 
     if (classKeys[e.key]) {
-      this.game.setSelectedClass(classKeys[e.key]);
-      const tile = this.game.selectedTile();
-      if (tile) this.game.openTileMenu(tile.x, tile.y);
+      this.game.beginPlacement(classKeys[e.key]);
       return;
     }
 
